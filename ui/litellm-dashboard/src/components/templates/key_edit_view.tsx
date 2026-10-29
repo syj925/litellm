@@ -76,6 +76,8 @@ import { Tag } from "../tag_management/types";
 import EditLoggingSettings from "../team/EditLoggingSettings";
 import { useZodForm } from "@/lib/forms/useZodForm";
 import VectorStoreSelector from "../vector_store_management/VectorStoreSelector";
+import KeyResourceRouting from "../organisms/KeyResourceRouting";
+import { readResourcePolicy, ResourceRoutingPolicy, withResourcePolicy } from "../organisms/resourceRoutingPolicy";
 
 interface KeyEditViewProps {
   keyData: KeyResponse;
@@ -120,6 +122,11 @@ export function KeyEditView({
   const [rotationInterval, setRotationInterval] = useState<string>(keyData.rotation_interval || "");
   const [neverExpire, setNeverExpire] = useState<boolean>(!keyData.expires);
   const [isKeySaving, setIsKeySaving] = useState(false);
+  const [resourcePolicy, setResourcePolicy] = useState<ResourceRoutingPolicy | null>(() =>
+    readResourcePolicy(keyData.metadata),
+  );
+  const [resourceRoutingValid, setResourceRoutingValid] = useState(true);
+  const originalResourcePolicy = JSON.stringify(readResourcePolicy(keyData.metadata));
   const [budgetLimits, setBudgetLimits] = useState<BudgetWindowEntry[]>(
     Array.isArray(keyData.budget_limits) ? keyData.budget_limits : [],
   );
@@ -221,7 +228,14 @@ export function KeyEditView({
 
   const handleSubmit = async (values: any) => {
     try {
+      if (!resourceRoutingValid) {
+        toast.error("Review the resource routing selection before saving this key.");
+        return;
+      }
       setIsKeySaving(true);
+      const resourcePolicyChanged = JSON.stringify(resourcePolicy) !== originalResourcePolicy;
+      if (resourcePolicy !== null || resourcePolicyChanged)
+        values.metadata = JSON.stringify(withResourcePolicy(values.metadata, resourcePolicy));
 
       // Parse allowed_routes from comma-separated string to array
       if (typeof values.allowed_routes === "string") {
@@ -317,7 +331,11 @@ export function KeyEditView({
           ...values,
           ...(detachProject && enableProjectsUI && canDetachProject ? { project_id: null } : {}),
         }),
-        [...Object.keys(form.formState.dirtyFields), ...(budgetLimitsUnchanged ? [] : ["budget_limits"])],
+        [
+          ...Object.keys(form.formState.dirtyFields),
+          ...(budgetLimitsUnchanged ? [] : ["budget_limits"]),
+          ...(resourcePolicyChanged ? ["metadata"] : []),
+        ],
       );
     } finally {
       setIsKeySaving(false);
@@ -371,6 +389,15 @@ export function KeyEditView({
         }}
       >
         <FieldGroup>
+          <KeyResourceRouting
+            accessToken={accessToken}
+            targetUserId={keyData.user_id ?? null}
+            admin={isProxyAdminRole(userRole ?? "")}
+            allowLegacy={readResourcePolicy(keyData.metadata) === null}
+            value={resourcePolicy}
+            onChange={setResourcePolicy}
+            onValidityChange={setResourceRoutingValid}
+          />
           <FormField control={form.control} name="key_alias" label="Key Alias">
             {(field) => <Input {...field} value={(field.value as string | undefined) ?? ""} />}
           </FormField>

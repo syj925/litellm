@@ -41,6 +41,31 @@ describe("wallet amounts", () => {
 });
 
 describe("customer billing receipts", () => {
+  it("preserves the selected resource pool and its negotiated pricing source in a receipt", () => {
+    expect(
+      ledgerReceiptSections({
+        price_snapshot: {
+          plan_id: "shared",
+          pool_id: "bedrock-pool",
+          pool_name: "AWS Bedrock Claude",
+          discount: "0.7",
+          discount_model: "public-alpha",
+          discount_source: "customer_pool_model",
+        },
+      }),
+    ).toEqual([
+      {
+        title: "Pricing snapshot",
+        rows: [
+          { label: "Discount plan", value: "shared" },
+          { label: "Resource pool", value: "AWS Bedrock Claude (bedrock-pool)" },
+          { label: "Customer discount", value: "70% of reference price (30% off)" },
+          { label: "Discount model", value: "public-alpha" },
+          { label: "Discount source", value: "Customer pool-model override" },
+        ],
+      },
+    ]);
+  });
   it("identifies the exact negotiated model and rule source saved with the request", () => {
     expect(
       ledgerReceiptSections({

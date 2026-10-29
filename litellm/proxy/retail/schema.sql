@@ -110,3 +110,66 @@ CREATE TABLE IF NOT EXISTS retail_plan_model_discounts (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (plan_id, model)
 );
+
+CREATE TABLE IF NOT EXISTS retail_resource_pools (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('anthropic','bedrock','vertex','anthropic_subscribe','custom')),
+    description TEXT NOT NULL DEFAULT '',
+    enabled BOOLEAN NOT NULL DEFAULT false,
+    visibility TEXT NOT NULL DEFAULT 'restricted' CHECK (visibility IN ('public','restricted')),
+    priority INTEGER NOT NULL DEFAULT 100 CHECK (priority >= 0),
+    default_discount NUMERIC(18,9) NOT NULL DEFAULT 1 CHECK (default_discount > 0 AND default_discount <= 1),
+    version BIGINT NOT NULL DEFAULT 1,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS retail_pool_bindings (
+    pool_id TEXT NOT NULL REFERENCES retail_resource_pools(id),
+    deployment_id TEXT NOT NULL,
+    model TEXT NOT NULL,
+    weight INTEGER NOT NULL DEFAULT 1 CHECK (weight > 0),
+    priority INTEGER NOT NULL DEFAULT 0 CHECK (priority >= 0),
+    PRIMARY KEY (pool_id, deployment_id, model)
+);
+
+CREATE TABLE IF NOT EXISTS retail_pool_settings (
+    singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton),
+    routing_enabled BOOLEAN NOT NULL DEFAULT false,
+    version BIGINT NOT NULL DEFAULT 1
+);
+INSERT INTO retail_pool_settings(singleton) VALUES (true) ON CONFLICT(singleton) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS retail_account_pool_access (
+    user_id TEXT PRIMARY KEY REFERENCES retail_wallets(user_id),
+    mode TEXT NOT NULL DEFAULT 'inherit' CHECK (mode IN ('inherit','custom')),
+    grants JSONB NOT NULL DEFAULT '[]',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS retail_customer_pool_discounts (
+    user_id TEXT NOT NULL REFERENCES retail_wallets(user_id),
+    pool_id TEXT NOT NULL REFERENCES retail_resource_pools(id),
+    discount NUMERIC(18,9) NOT NULL CHECK (discount > 0 AND discount <= 1),
+    PRIMARY KEY(user_id,pool_id)
+);
+CREATE TABLE IF NOT EXISTS retail_plan_pool_discounts (
+    plan_id TEXT NOT NULL REFERENCES retail_pricing_plans(id),
+    pool_id TEXT NOT NULL REFERENCES retail_resource_pools(id),
+    discount NUMERIC(18,9) NOT NULL CHECK (discount > 0 AND discount <= 1),
+    PRIMARY KEY(plan_id,pool_id)
+);
+CREATE TABLE IF NOT EXISTS retail_customer_pool_model_discounts (
+    user_id TEXT NOT NULL REFERENCES retail_wallets(user_id),
+    pool_id TEXT NOT NULL REFERENCES retail_resource_pools(id),
+    model TEXT NOT NULL CHECK (length(model) BETWEEN 1 AND 191),
+    discount NUMERIC(18,9) NOT NULL CHECK (discount > 0 AND discount <= 1),
+    PRIMARY KEY(user_id,pool_id,model)
+);
+CREATE TABLE IF NOT EXISTS retail_plan_pool_model_discounts (
+    plan_id TEXT NOT NULL REFERENCES retail_pricing_plans(id),
+    pool_id TEXT NOT NULL REFERENCES retail_resource_pools(id),
+    model TEXT NOT NULL CHECK (length(model) BETWEEN 1 AND 191),
+    discount NUMERIC(18,9) NOT NULL CHECK (discount > 0 AND discount <= 1),
+    PRIMARY KEY(plan_id,pool_id,model)
+);

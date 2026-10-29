@@ -15,6 +15,7 @@ import { uiHref } from "@/utils/uiHref";
 import { formatMoney, PageResult, LedgerEntry, retailKeys, retailRequest, WalletAccount } from "./api";
 import { LedgerTable } from "./BillingPanel";
 import { CustomerModelDiscounts } from "./ModelDiscounts";
+import CustomerPools from "./pools/CustomerPools";
 
 export default function WalletPanel() {
   const { accessToken, userId, isAuthorized } = useAuthorized();
@@ -161,6 +162,7 @@ export default function WalletPanel() {
         </>
       )}
 
+      <CustomerPools accessToken={accessToken} userId={userId} enabled={isAuthorized} />
       <CustomerModelDiscounts accessToken={accessToken} userId={userId} enabled={isAuthorized} />
 
       <section className="overflow-hidden rounded-xl border">

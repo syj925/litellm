@@ -14751,6 +14751,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/plans/{plan_id}/pool-discount": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Plan Pool Discount */
+        get: operations["admin_plan_pool_discount_retail_admin_plans__plan_id__pool_discount_get"];
+        /** Admin Save Plan Pool Discount */
+        put: operations["admin_save_plan_pool_discount_retail_admin_plans__plan_id__pool_discount_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/pools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Pools */
+        get: operations["admin_pools_retail_admin_pools_get"];
+        put?: never;
+        /** Admin Create Pool */
+        post: operations["admin_create_pool_retail_admin_pools_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/pools/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Pool Catalog */
+        get: operations["admin_pool_catalog_retail_admin_pools_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/pools/deployments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Pool Deployments */
+        get: operations["admin_pool_deployments_retail_admin_pools_deployments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/pools/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Pool Settings */
+        get: operations["admin_pool_settings_retail_admin_pools_settings_get"];
+        /** Admin Save Pool Settings */
+        put: operations["admin_save_pool_settings_retail_admin_pools_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/pools/{pool_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Pool */
+        get: operations["admin_pool_retail_admin_pools__pool_id__get"];
+        /** Admin Save Pool */
+        put: operations["admin_save_pool_retail_admin_pools__pool_id__put"];
+        post?: never;
+        /** Admin Disable Pool */
+        delete: operations["admin_disable_pool_retail_admin_pools__pool_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/pools/{pool_id}/bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Admin Pool Bindings */
+        put: operations["admin_pool_bindings_retail_admin_pools__pool_id__bindings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/reference-prices": {
         parameters: {
             query?: never;
@@ -14888,6 +15012,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/wallets/{user_id}/pool-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Account Pool Access */
+        get: operations["admin_account_pool_access_retail_admin_wallets__user_id__pool_access_get"];
+        /** Admin Save Account Pool Access */
+        put: operations["admin_save_account_pool_access_retail_admin_wallets__user_id__pool_access_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/wallets/{user_id}/pool-discount": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Customer Pool Discount */
+        get: operations["admin_customer_pool_discount_retail_admin_wallets__user_id__pool_discount_get"];
+        /** Admin Save Customer Pool Discount */
+        put: operations["admin_save_customer_pool_discount_retail_admin_wallets__user_id__pool_discount_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/config": {
         parameters: {
             query?: never;
@@ -14950,6 +15110,40 @@ export interface paths {
         get: operations["plans_retail_plans_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/pools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Own Pools */
+        get: operations["own_pools_retail_pools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/pools/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pool Preview */
+        post: operations["pool_preview_retail_pools_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -27882,6 +28076,11 @@ export interface components {
         BedrockChecksSensitiveInformationModel: {
             /** Entities */
             entities: components["schemas"]["BedrockChecksSensitiveInformationEntityItem"][];
+        };
+        /** BindingsRequest */
+        BindingsRequest: {
+            /** Bindings */
+            bindings: components["schemas"]["PoolBinding"][];
         };
         /** BlockKeyRequest */
         BlockKeyRequest: {
@@ -42746,6 +42945,93 @@ export interface components {
              */
             version_status: string;
         };
+        /** PoolAccess */
+        PoolAccess: {
+            /**
+             * Grants
+             * @default []
+             */
+            grants: components["schemas"]["PoolGrant"][];
+            /**
+             * Mode
+             * @default inherit
+             * @enum {string}
+             */
+            mode: "inherit" | "custom";
+        };
+        /** PoolBinding */
+        PoolBinding: {
+            /** Deployment Id */
+            deployment_id: string;
+            /** Model */
+            model: string;
+            /**
+             * Priority
+             * @default 0
+             */
+            priority: number;
+            /**
+             * Weight
+             * @default 1
+             */
+            weight: number;
+        };
+        /** PoolDiscountRequest */
+        PoolDiscountRequest: {
+            /** Discount */
+            discount: string | null;
+        };
+        /** PoolGrant */
+        PoolGrant: {
+            /**
+             * Models
+             * @default *
+             */
+            models: "*" | string[];
+            /** Pool Id */
+            pool_id: string;
+        };
+        /** PoolUpsert */
+        PoolUpsert: {
+            /** Bindings */
+            bindings?: components["schemas"]["PoolBinding"][] | null;
+            /**
+             * Default Discount
+             * @default 1
+             */
+            default_discount: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Priority
+             * @default 100
+             */
+            priority: number;
+            /**
+             * Source Kind
+             * @default custom
+             * @enum {string}
+             */
+            source_kind: "anthropic" | "bedrock" | "vertex" | "anthropic_subscribe" | "custom";
+            /**
+             * Visibility
+             * @default restricted
+             * @enum {string}
+             */
+            visibility: "public" | "restricted";
+        };
         /** Preview */
         Preview: {
             /** As Of */
@@ -42761,6 +43047,14 @@ export interface components {
              */
             offset: number;
             selection: components["schemas"]["ActivitySelection"];
+        };
+        /** PreviewRequest */
+        PreviewRequest: {
+            /** Model */
+            model: string;
+            policy?: components["schemas"]["ResourcePolicy"];
+            /** User Id */
+            user_id?: string | null;
         };
         /** Progress */
         Progress: {
@@ -43999,6 +44293,22 @@ export interface components {
             reason: string;
             /** Reference */
             reference: string;
+        };
+        /** ResourcePolicy */
+        ResourcePolicy: {
+            /**
+             * Grants
+             * @default []
+             */
+            grants: components["schemas"]["PoolGrant"][];
+            /**
+             * Mode
+             * @default auto
+             * @enum {string}
+             */
+            mode: "auto" | "fixed" | "custom";
+            /** Pool Id */
+            pool_id?: string | null;
         };
         /** ResponseAPIUsage */
         ResponseAPIUsage: {
@@ -46573,6 +46883,11 @@ export interface components {
         SetPlanRequest: {
             /** Plan Id */
             plan_id: string;
+        };
+        /** SettingsRequest */
+        SettingsRequest: {
+            /** Routing Enabled */
+            routing_enabled: boolean;
         };
         /**
          * ShadowEvalJobResponse
@@ -72685,7 +73000,9 @@ export interface operations {
     };
     admin_plan_model_discounts_retail_admin_plans__plan_id__model_discounts_get: {
         parameters: {
-            query?: never;
+            query?: {
+                pool_id?: string | null;
+            };
             header?: never;
             path: {
                 plan_id: string;
@@ -72718,7 +73035,9 @@ export interface operations {
     };
     admin_set_plan_model_discounts_retail_admin_plans__plan_id__model_discounts_put: {
         parameters: {
-            query?: never;
+            query?: {
+                pool_id?: string | null;
+            };
             header?: never;
             path: {
                 plan_id: string;
@@ -72728,6 +73047,389 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SetModelDiscountRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_plan_pool_discount_retail_admin_plans__plan_id__pool_discount_get: {
+        parameters: {
+            query: {
+                pool_id: string;
+            };
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_save_plan_pool_discount_retail_admin_plans__plan_id__pool_discount_put: {
+        parameters: {
+            query: {
+                pool_id: string;
+            };
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PoolDiscountRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_pools_retail_admin_pools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+        };
+    };
+    admin_create_pool_retail_admin_pools_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PoolUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_pool_catalog_retail_admin_pools_catalog_get: {
+        parameters: {
+            query?: {
+                user_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_pool_deployments_retail_admin_pools_deployments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+        };
+    };
+    admin_pool_settings_retail_admin_pools_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+        };
+    };
+    admin_save_pool_settings_retail_admin_pools_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_pool_retail_admin_pools__pool_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_save_pool_retail_admin_pools__pool_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PoolUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_disable_pool_retail_admin_pools__pool_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_pool_bindings_retail_admin_pools__pool_id__bindings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BindingsRequest"];
             };
         };
         responses: {
@@ -72959,7 +73661,9 @@ export interface operations {
     };
     admin_customer_model_discounts_retail_admin_wallets__user_id__model_discounts_get: {
         parameters: {
-            query?: never;
+            query?: {
+                pool_id?: string | null;
+            };
             header?: never;
             path: {
                 user_id: string;
@@ -72992,7 +73696,9 @@ export interface operations {
     };
     admin_set_customer_model_discounts_retail_admin_wallets__user_id__model_discounts_put: {
         parameters: {
-            query?: never;
+            query?: {
+                pool_id?: string | null;
+            };
             header?: never;
             path: {
                 user_id: string;
@@ -73039,6 +73745,150 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SetPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_account_pool_access_retail_admin_wallets__user_id__pool_access_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_save_account_pool_access_retail_admin_wallets__user_id__pool_access_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PoolAccess"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_customer_pool_discount_retail_admin_wallets__user_id__pool_discount_get: {
+        parameters: {
+            query: {
+                pool_id: string;
+            };
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_save_customer_pool_discount_retail_admin_wallets__user_id__pool_discount_put: {
+        parameters: {
+            query: {
+                pool_id: string;
+            };
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PoolDiscountRequest"];
             };
         };
         responses: {
@@ -73123,7 +73973,9 @@ export interface operations {
     };
     own_model_discounts_retail_model_discounts_get: {
         parameters: {
-            query?: never;
+            query?: {
+                pool_id?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -73139,6 +73991,15 @@ export interface operations {
                     "application/json": {
                         [key: string]: components["schemas"]["JsonValue"];
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -73161,6 +74022,63 @@ export interface operations {
                     "application/json": {
                         [key: string]: components["schemas"]["JsonValue"];
                     };
+                };
+            };
+        };
+    };
+    own_pools_retail_pools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+        };
+    };
+    pool_preview_retail_pools_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

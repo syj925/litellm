@@ -2495,6 +2495,16 @@ async def prepare_key_update_data(
     prisma_client: PrismaClient | None = None,
     llm_router: Router | None = None,
 ):
+    from litellm.proxy.retail.key_policy import validate_native_key_resource_metadata
+
+    resource_owner: Final = data.user_id if "user_id" in data.model_fields_set else existing_key_row.user_id
+    resource_metadata: Final = await validate_native_key_resource_metadata(
+        data.metadata, resource_owner, existing_key_row.metadata,
+        provided="metadata" in data.model_fields_set,
+        owner_changed=resource_owner != existing_key_row.user_id,
+    )
+    if resource_metadata is not None:
+        data.metadata = resource_metadata  # rebind-ok: normalized account-scoped policy must persist with the key update
     if data.router_settings is not None or (
         "router_settings" not in data.model_fields_set
         and "team_id" in data.model_fields_set
@@ -4699,8 +4709,11 @@ async def generate_key_helper_fn(
     permissions_json: Final = json.dumps(permissions)
     router_settings_json: Final = safe_dumps(router_settings) if router_settings is not None else safe_dumps({})
 
+    from litellm.proxy.retail.key_policy import validate_native_key_resource_metadata
+
+    resource_metadata: Final = await validate_native_key_resource_metadata(metadata, user_id)
     metadata_json: Final = metadata_json_with_limits(
-        metadata,
+        resource_metadata,
         model_rpm_limit=model_rpm_limit,
         model_tpm_limit=model_tpm_limit,
         mcp_rpm_limit=mcp_rpm_limit,

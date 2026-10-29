@@ -81,6 +81,13 @@ import CreatedKeyDisplay from "../shared/CreatedKeyDisplay";
 import NumericalInput from "../shared/numerical_input";
 import VectorStoreSelector from "../vector_store_management/VectorStoreSelector";
 import { buildKeyCreatePayload, type KeyCreateInput } from "./createKeyPayload";
+import KeyResourceRouting from "./KeyResourceRouting";
+import {
+  readResourcePolicy,
+  ResourceRoutingPolicy,
+  resourcePolicySummary,
+  resourceRoutingCurl,
+} from "./resourceRoutingPolicy";
 import { simplifyKeyGenerateError } from "./utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -278,6 +285,18 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   const [routerSettingsKey, setRouterSettingsKey] = useState<number>(0);
   const [agentsList, setAgentsList] = useState<{ agent_id: string; agent_name: string }[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [resourcePolicy, setResourcePolicy] = useState<ResourceRoutingPolicy | null>(null);
+  const [createdResourcePolicy, setCreatedResourcePolicy] = useState<ResourceRoutingPolicy | null>(null);
+  const [resourceRoutingValid, setResourceRoutingValid] = useState(true);
+  const assignedUserId = useWatch({ control: form.control, name: "user_id" }) as string | undefined;
+  const resourceUserId = keyOwner === "you" ? userID : keyOwner === "another_user" ? assignedUserId ?? null : null;
+  const previousResourceUser = useRef(resourceUserId);
+  useEffect(() => {
+    if (previousResourceUser.current !== resourceUserId) {
+      previousResourceUser.current = resourceUserId;
+      setResourcePolicy(null);
+    }
+  }, [resourceUserId]);
   const selectedModels: string[] = (useWatch({ control: form.control, name: "models" }) as string[] | undefined) ?? [];
   const handleCancel = () => {
     setIsModalVisible(false);
@@ -293,6 +312,9 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
     setRouterSettings(null);
     setRouterSettingsKey((prev) => prev + 1);
     setSelectedAgentId(null);
+    setResourcePolicy(null);
+    setCreatedResourcePolicy(null);
+    setResourceRoutingValid(true);
     setSelectedOrganizationId(null);
     setSelectedProjectId(null);
     setBudgetLimits([]);
@@ -428,6 +450,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
 
   const handleCreate = async (formValues: MountedFormValues) => {
     try {
+      if (!resourceRoutingValid) throw new Error("Review the resource routing selection before creating this key.");
       const input: KeyCreateInput = {
         formValues,
         existingKeys: data,
@@ -444,6 +467,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
         modelMaxBudget,
         tagRateLimits,
         budgetFallbacks,
+        resourcePolicy,
       };
       const built = buildKeyCreatePayload(input);
       if (built.kind === "duplicate_alias") {
@@ -475,6 +499,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
       queryClient.invalidateQueries({ queryKey: keyKeys.lists() });
 
       setApiKey(response["key"]);
+      setCreatedResourcePolicy(readResourcePolicy(response.metadata) ?? resourcePolicy);
       toast.success("Virtual Key Created");
       form.reset(formDefaults);
       setBudgetLimits([]);
@@ -965,6 +990,16 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                 </div>
               )}
 
+              {!isFormDisabled && (
+                <KeyResourceRouting
+                  accessToken={accessToken}
+                  targetUserId={resourceUserId}
+                  admin={isProxyAdminRole(userRole ?? "")}
+                  value={resourcePolicy}
+                  onChange={setResourcePolicy}
+                  onValidityChange={setResourceRoutingValid}
+                />
+              )}
               {/* Section 3: Optional Settings */}
               {!isFormDisabled && (
                 <div className="mb-8">
@@ -1862,6 +1897,29 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
               ) : (
                 <p className="text-sm">Key being created, this might take 30s</p>
               )}
+              <div className="rounded-lg border p-3 text-sm">
+                <p className="font-medium">Resource routing</p>
+                <p className="mt-2 break-words text-xs text-muted-foreground">
+                  {resourcePolicySummary(createdResourcePolicy)}
+                </p>
+                <pre className="mt-3 overflow-auto rounded-md bg-muted p-3 text-xs">
+                  {resourceRoutingCurl(proxyBaseUrl || window.location.origin)}
+                </pre>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(resourceRoutingCurl(proxyBaseUrl || window.location.origin));
+                    toast.success("Request template copied");
+                  }}
+                >
+                  Copy request template
+                </Button>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Use the public model name. Pool selection is stored on the key and cannot be changed through request
+                  metadata.
+                </p>
+              </div>
             </div>
           </DialogContent>
         </Dialog>

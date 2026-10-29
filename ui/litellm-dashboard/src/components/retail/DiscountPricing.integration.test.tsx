@@ -5,6 +5,7 @@ import { NuqsTestingAdapter } from "nuqs/adapters/testing";
 import { afterEach, expect, it, vi } from "vitest";
 import AdminWalletsPanel from "./AdminWalletsPanel";
 import WalletPanel from "./WalletPanel";
+import type { ResourcePool } from "./pools/types";
 
 vi.mock("@/components/networking", () => ({
   getProxyBaseUrl: () => "",
@@ -75,56 +76,78 @@ const candidates = [
   },
 ];
 
-function serveApi(activeModels = modelDiscounts.map((row) => row.model)) {
+function serveApi(activeModels = modelDiscounts.map((row) => row.model), pools: ResourcePool[] = []) {
   const writes: { path: string; body: unknown }[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string, options?: RequestInit) => {
-      const path = new URL(input, "http://localhost").pathname;
+      const url = new URL(input, "http://localhost");
+      const path = url.pathname;
+      const poolId = url.searchParams.get("pool_id");
       if (options?.method && options.method !== "GET") {
         const body: unknown = JSON.parse(String(options.body));
-        writes.push({ path, body });
+        writes.push({ path: `${path}${url.search}`, body });
         return new Response(JSON.stringify(path.endsWith("import") ? { items: [] } : wallet), { status: 200 });
       }
       const data = path.endsWith("/model-discounts")
         ? {
             user_id: wallet.user_id,
             plan_id: plan.id,
-            items: path.includes("/admin/plans/")
+            items: poolId
               ? modelDiscounts.map((row) => ({
                   ...row,
-                  discount: row.plan_discount ?? "1",
-                  discount_source: row.plan_discount ? "plan_model" : "standard",
+                  discount: poolId === "source-a" ? "0.5" : "0.9",
+                  discount_source: "pool_default",
+                  customer_discount: null,
+                  plan_discount: null,
+                  pool_id: poolId,
+                  pool_default_discount: poolId === "source-a" ? "0.5" : "0.9",
                 }))
-              : modelDiscounts,
+              : path.includes("/admin/plans/")
+                ? modelDiscounts.map((row) => ({
+                    ...row,
+                    discount: row.plan_discount ?? "1",
+                    discount_source: row.plan_discount ? "plan_model" : "standard",
+                  }))
+                : modelDiscounts,
           }
-        : path.endsWith("/discount-models")
-          ? { models: activeModels }
-          : path.endsWith("/plans")
-            ? { items: [plan] }
-            : path.endsWith("/wallets")
-              ? { items: [wallet], total: 1 }
-              : path.endsWith("/wallet")
-                ? wallet
-                : path.endsWith("/model-prices")
-                  ? {
-                      items: [
-                        {
-                          ...rate,
-                          model: "legacy-model",
-                          version: 1,
-                          updated_at: "2026-01-01T00:00:00Z",
-                          source: "legacy",
-                          source_label: "Existing unverified base price",
-                        },
-                      ],
-                    }
-                  : path.endsWith("/reference-prices")
-                    ? {
-                        items: candidates,
-                        unavailable: [{ model: "unpriced-model", reason: "Manual reference required" }],
-                      }
-                    : { items: [], total: 0 };
+        : path.endsWith("/pool-discount")
+          ? {
+              discount: null,
+              plan_discount: null,
+              pool_default_discount: "0.5",
+              effective_discount: "0.5",
+              discount_source: "pool_default",
+            }
+          : path.endsWith("/pools")
+            ? { items: pools, routing_enabled: pools.length > 0 }
+            : path.endsWith("/discount-models")
+              ? { models: activeModels }
+              : path.endsWith("/plans")
+                ? { items: [plan] }
+                : path.endsWith("/wallets")
+                  ? { items: [wallet], total: 1 }
+                  : path.endsWith("/wallet")
+                    ? wallet
+                    : path.endsWith("/model-prices")
+                      ? {
+                          items: [
+                            {
+                              ...rate,
+                              model: "legacy-model",
+                              version: 1,
+                              updated_at: "2026-01-01T00:00:00Z",
+                              source: "legacy",
+                              source_label: "Existing unverified base price",
+                            },
+                          ],
+                        }
+                      : path.endsWith("/reference-prices")
+                        ? {
+                            items: candidates,
+                            unavailable: [{ model: "unpriced-model", reason: "Manual reference required" }],
+                          }
+                        : { items: [], total: 0 };
       return new Response(JSON.stringify(data), { status: 200 });
     }),
   );
@@ -141,6 +164,56 @@ function renderPanel(panel = <AdminWalletsPanel />) {
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("keeps negotiated model and default discounts inside the selected resource pool", async () => {
+  const pool: ResourcePool = {
+    id: "source-a",
+    name: "Source A",
+    source_kind: "anthropic",
+    description: "",
+    enabled: true,
+    visibility: "public",
+    priority: 0,
+    default_discount: "0.5",
+    version: 1,
+    bindings: [],
+    models: modelDiscounts.map((row) => row.model),
+  };
+  const writes = serveApi(undefined, [pool, { ...pool, id: "source-b", name: "Source B", default_discount: "0.9" }]);
+  renderPanel();
+  fireEvent.click(await screen.findByRole("button", { name: "Model discounts for customer customer-example" }));
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Resource pool" }));
+  await user.click(await screen.findByRole("option", { name: "Source A" }));
+  await user.click(await screen.findByRole("checkbox", { name: "Select model alpha-model" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Pay percentage of reference price (%)" }), {
+    target: { value: "70" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Apply to 1 models" }));
+  await waitFor(() =>
+    expect(writes[0]).toEqual({
+      path: "/retail/admin/wallets/customer-example/model-discounts?pool_id=source-a",
+      body: { models: ["alpha-model"], discount: "0.7" },
+    }),
+  );
+  await waitFor(() => expect(screen.getByRole("button", { name: "Apply to 0 models" })).toBeDisabled());
+  fireEvent.change(screen.getByRole("textbox", { name: "Pool percentage of reference price (%)" }), {
+    target: { value: "60" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save pool default" }));
+  await waitFor(() =>
+    expect(writes[1]).toEqual({
+      path: "/retail/admin/wallets/customer-example/pool-discount?pool_id=source-a",
+      body: { discount: "0.6" },
+    }),
+  );
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save pool default" })).toBeEnabled());
+  await user.click(screen.getByRole("combobox", { name: "Resource pool" }));
+  await user.click(await screen.findByRole("option", { name: "Source B" }));
+  expect(screen.getByRole("button", { name: "Apply to 0 models" })).toBeDisabled();
+  expect(screen.getByRole("textbox", { name: "Pay percentage of reference price (%)" })).toHaveValue("");
+  expect(writes).toHaveLength(2);
+});
 
 it("creates a shared model pricing table without an account-wide discount", async () => {
   const writes = serveApi();

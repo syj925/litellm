@@ -814,7 +814,11 @@ class WalletStore:
             )
             return _wallet_view(await self._read_wallet(connection, user_id))
 
-    async def get_model_discount(self, user_id: str, model: str) -> dict[str, JsonValue]:
+    async def get_model_discount(self, user_id: str, model: str, pool_id: str | None = None) -> dict[str, JsonValue]:
+        if pool_id is not None:
+            from .pool_pricing import get_pool_model_discount
+
+            return await get_pool_model_discount(self, user_id, model, pool_id)
         async with self.transaction() as connection:
             row: Final = await _one(
                 connection,
@@ -841,7 +845,16 @@ class WalletStore:
                 ),
             }
 
-    async def list_model_discounts(self, user_id: str, models: Sequence[str] = ()) -> dict[str, JsonValue]:
+    async def list_model_discounts(
+        self,
+        user_id: str,
+        models: Sequence[str] = (),
+        pool_id: str | None = None,
+    ) -> dict[str, JsonValue]:
+        if pool_id is not None:
+            from .pool_pricing import list_pool_model_discounts
+
+            return await list_pool_model_discounts(self, pool_id, models, user_id=user_id)
         async with self.transaction() as connection:
             wallet: Final = await self._read_wallet(connection, user_id)
             customer_rows: Final = await _many(
@@ -874,7 +887,16 @@ class WalletStore:
                 ],
             }
 
-    async def list_plan_model_discounts(self, plan_id: str, models: Sequence[str] = ()) -> dict[str, JsonValue]:
+    async def list_plan_model_discounts(
+        self,
+        plan_id: str,
+        models: Sequence[str] = (),
+        pool_id: str | None = None,
+    ) -> dict[str, JsonValue]:
+        if pool_id is not None:
+            from .pool_pricing import list_pool_model_discounts
+
+            return await list_pool_model_discounts(self, pool_id, models, plan_id=plan_id)
         async with self.transaction() as connection:
             plan: Final = await _one(
                 connection,
@@ -904,7 +926,12 @@ class WalletStore:
         user_id: str,
         models: Sequence[str],
         discount: str | None,
+        pool_id: str | None = None,
     ) -> dict[str, JsonValue]:
+        if pool_id is not None:
+            from .pool_pricing import set_pool_model_discounts
+
+            return await set_pool_model_discounts(self, pool_id, models, discount, user_id=user_id)
         names: Final = _discount_models(models)
         value: Final = parse_discount(discount) if discount is not None else None
         async with self.transaction() as connection:
@@ -928,7 +955,12 @@ class WalletStore:
         plan_id: str,
         models: Sequence[str],
         discount: str | None,
+        pool_id: str | None = None,
     ) -> dict[str, JsonValue]:
+        if pool_id is not None:
+            from .pool_pricing import set_pool_model_discounts
+
+            return await set_pool_model_discounts(self, pool_id, models, discount, plan_id=plan_id)
         names: Final = _discount_models(models)
         value: Final = parse_discount(discount) if discount is not None else None
         async with self.transaction() as connection:

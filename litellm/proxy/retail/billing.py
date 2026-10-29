@@ -1,6 +1,6 @@
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextvars import ContextVar
 from datetime import datetime
 from typing import Final
@@ -14,6 +14,19 @@ from litellm.integrations.custom_logger import CustomLogger
 from litellm.proxy._types import UserAPIKeyAuth
 
 from .models import InsufficientFunds, ParallelLimitExceeded
+from .pool_routing import (
+    bind_pool_routing,
+    clean_pool_metadata,
+    filter_pool_deployments,
+    guard_pool_deployment,
+    mark_pool_failure,
+    pool_cache_scope,
+    pool_has_uncertain_attempt,
+    pool_metadata,
+    pool_rejected_before_upstream,
+    reset_pool_routing,
+)
+from .pool_store import PoolRouteDecision, PoolStore, router_deployments
 from .pricing import as_mapping, catalog_snapshot, charge_for_usage, reserve_quote, usage_facts
 from .store import WalletStore, get_store
 
@@ -48,6 +61,7 @@ def price_snapshot(
     card: Mapping[str, JsonValue],
     discount: Mapping[str, JsonValue],
     call_type: str,
+    pool: PoolRouteDecision | None = None,
 ) -> dict[str, JsonValue]:
     return {
         **card,
@@ -59,6 +73,15 @@ def price_snapshot(
         "discount_model": discount["model"],
         "plan_id": discount["plan_id"],
         "billing_mode": "embedding" if call_type in {"embedding", "aembedding"} else "text",
+        **(
+            {
+                "resource_pool_id": pool.pool_id,
+                "resource_pool_name": pool.pool_name,
+                "routing_settings_version": pool.settings_version,
+            }
+            if pool is not None
+            else {}
+        ),
     }
 
 
@@ -72,6 +95,22 @@ class RetailBilling(CustomLogger):
     def _store(self) -> WalletStore:
         return self.store if self.store is not None else get_store()
 
+    async def async_filter_listed_models(
+        self,
+        user_api_key_dict: UserAPIKeyAuth,
+        model_names: Sequence[str],
+    ) -> Sequence[str]:
+        if str(user_api_key_dict.user_role) in {"proxy_admin", "LitellmUserRoles.PROXY_ADMIN"}:
+            return model_names
+        if os.getenv("RETAIL_BILLING_ENABLED", "false").lower() != "true" or not model_names:
+            return model_names
+        allowed: Final = await PoolStore(self._store()).key_model_names(
+            user_api_key_dict.user_id or "",
+            as_mapping(user_api_key_dict.metadata).get("retail_resource_policy"),
+            router_deployments(),
+        )
+        return model_names if allowed is None else tuple(model for model in model_names if model in allowed)
+
     async def async_pre_call_hook(
         self,
         user_api_key_dict: UserAPIKeyAuth,
@@ -80,6 +119,7 @@ class RetailBilling(CustomLogger):
         call_type: str,
     ) -> dict[str, object]:
         _active_reservation.set(None)
+        reset_pool_routing()
         if str(user_api_key_dict.user_role) in {"proxy_admin", "LitellmUserRoles.PROXY_ADMIN"}:
             return data
         if os.getenv("RETAIL_BILLING_ENABLED", "false").lower() != "true":
@@ -114,16 +154,33 @@ class RetailBilling(CustomLogger):
         deployments: Final = llm_router.get_model_list(model, team_id=user_api_key_dict.team_id) if llm_router else ()
         if not deployments:
             raise HTTPException(400, "No configured deployment is available for this model")
+        pool: Final = await PoolStore(store).resolve_route(
+            user_id, model, as_mapping(user_api_key_dict.metadata).get("retail_resource_policy"), deployments
+        )
+        bind_pool_routing(model, pool, data)
+        priced_deployments: Final = (
+            tuple(
+                deployment
+                for deployment in deployments
+                if str(as_mapping(deployment.get("model_info")).get("id")) in pool.allowed_deployment_ids
+            )
+            if pool is not None
+            else deployments
+        )
         price: Final = await store.get_model_price(model)
         try:
-            initial: Final = None if price else catalog_snapshot(model, deployments, "1")
+            initial: Final = None if price else catalog_snapshot(model, priced_deployments, "1")
             card: Final = price or await store.get_model_price(model, initial)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         if card is None:
             raise HTTPException(422, "A model sales price is required")
-        discount: Final = await store.get_model_discount(user_id, model)
-        snapshot: Final = price_snapshot(card, discount, call_type)
+        discount: Final = (
+            await store.get_model_discount(user_id, model, pool_id=pool.pool_id)
+            if pool is not None
+            else await store.get_model_discount(user_id, model)
+        )
+        snapshot: Final = price_snapshot(card, discount, call_type, pool)
         embedding: Final = call_type in {"embedding", "aembedding"}
         limit_key: Final = "max_output_tokens" if call_type in {"responses", "aresponses"} else "max_tokens"
         if (
@@ -177,10 +234,46 @@ class RetailBilling(CustomLogger):
         except ParallelLimitExceeded as exc:
             raise HTTPException(429, "Your wallet has reached its concurrent request limit") from exc
         _active_reservation.set(request_id)
-        metadata: Final = {**as_mapping(data.get("metadata")), "retail_request_id": request_id}
-        litellm_metadata: Final = {**as_mapping(data.get("litellm_metadata")), "retail_request_id": request_id}
+        metadata: Final = {
+            **clean_pool_metadata(data.get("metadata"), pool),
+            **pool_metadata(pool),
+            "retail_request_id": request_id,
+        }
+        litellm_metadata: Final = {
+            **clean_pool_metadata(data.get("litellm_metadata"), pool),
+            **pool_metadata(pool),
+            "retail_request_id": request_id,
+        }
         limit: Final = {} if embedding or "max_completion_tokens" in data else {limit_key: output_limit}
-        return {**data, **limit, "metadata": metadata, "litellm_metadata": litellm_metadata}
+        return {
+            **data,
+            **limit,
+            **pool_cache_scope(user_id, pool, data),
+            "metadata": metadata,
+            "litellm_metadata": litellm_metadata,
+        }
+
+    async def async_filter_deployments(
+        self,
+        model: str,
+        healthy_deployments: list[dict[str, object]],
+        messages: list[object] | None,
+        request_kwargs: dict[str, object] | None = None,
+        parent_otel_span: object = None,
+    ) -> list[dict[str, object]]:
+        return filter_pool_deployments(healthy_deployments)
+
+    async def async_pre_call_deployment_hook(self, kwargs: Mapping[str, object], call_type: object) -> None:
+        guard_pool_deployment(kwargs)
+
+    async def async_post_call_failure_deployment_hook(
+        self,
+        request_data: Mapping[str, object],
+        exception: Exception,
+        call_type: object,
+        fallback_depth: int | None = None,
+    ) -> None:
+        mark_pool_failure(exception)
 
     async def _settle(self, data: Mapping[str, object], response: object, provider_cost: object = None) -> None:
         request_id: Final = reservation_id(data)
@@ -237,6 +330,11 @@ class RetailBilling(CustomLogger):
         store: Final = self._store()
         reservation: Final = await store.get_reservation(request_id)
         if reservation is None or reservation["status"] != "reserved":
+            return
+        if pool_rejected_before_upstream():
+            await store.release(request_id, "No eligible resource-pool deployment was contacted")
+            return
+        if pool_has_uncertain_attempt():
             return
         # An interrupted stream or an accounting error is not proof that the provider used nothing.
         if request_data.get("stream") or not isinstance(original_exception, Exception):

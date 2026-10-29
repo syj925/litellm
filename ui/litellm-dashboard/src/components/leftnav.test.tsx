@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../../tests/test-utils";
-import Sidebar, { menuGroups, getBreadcrumb } from "./leftnav";
+import Sidebar, { menuGroups, getBreadcrumb, visibleMenuGroups } from "./leftnav";
 
 vi.mock("../utils/roles", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../utils/roles")>();
@@ -134,6 +134,21 @@ const teamMemberAuthorization = {
 };
 
 describe("Sidebar (leftnav)", () => {
+  it.each([
+    ["Admin", true],
+    ["proxy_admin", true],
+    ["internal", false],
+    ["admin_viewer", false],
+    ["org_admin", false],
+  ])("shows resource pool management for role %s only when permitted", (userRole, expected) => {
+    const visible = visibleMenuGroups(menuGroups, {
+      userRole: String(userRole),
+      isViewOnly: false,
+      isOrgAdmin: false,
+      isTeamAdmin: false,
+    });
+    expect(visible.flatMap((group) => group.items).some((item) => item.page === "resource-pools")).toBe(expected);
+  });
   const defaultProps = {
     collapsed: false,
   };

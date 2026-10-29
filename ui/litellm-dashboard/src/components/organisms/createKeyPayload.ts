@@ -4,6 +4,7 @@ import type { RouterSettingsAccordionValue } from "../common_components/RouterSe
 import type { BudgetWindowEntry } from "../key_team_helpers/BudgetWindowsEditor";
 import type { ModelMaxBudget } from "../key_team_helpers/ModelMaxBudgetEditor";
 import { tagRowsToLimits, type TagRateLimitEntry } from "../key_team_helpers/TagRateLimitEditor";
+import { ResourceRoutingPolicy, withResourcePolicy } from "./resourceRoutingPolicy";
 
 export interface KeyLoggingSetting {
   callback_name?: string;
@@ -30,6 +31,7 @@ export interface KeyCreateInput {
   readonly tagRateLimits: TagRateLimitEntry[];
   readonly budgetFallbacks: Record<string, string[]>;
   readonly modelMaxBudget: ModelMaxBudget;
+  readonly resourcePolicy?: ResourceRoutingPolicy | null;
 }
 
 export type KeyPayloadResult =
@@ -103,7 +105,9 @@ const buildMetadataJson = (values: Record<string, unknown>, input: KeyCreateInpu
     input.disabledCallbacks.length > 0
       ? { ...(logged as object), litellm_disabled_callbacks: mapDisplayToInternalNames(input.disabledCallbacks) }
       : logged;
-  return JSON.stringify(disabled);
+  return JSON.stringify(
+    input.resourcePolicy === undefined ? disabled : withResourcePolicy(disabled, input.resourcePolicy),
+  );
 };
 
 interface PermissionSources {

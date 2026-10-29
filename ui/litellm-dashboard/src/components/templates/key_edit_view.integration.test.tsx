@@ -14,6 +14,11 @@ import {
 } from "../networking";
 import { KeyEditView } from "./key_edit_view";
 
+vi.mock("../retail/api", async (original) => ({
+  ...(await original<typeof import("../retail/api")>()),
+  retailRequest: vi.fn().mockResolvedValue({ routing_enabled: false, items: [] }),
+}));
+
 const can = vi.fn();
 vi.mock("@/app/(dashboard)/hooks/useCan", () => ({
   default: (...args: unknown[]) => can(...args),

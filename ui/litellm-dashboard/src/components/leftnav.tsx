@@ -227,6 +227,13 @@ const menuGroups: MenuGroup[] = [
         roles: rolesAllowedToViewWriteScopedPages,
       },
       {
+        key: "resource-pools",
+        page: "resource-pools",
+        label: "Resource Pools",
+        icon: <Boxes {...ICON} />,
+        roles: ["Admin", "proxy_admin"],
+      },
+      {
         key: "agentic",
         page: "agentic",
         label: "Agentic",

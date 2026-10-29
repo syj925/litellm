@@ -22,7 +22,17 @@ export interface WalletAccount {
   discount_source?: "customer" | "plan";
 }
 
-export type ModelDiscountSource = "customer_model" | "plan_model" | "standard" | "legacy_customer" | "legacy_plan";
+export type ModelDiscountSource =
+  | "customer_model"
+  | "plan_model"
+  | "standard"
+  | "legacy_customer"
+  | "legacy_plan"
+  | "customer_pool_model"
+  | "plan_pool_model"
+  | "customer_pool_default"
+  | "plan_pool_default"
+  | "pool_default";
 
 export interface ModelDiscount {
   model: string;
@@ -30,6 +40,11 @@ export interface ModelDiscount {
   discount_source: ModelDiscountSource;
   customer_discount?: string | null;
   plan_discount: string | null;
+  pool_id?: string;
+  pool_name?: string;
+  customer_pool_discount?: string | null;
+  plan_pool_discount?: string | null;
+  pool_default_discount?: string;
 }
 
 export interface ModelDiscountList {
@@ -45,6 +60,11 @@ export function modelDiscountSourceLabel(source: ModelDiscountSource): string {
     standard: "Standard reference price",
     legacy_customer: "Legacy account fallback",
     legacy_plan: "Legacy plan fallback",
+    customer_pool_model: "Customer pool-model override",
+    plan_pool_model: "Plan pool-model discount",
+    customer_pool_default: "Customer pool default",
+    plan_pool_default: "Plan pool default",
+    pool_default: "Resource pool default",
   };
   return labels[source];
 }
@@ -235,7 +255,18 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
     typeof discount === "string" ? [{ label: "Customer discount", value: discountDescription(discount) }] : [];
   const sourceRows =
     typeof snapshot.discount_source === "string" &&
-    ["customer_model", "plan_model", "standard", "legacy_customer", "legacy_plan"].includes(snapshot.discount_source)
+    [
+      "customer_model",
+      "plan_model",
+      "standard",
+      "legacy_customer",
+      "legacy_plan",
+      "customer_pool_model",
+      "plan_pool_model",
+      "customer_pool_default",
+      "plan_pool_default",
+      "pool_default",
+    ].includes(snapshot.discount_source)
       ? [{ label: "Discount source", value: modelDiscountSourceLabel(snapshot.discount_source as ModelDiscountSource) }]
       : snapshot.discount_source === "customer" || snapshot.discount_source === "plan"
         ? [
@@ -249,11 +280,21 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
     typeof snapshot.discount_model === "string" ? [{ label: "Discount model", value: snapshot.discount_model }] : [];
   const referenceRows =
     typeof snapshot.source_label === "string" ? [{ label: "Reference source", value: snapshot.source_label }] : [];
+  const poolRows =
+    typeof snapshot.pool_id === "string"
+      ? [
+          {
+            label: "Resource pool",
+            value:
+              typeof snapshot.pool_name === "string" ? `${snapshot.pool_name} (${snapshot.pool_id})` : snapshot.pool_id,
+          },
+        ]
+      : [];
   return [
     { title: "Token usage", rows: usageRows },
     {
       title: "Pricing snapshot",
-      rows: [...planRows, ...discountRows, ...modelRows, ...sourceRows, ...referenceRows, ...priceRows],
+      rows: [...planRows, ...poolRows, ...discountRows, ...modelRows, ...sourceRows, ...referenceRows, ...priceRows],
     },
   ].filter(({ rows }) => rows.length > 0);
 }

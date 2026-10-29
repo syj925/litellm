@@ -43,6 +43,7 @@ import {
 import PendingReservations from "./PendingReservations";
 import ModelPrices from "./ModelPrices";
 import ModelDiscountEditor, { DiscountScope } from "./ModelDiscounts";
+import PoolAccessEditor from "./pools/PoolAccessEditor";
 
 interface CreditForm {
   user_id: string;
@@ -74,6 +75,7 @@ export default function AdminWalletsPanel() {
   const [planTarget, setPlanTarget] = useState<WalletAccount | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [discountScope, setDiscountScope] = useState<DiscountScope | null>(null);
+  const [poolAccessUser, setPoolAccessUser] = useState<string | null>(null);
   const page = Math.max(1, filters.page);
 
   const wallets = useQuery({
@@ -324,6 +326,14 @@ export default function AdminWalletsPanel() {
                         }}
                       >
                         Model discounts
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        aria-label={`Resource pool access for customer ${wallet.user_id}`}
+                        onClick={() => setPoolAccessUser(wallet.user_id)}
+                      >
+                        Pool access
                       </Button>
                       <Button
                         size="xs"
@@ -658,6 +668,14 @@ export default function AdminWalletsPanel() {
           accessToken={accessToken}
           scope={discountScope}
           onClose={() => setDiscountScope(null)}
+        />
+      )}
+      {poolAccessUser && (
+        <PoolAccessEditor
+          key={poolAccessUser}
+          accessToken={accessToken}
+          userId={poolAccessUser}
+          onClose={() => setPoolAccessUser(null)}
         />
       )}
     </div>

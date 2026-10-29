@@ -245,6 +245,9 @@ def _public_ledger_details(value: object) -> dict[str, JsonValue]:
         "discount",
         "discount_source",
         "discount_model",
+        "resource_pool_id",
+        "resource_pool_name",
+        "routing_settings_version",
         "source",
         "source_label",
         "catalog_model",
@@ -469,9 +472,22 @@ def _configured_model_names() -> tuple[str, ...]:
 
 
 @router.get("/model-discounts")
-async def own_model_discounts(user: User, store: Store) -> dict[str, JsonValue]:
+async def own_model_discounts(
+    user: User,
+    store: Store,
+    pool_id: str | None = Query(default=None, min_length=1, max_length=80),
+) -> dict[str, JsonValue]:
     await _execute(store.get_wallet(user.user_id or "", create=True))
-    return await _execute(store.list_model_discounts(user.user_id or "", _configured_model_names()))
+    if pool_id is not None:
+        from .pool_store import PoolStore, router_deployments
+
+        catalog: Final = await PoolStore(store).account_catalog(user.user_id or "", router_deployments())
+        items: Final = catalog.get("items")
+        if not isinstance(items, list) or not any(as_mapping(item).get("id") == pool_id for item in items):
+            raise HTTPException(403, "This resource pool is not available to your account")
+    return await _execute(
+        store.list_model_discounts(user.user_id or "", await _discount_scope_models(store, pool_id), pool_id)
+    )
 
 
 @router.get("/admin/discount-models")
@@ -480,13 +496,33 @@ async def admin_discount_models(admin: Admin) -> dict[str, JsonValue]:
 
 
 @router.get("/admin/wallets/{user_id}/model-discounts")
-async def admin_customer_model_discounts(user_id: str, admin: Admin, store: Store) -> dict[str, JsonValue]:
-    return await _execute(store.list_model_discounts(user_id, _configured_model_names()))
+async def admin_customer_model_discounts(
+    user_id: str,
+    admin: Admin,
+    store: Store,
+    pool_id: str | None = Query(default=None, min_length=1, max_length=80),
+) -> dict[str, JsonValue]:
+    return await _execute(store.list_model_discounts(user_id, await _discount_scope_models(store, pool_id), pool_id))
 
 
 @router.get("/admin/plans/{plan_id}/model-discounts")
-async def admin_plan_model_discounts(plan_id: str, admin: Admin, store: Store) -> dict[str, JsonValue]:
-    return await _execute(store.list_plan_model_discounts(plan_id, _configured_model_names()))
+async def admin_plan_model_discounts(
+    plan_id: str,
+    admin: Admin,
+    store: Store,
+    pool_id: str | None = Query(default=None, min_length=1, max_length=80),
+) -> dict[str, JsonValue]:
+    return await _execute(
+        store.list_plan_model_discounts(plan_id, await _discount_scope_models(store, pool_id), pool_id)
+    )
+
+
+async def _discount_scope_models(store: WalletStore, pool_id: str | None) -> tuple[str, ...]:
+    if pool_id is None:
+        return _configured_model_names()
+    from .pool_pricing import pool_model_names
+
+    return await pool_model_names(store, pool_id, _configured_model_names())
 
 
 def _validate_discount_selection(
@@ -509,12 +545,13 @@ async def admin_set_customer_model_discounts(
     data: SetModelDiscountRequest,
     admin: Admin,
     store: Store,
+    pool_id: str | None = Query(default=None, min_length=1, max_length=80),
 ) -> dict[str, JsonValue]:
-    names: Final = _configured_model_names()
-    current: Final = await _execute(store.list_model_discounts(user_id))
+    names: Final = await _discount_scope_models(store, pool_id)
+    current: Final = await _execute(store.list_model_discounts(user_id, pool_id=pool_id))
     _validate_discount_selection(data, names, current)
-    await _execute(store.set_model_discounts(user_id, data.models, data.discount))
-    return await _execute(store.list_model_discounts(user_id, names))
+    await _execute(store.set_model_discounts(user_id, data.models, data.discount, pool_id))
+    return await _execute(store.list_model_discounts(user_id, names, pool_id))
 
 
 @router.put("/admin/plans/{plan_id}/model-discounts")
@@ -523,12 +560,13 @@ async def admin_set_plan_model_discounts(
     data: SetModelDiscountRequest,
     admin: Admin,
     store: Store,
+    pool_id: str | None = Query(default=None, min_length=1, max_length=80),
 ) -> dict[str, JsonValue]:
-    names: Final = _configured_model_names()
-    current: Final = await _execute(store.list_plan_model_discounts(plan_id))
+    names: Final = await _discount_scope_models(store, pool_id)
+    current: Final = await _execute(store.list_plan_model_discounts(plan_id, pool_id=pool_id))
     _validate_discount_selection(data, names, current)
-    await _execute(store.set_plan_model_discounts(plan_id, data.models, data.discount))
-    return await _execute(store.list_plan_model_discounts(plan_id, names))
+    await _execute(store.set_plan_model_discounts(plan_id, data.models, data.discount, pool_id))
+    return await _execute(store.list_plan_model_discounts(plan_id, names, pool_id))
 
 
 @router.get("/admin/wallets")

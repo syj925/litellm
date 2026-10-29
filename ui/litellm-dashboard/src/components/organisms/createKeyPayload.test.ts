@@ -28,6 +28,56 @@ const payloadOf = (result: KeyPayloadResult): Record<string, unknown> => {
   return result.payload;
 };
 
+describe("resource routing on initial key creation", () => {
+  it("stores the exact custom pool-model matrix atomically in native key metadata", () => {
+    const resourcePolicy = {
+      mode: "custom" as const,
+      grants: [
+        { pool_id: "pool-a", models: ["alpha"] },
+        { pool_id: "pool-b", models: ["beta"] },
+      ],
+    };
+    const payload = payloadOf(
+      build(
+        { key_alias: "paired", models: ["alpha", "beta"], metadata: '{"application":"example"}' },
+        { resourcePolicy },
+      ),
+    );
+    expect(JSON.parse(payload.metadata as string)).toEqual({
+      application: "example",
+      retail_resource_policy: resourcePolicy,
+    });
+    expect(payload.models).toEqual(["alpha", "beta"]);
+    expect(payload.user_id).toBe("test-user");
+  });
+
+  it("stores fixed-pool routing for the admin-selected key owner instead of the acting admin", () => {
+    const payload = payloadOf(
+      build(
+        { user_id: "target-user", key_alias: "fixed" },
+        {
+          keyOwner: "another_user",
+          resourcePolicy: { mode: "fixed", pool_id: "pool-a" },
+        },
+      ),
+    );
+    expect(payload.user_id).toBe("target-user");
+    expect(JSON.parse(payload.metadata as string)).toEqual({
+      retail_resource_policy: { mode: "fixed", pool_id: "pool-a" },
+    });
+  });
+
+  it("omits policy metadata for explicit legacy creation without deleting unrelated fields", () => {
+    const payload = payloadOf(
+      build(
+        { metadata: '{"application":"example","retail_resource_policy":{"mode":"auto"}}' },
+        { resourcePolicy: null },
+      ),
+    );
+    expect(JSON.parse(payload.metadata as string)).toEqual({ application: "example" });
+  });
+});
+
 const wireKeys = (payload: Record<string, unknown>): string[] =>
   Object.keys(JSON.parse(JSON.stringify(payload)) as Record<string, unknown>);
 

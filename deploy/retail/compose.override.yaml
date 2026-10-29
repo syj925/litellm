@@ -11,6 +11,7 @@ services:
       - ../litellm/litellm/proxy/retail:/app/.venv/lib/python3.13/site-packages/litellm/proxy/retail:ro
       - ../litellm/litellm/proxy/proxy_server.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/proxy_server.py:ro
       - ../litellm/litellm/proxy/_types.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/_types.py:ro
+      - ../litellm/litellm/proxy/management_endpoints/key_management_endpoints.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/management_endpoints/key_management_endpoints.py:ro
       - ../litellm/litellm/integrations/custom_logger.py:/app/.venv/lib/python3.13/site-packages/litellm/integrations/custom_logger.py:ro
       - ../litellm/litellm/litellm_core_utils/litellm_logging.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/litellm_logging.py:ro
       - ../litellm/ui/litellm-dashboard/out:/app/.venv/lib/python3.13/site-packages/litellm/proxy/_experimental/out:ro

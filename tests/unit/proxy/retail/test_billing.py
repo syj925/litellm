@@ -147,3 +147,21 @@ def test_pricing_snapshot_keeps_the_model_and_plan_from_the_same_discount_decisi
     assert charge_for_usage(saved, UsageFacts(input_tokens=10, output_tokens=1)) == "0.000021000"
     assert charge_for_usage(current, UsageFacts(input_tokens=10, output_tokens=1)) == "0.000024000"
     assert saved["discount"] == "0.7"
+
+
+@pytest.mark.asyncio
+async def test_administrator_model_discovery_keeps_native_results_without_retail_database_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RETAIL_BILLING_ENABLED", "true")
+    admin: Final = UserAPIKeyAuth(user_id="admin", user_role=LitellmUserRoles.PROXY_ADMIN)
+    models: Final = ("shared", "other", "retry")
+    assert await RetailBilling().async_filter_listed_models(admin, models) == models
+
+
+@pytest.mark.asyncio
+async def test_disabled_retail_model_discovery_preserves_native_key_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RETAIL_BILLING_ENABLED", "false")
+    user: Final = UserAPIKeyAuth(user_id="reader", user_role=LitellmUserRoles.INTERNAL_USER)
+    models: Final = ("shared", "other", "retry")
+    assert await RetailBilling().async_filter_listed_models(user, models) == models

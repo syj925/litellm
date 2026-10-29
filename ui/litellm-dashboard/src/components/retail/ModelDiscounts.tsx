@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/lib/toast";
 import {
@@ -29,6 +30,60 @@ import {
   percentToDiscount,
   retailRequest,
 } from "./api";
+import { PoolCatalog, ResourcePool } from "./pools/types";
+
+const legacyPool = "__legacy";
+const poolQuery = (path: string, poolId: string) =>
+  poolId === legacyPool ? path : `${path}?pool_id=${encodeURIComponent(poolId)}`;
+
+function PoolSelector({
+  pools,
+  value,
+  onChange,
+  disabled = false,
+}: {
+  pools: { id: string; name: string }[];
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const options = [
+    { value: legacyPool, label: "Legacy / unpooled" },
+    ...pools.map((pool) => ({ value: pool.id, label: pool.name })),
+  ];
+  return (
+    <Field className="max-w-sm">
+      <FieldLabel htmlFor="discount-resource-pool">Resource pool</FieldLabel>
+      <Select
+        disabled={disabled}
+        items={options}
+        value={value}
+        onValueChange={(next) => {
+          if (next) onChange(next);
+        }}
+      >
+        <SelectTrigger id="discount-resource-pool" className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Field>
+  );
+}
+
+interface PoolDiscountDefault {
+  discount: string | null;
+  plan_discount?: string | null;
+  pool_default_discount: string;
+  effective_discount: string;
+  discount_source: ModelDiscount["discount_source"];
+}
 
 export type DiscountScope = { kind: "customer" | "plan"; id: string; name: string };
 
@@ -62,10 +117,22 @@ export function CustomerModelDiscounts({
   enabled: boolean;
 }) {
   const [search, setSearch] = useState("");
-  const pricing = useQuery({
-    queryKey: ["retail", "model-discounts", "self", userId],
-    queryFn: () => retailRequest<ModelDiscountList>("/model-discounts", accessToken),
+  const [poolId, setPoolId] = useState<string | null>(null);
+  const pools = useQuery({
+    queryKey: ["retail", "pools", "self", userId],
+    queryFn: () => retailRequest<PoolCatalog>("/pools", accessToken),
     enabled: enabled && Boolean(accessToken) && Boolean(userId),
+  });
+  const selectedPoolId =
+    poolId ?? (pools.data?.routing_enabled && pools.data.items.length ? pools.data.items[0].id : legacyPool);
+  const selectedPoolName =
+    selectedPoolId === legacyPool
+      ? "Legacy / unpooled"
+      : pools.data?.items.find((pool) => pool.id === selectedPoolId)?.name ?? selectedPoolId;
+  const pricing = useQuery({
+    queryKey: ["retail", "model-discounts", "self", userId, selectedPoolId],
+    queryFn: () => retailRequest<ModelDiscountList>(poolQuery("/model-discounts", selectedPoolId), accessToken),
+    enabled: enabled && Boolean(accessToken) && Boolean(userId) && Boolean(pools.data),
   });
   const rows = pricing.data?.items.filter((row) => row.model.toLowerCase().includes(search.toLowerCase())) ?? [];
   return (
@@ -74,7 +141,8 @@ export function CustomerModelDiscounts({
         <div>
           <h2 className="text-base font-medium">Your model discounts</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Each model has its own effective discount. Charges use that model&apos;s reference rates.
+            Pricing is negotiated per resource pool and public model. Legacy rules are separate and are not copied into
+            pools.
           </p>
         </div>
         <Input
@@ -85,18 +153,22 @@ export function CustomerModelDiscounts({
           onChange={(event) => setSearch(event.target.value)}
         />
       </div>
-      {pricing.isPending ? (
+      <div className="border-b p-4">
+        <PoolSelector pools={pools.data?.items ?? []} value={selectedPoolId} onChange={setPoolId} />
+      </div>
+      {pools.isPending || (pricing.isPending && !pools.error) ? (
         <LoadingState title="Loading model discounts" description="Retrieving your effective model pricing." />
-      ) : pricing.error ? (
+      ) : pricing.error || pools.error ? (
         <Alert variant="error">
           <CircleAlert />
           <AlertTitle>Unable to load model discounts</AlertTitle>
-          <AlertDescription>{pricing.error.message}</AlertDescription>
+          <AlertDescription>{(pricing.error ?? pools.error)?.message}</AlertDescription>
         </Alert>
       ) : (
         <Table>
           <TableHeader className="bg-muted/40">
             <TableRow>
+              <TableHead>Resource pool</TableHead>
               <TableHead>Public model</TableHead>
               <TableHead>Effective discount</TableHead>
               <TableHead>Your model override</TableHead>
@@ -107,12 +179,13 @@ export function CustomerModelDiscounts({
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.model}>
+                <TableCell className="text-xs">{selectedPoolName}</TableCell>
                 <DiscountRow row={row} customer />
               </TableRow>
             ))}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                   No matching model discounts
                 </TableCell>
               </TableRow>
@@ -121,8 +194,8 @@ export function CustomerModelDiscounts({
         </Table>
       )}
       <p className="border-t px-5 py-3 text-xs text-muted-foreground">
-        Customer model overrides take priority over shared-plan model discounts. Models without a negotiated discount
-        use 100% of the reference price. Existing legacy fallbacks remain labeled until explicitly replaced.
+        Within a pool, customer-model and plan-model rules take priority over customer-pool, plan-pool, and resource
+        pool defaults. Discounts do not grant model access.
       </p>
     </section>
   );
@@ -142,12 +215,41 @@ export default function ModelDiscountEditor({
   const [selected, setSelected] = useState<string[]>([]);
   const [percentage, setPercentage] = useState("");
   const [validation, setValidation] = useState<string | null>(null);
-  const path =
+  const [selectedPoolId, setSelectedPoolId] = useState(legacyPool);
+  const [defaultPercentage, setDefaultPercentage] = useState<string | null>(null);
+  const basePath =
     scope.kind === "customer"
       ? `/admin/wallets/${encodeURIComponent(scope.id)}/model-discounts`
       : `/admin/plans/${encodeURIComponent(scope.id)}/model-discounts`;
+  const path = poolQuery(basePath, selectedPoolId);
+  const pools = useQuery({
+    queryKey: ["retail", "pools", "admin"],
+    queryFn: () => retailRequest<{ items: ResourcePool[] }>("/admin/pools", accessToken),
+    enabled: Boolean(accessToken),
+  });
+  const selectedPool = pools.data?.items.find((pool) => pool.id === selectedPoolId);
+  const defaultPath = poolQuery(
+    scope.kind === "customer"
+      ? `/admin/wallets/${encodeURIComponent(scope.id)}/pool-discount`
+      : `/admin/plans/${encodeURIComponent(scope.id)}/pool-discount`,
+    selectedPoolId,
+  );
+  const poolDefault = useQuery({
+    queryKey: ["retail", "pool-discount", scope.kind, scope.id, selectedPoolId],
+    queryFn: () => retailRequest<PoolDiscountDefault>(defaultPath, accessToken),
+    enabled: Boolean(accessToken) && selectedPoolId !== legacyPool,
+  });
+  const defaultMutation = useMutation({
+    mutationFn: (discount: string | null) =>
+      retailRequest(defaultPath, accessToken, { method: "PUT", body: JSON.stringify({ discount }) }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["retail"] });
+      setDefaultPercentage(null);
+      toast.success("Pool default discount updated");
+    },
+  });
   const discounts = useQuery({
-    queryKey: ["retail", "model-discounts", scope.kind, scope.id],
+    queryKey: ["retail", "model-discounts", scope.kind, scope.id, selectedPoolId],
     queryFn: () => retailRequest<ModelDiscountList>(path, accessToken),
     enabled: Boolean(accessToken),
   });
@@ -170,7 +272,7 @@ export default function ModelDiscountEditor({
     },
   });
   const rows = discounts.data?.items.filter((row) => row.model.toLowerCase().includes(search.toLowerCase())) ?? [];
-  const configuredModels = catalog.data?.models ?? [];
+  const configuredModels = selectedPoolId === legacyPool ? catalog.data?.models ?? [] : selectedPool?.models ?? [];
   const selectedIsCurrent = selected.every((model) => configuredModels.includes(model));
   const ownsOverride = (row: ModelDiscount) =>
     scope.kind === "customer" ? row.customer_discount != null : row.plan_discount != null;
@@ -178,9 +280,9 @@ export default function ModelDiscountEditor({
     (model) =>
       configuredModels.includes(model) || discounts.data?.items.some((row) => row.model === model && ownsOverride(row)),
   );
-  const busy = mutation.isPending;
-  const loading = discounts.isPending || catalog.isPending;
-  const error = discounts.error ?? catalog.error;
+  const busy = mutation.isPending || defaultMutation.isPending;
+  const loading = discounts.isPending || catalog.isPending || pools.isPending;
+  const error = discounts.error ?? catalog.error ?? pools.error;
   const hasLegacyAccount = discounts.data?.items.some((row) => row.discount_source === "legacy_customer");
   const hasLegacyPlan = discounts.data?.items.some((row) => row.discount_source === "legacy_plan");
   const submit = (clear: boolean) => {
@@ -210,10 +312,96 @@ export default function ModelDiscountEditor({
             {scope.name} · {scope.id}
           </DialogDescription>
         </DialogHeader>
+        <PoolSelector
+          disabled={busy}
+          pools={pools.data?.items ?? []}
+          value={selectedPoolId}
+          onChange={(value) => {
+            setSelectedPoolId(value);
+            setSelected([]);
+            setPercentage("");
+            setDefaultPercentage(null);
+            setValidation(null);
+            mutation.reset();
+            defaultMutation.reset();
+          }}
+        />
         <p className="text-sm text-muted-foreground">
           Choose explicit public models, then set the percentage paid for only those models. 70 means pay 70% of each
           model&apos;s reference price. Unselected models keep their current rules.
         </p>
+        {selectedPoolId === legacyPool ? (
+          <p className="rounded-lg border bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground">
+            Legacy / unpooled rules apply only to requests outside resource pool routing. These rules are not
+            automatically reused for any new pool.
+          </p>
+        ) : (
+          <div className="rounded-lg border bg-muted/20 p-4">
+            <h3 className="text-sm font-medium">
+              {scope.kind === "customer" ? "Customer" : "Shared plan"} default for {selectedPool?.name}
+            </h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Applies within this pool when neither customer-model nor shared-plan model rules apply.
+            </p>
+            {poolDefault.isPending ? (
+              <p className="mt-3 text-xs text-muted-foreground">Loading pool pricing...</p>
+            ) : poolDefault.error ? (
+              <Alert variant="error">
+                <AlertTitle>{poolDefault.error.message}</AlertTitle>
+              </Alert>
+            ) : (
+              <>
+                <div className="mt-4 flex flex-wrap items-end gap-2">
+                  <Field className="max-w-xs flex-1">
+                    <FieldLabel htmlFor="scoped-pool-default">Pool percentage of reference price (%)</FieldLabel>
+                    <Input
+                      id="scoped-pool-default"
+                      inputMode="decimal"
+                      placeholder="Inherit pool pricing"
+                      value={
+                        defaultPercentage ??
+                        (poolDefault.data?.discount ? discountToPercent(poolDefault.data.discount) : "")
+                      }
+                      onChange={(event) => setDefaultPercentage(event.target.value)}
+                      disabled={busy}
+                    />
+                  </Field>
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      const value = percentToDiscount(
+                        defaultPercentage ??
+                          (poolDefault.data?.discount ? discountToPercent(poolDefault.data.discount) : ""),
+                      );
+                      if (value === null) {
+                        setValidation("Enter a pool percentage greater than 0 and at most 100.");
+                        return;
+                      }
+                      setValidation(null);
+                      defaultMutation.mutate(value);
+                    }}
+                  >
+                    Save pool default
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => defaultMutation.mutate(null)}>
+                    Use inherited default
+                  </Button>
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Effective pool default:{" "}
+                  {poolDefault.data ? discountDescription(poolDefault.data.effective_discount) : "..."} ·{" "}
+                  {poolDefault.data ? modelDiscountSourceLabel(poolDefault.data.discount_source) : ""}
+                </p>
+              </>
+            )}
+            {defaultMutation.error && (
+              <Alert variant="error">
+                <AlertTitle>{defaultMutation.error.message}</AlertTitle>
+              </Alert>
+            )}
+          </div>
+        )}
         {(hasLegacyAccount || hasLegacyPlan) && (
           <Alert>
             <AlertTitle>
@@ -348,11 +536,15 @@ export default function ModelDiscountEditor({
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          {scope.kind === "customer"
-            ? "Removing customer overrides restores the shared plan's model discount, or the standard reference price when no model rule exists."
-            : "Removing plan model overrides restores the standard reference price for these models."}{" "}
-          Existing legacy account/plan fallbacks are preserved and labeled. New requests use the updated rule;
-          historical bills retain their original snapshot.
+          {selectedPoolId !== legacyPool
+            ? "Removing a model override restores the next eligible pricing rule within this resource pool."
+            : scope.kind === "customer"
+              ? "Removing customer overrides restores the shared plan's model discount, or the standard reference price when no model rule exists."
+              : "Removing plan model overrides restores the standard reference price for these models."}{" "}
+          {selectedPoolId === legacyPool
+            ? "Existing legacy account/plan fallbacks are preserved and labeled."
+            : "Pool pricing inherits customer-pool, plan-pool, and resource pool defaults after model overrides are removed."}{" "}
+          New requests use the updated rule; historical bills retain their original snapshot.
         </p>
         {(validation || mutation.error) && (
           <Alert variant="error">
