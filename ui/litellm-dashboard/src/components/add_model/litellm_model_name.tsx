@@ -2,6 +2,7 @@ import React from "react";
 import { MultiSelect } from "@/components/shared/MultiSelect";
 import { useFormContext, useWatch } from "react-hook-form";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { requiredRule } from "../common_components/formRules";
 import { labelWithHint } from "@/components/shared/form/LabelWithHint";
 import { MountedFormField, type MountedFormValues } from "../common_components/MountedFormField";
@@ -20,40 +21,38 @@ const LiteLLMModelNameField: React.FC<LiteLLMModelNameFieldProps> = ({
 }) => {
   const form = useFormContext<MountedFormValues>();
   const modelValue = useWatch({ control: form.control, name: "model" });
-  const selectedModels = Array.isArray(modelValue) ? modelValue : [modelValue];
+  const selectedModels = (Array.isArray(modelValue) ? modelValue : [modelValue]).filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
+  const isAzure = selectedProvider === Providers.Azure || selectedProvider === "Azure";
+  const usesCustomCatalog = ["OpenAI_Compatible", Providers.OpenAI_Compatible, "Ollama", Providers.Ollama].includes(
+    selectedProvider ?? "",
+  );
+  const availableModels = Array.from(
+    new Set(
+      (usesCustomCatalog ? [] : providerModels).filter((model) => model && !["custom", "all-wildcard"].includes(model)),
+    ),
+  );
+  const selectableModels = Array.from(
+    new Set([...availableModels, ...selectedModels.filter((model) => !["custom", "all-wildcard"].includes(model))]),
+  );
 
   const handleModelChange = (value: string | string[]) => {
-    // Ensure value is always treated as an array
     const values = Array.isArray(value) ? value : [value];
-
-    // If "all-wildcard" is selected, clear the model_name field
+    form.setValue("model_name", undefined);
     if (values.includes("all-wildcard")) {
-      form.setValue("model_name", undefined);
+      form.setValue("model", ["all-wildcard"], { shouldDirty: true });
       form.setValue("model_mappings", []);
     } else {
-      // Get current model value to check if we need to update
-      const currentModel = form.getValues("model");
-
-      // Only update if the value has actually changed
-      if (JSON.stringify(currentModel) !== JSON.stringify(values)) {
-        // Create mappings first
-        const mappings = values.map((model) => {
-          if (selectedProvider === Providers.Azure) {
-            return {
-              public_name: model,
-              litellm_model: `azure/${model}`,
-            };
-          }
-          return {
-            public_name: model,
-            litellm_model: model,
-          };
-        });
-
-        // Update both fields in one call to reduce re-renders
-        form.setValue("model", values);
-        form.setValue("model_mappings", mappings);
-      }
+      const previous = (form.getValues("model_mappings") ?? []) as { public_name: string; litellm_model: string }[];
+      const mappings = values.map((model) => {
+        const target = isAzure ? `azure/${model}` : model;
+        return (
+          previous.find((mapping) => mapping.litellm_model === target) ?? { public_name: model, litellm_model: target }
+        );
+      });
+      form.setValue("model", values, { shouldDirty: true, shouldValidate: true });
+      form.setValue("model_mappings", mappings, { shouldDirty: true });
     }
   };
 
@@ -116,9 +115,7 @@ const LiteLLMModelNameField: React.FC<LiteLLMModelNameFieldProps> = ({
         className="mb-0"
       >
         {(control) =>
-          selectedProvider === Providers.Azure ||
-          selectedProvider === Providers.OpenAI_Compatible ||
-          selectedProvider === Providers.Ollama ? (
+          isAzure ? (
             <Input
               id={control.id}
               value={(control.value as string | undefined) ?? ""}
@@ -131,14 +128,20 @@ const LiteLLMModelNameField: React.FC<LiteLLMModelNameFieldProps> = ({
                 }
               }}
             />
-          ) : providerModels.length > 0 && !(typeof control.value === "string" && control.value !== "") ? (
+          ) : selectedProvider ? (
             <MultiSelect
               id={control.id}
               placeholder="Select models"
               emptyText="No models found"
-              value={Array.isArray(control.value) ? control.value : []}
+              value={
+                Array.isArray(control.value)
+                  ? control.value
+                  : typeof control.value === "string" && control.value
+                    ? [control.value]
+                    : []
+              }
+              allowCustomValues
               onValueChange={(value: string[]) => {
-                control.onChange(value);
                 handleModelChange(value);
               }}
               options={[
@@ -150,12 +153,12 @@ const LiteLLMModelNameField: React.FC<LiteLLMModelNameFieldProps> = ({
                   label: `All ${selectedProvider ?? "provider"} Models (Wildcard)`,
                   value: "all-wildcard",
                 },
-                ...providerModels.map((model) => ({
+                ...selectableModels.map((model) => ({
                   label: model,
                   value: model,
                 })),
               ]}
-              className="w-full"
+              className="max-h-40 w-full overflow-y-auto"
             />
           ) : (
             <Input
@@ -168,6 +171,24 @@ const LiteLLMModelNameField: React.FC<LiteLLMModelNameFieldProps> = ({
           )
         }
       </MountedFormField>
+
+      {!isAzure && selectedProvider && availableModels.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" size="xs" onClick={() => handleModelChange(availableModels)}>
+            Select all {availableModels.length} catalog models
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            disabled={selectedModels.length === 0}
+            onClick={() => handleModelChange([])}
+          >
+            Clear selection
+          </Button>
+          <span className="text-xs text-muted-foreground">{selectedModels.length} selected</span>
+        </div>
+      )}
 
       {selectedModels.includes("custom") && (
         <MountedFormField

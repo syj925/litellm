@@ -20665,8 +20665,10 @@ async def get_routes():
 
 if os.getenv("RETAIL_PORTAL_ENABLED", "false").lower() == "true":
     from litellm.proxy.retail.api import router as retail_router
+    from litellm.proxy.retail.model_discovery import router as model_discovery_router
 
     app.include_router(retail_router)
+    app.include_router(model_discovery_router)
 
 app.include_router(router)
 app.include_router(response_router)

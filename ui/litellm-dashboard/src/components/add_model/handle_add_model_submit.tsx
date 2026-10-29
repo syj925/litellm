@@ -3,10 +3,13 @@ import { Model, modelCreateCall } from "../networking";
 import { provider_map } from "../provider_info_helpers";
 import { ptuPickerToUtcIso } from "../../utils/ptuDatetime";
 
-export const prepareModelAddRequest = async (formValues: Record<string, any>, accessToken: string, form: any) => {
+export const prepareModelAddRequest = async (inputValues: Record<string, any>, accessToken: string, form: any) => {
   try {
+    const formValues = { ...inputValues };
     // Get model mappings and safely remove from formValues
-    const modelMappings = formValues["model_mappings"] || [];
+    const modelMappings = (formValues["model_mappings"] || []).map((mapping: Record<string, string>) => ({
+      ...mapping,
+    }));
     if ("model_mappings" in formValues) {
       delete formValues["model_mappings"];
     }
@@ -26,6 +29,55 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
       formValues["model"] = wildcardModel;
     }
 
+    // Handle pricing conversion before processing other fields
+    // Use explicit checks to allow 0 (zero cost models for budget bypass)
+    if (
+      formValues.input_cost_per_token !== undefined &&
+      formValues.input_cost_per_token !== null &&
+      formValues.input_cost_per_token !== ""
+    ) {
+      formValues.input_cost_per_token = Number(formValues.input_cost_per_token) / 1000000;
+    }
+    if (
+      formValues.output_cost_per_token !== undefined &&
+      formValues.output_cost_per_token !== null &&
+      formValues.output_cost_per_token !== ""
+    ) {
+      formValues.output_cost_per_token = Number(formValues.output_cost_per_token) / 1000000;
+    }
+
+    // Cache Read Cost: if blank, default to Input Cost (already token-unit converted above)
+    if (
+      formValues.cache_read_input_token_cost !== undefined &&
+      formValues.cache_read_input_token_cost !== null &&
+      formValues.cache_read_input_token_cost !== ""
+    ) {
+      formValues.cache_read_input_token_cost = Number(formValues.cache_read_input_token_cost) / 1000000;
+    } else if (
+      formValues.input_cost_per_token !== undefined &&
+      formValues.input_cost_per_token !== null &&
+      formValues.input_cost_per_token !== ""
+    ) {
+      formValues.cache_read_input_token_cost = Number(formValues.input_cost_per_token);
+    } else {
+      delete formValues.cache_read_input_token_cost;
+    }
+
+    // Cache Write Cost: explicit value if provided, else leave unset so the
+    // backend keeps the model-level default (per-second pricing, model_prices
+    // entries, etc.). Sending 0 here would overwrite that default.
+    // The backend falls back to input_cost_per_token when this key is absent.
+    if (
+      formValues.cache_creation_input_token_cost !== undefined &&
+      formValues.cache_creation_input_token_cost !== null &&
+      formValues.cache_creation_input_token_cost !== ""
+    ) {
+      formValues.cache_creation_input_token_cost = Number(formValues.cache_creation_input_token_cost) / 1000000;
+    } else {
+      delete formValues.cache_creation_input_token_cost;
+    }
+    // Keep input_cost_per_second as is, no conversion needed
+
     // Create a deployment for each mapping
     const deployments = [];
     for (const mapping of modelMappings) {
@@ -36,59 +88,10 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
       const modelName = mapping.public_name;
       litellmParamsObj["model"] = mapping.litellm_model;
 
-      // Handle pricing conversion before processing other fields
-      // Use explicit checks to allow 0 (zero cost models for budget bypass)
-      if (
-        formValues.input_cost_per_token !== undefined &&
-        formValues.input_cost_per_token !== null &&
-        formValues.input_cost_per_token !== ""
-      ) {
-        formValues.input_cost_per_token = Number(formValues.input_cost_per_token) / 1000000;
-      }
-      if (
-        formValues.output_cost_per_token !== undefined &&
-        formValues.output_cost_per_token !== null &&
-        formValues.output_cost_per_token !== ""
-      ) {
-        formValues.output_cost_per_token = Number(formValues.output_cost_per_token) / 1000000;
-      }
-
-      // Cache Read Cost: if blank, default to Input Cost (already token-unit converted above)
-      if (
-        formValues.cache_read_input_token_cost !== undefined &&
-        formValues.cache_read_input_token_cost !== null &&
-        formValues.cache_read_input_token_cost !== ""
-      ) {
-        formValues.cache_read_input_token_cost = Number(formValues.cache_read_input_token_cost) / 1000000;
-      } else if (
-        formValues.input_cost_per_token !== undefined &&
-        formValues.input_cost_per_token !== null &&
-        formValues.input_cost_per_token !== ""
-      ) {
-        formValues.cache_read_input_token_cost = Number(formValues.input_cost_per_token);
-      } else {
-        delete formValues.cache_read_input_token_cost;
-      }
-
-      // Cache Write Cost: explicit value if provided, else leave unset so the
-      // backend keeps the model-level default (per-second pricing, model_prices
-      // entries, etc.). Sending 0 here would overwrite that default.
-      // The backend falls back to input_cost_per_token when this key is absent.
-      if (
-        formValues.cache_creation_input_token_cost !== undefined &&
-        formValues.cache_creation_input_token_cost !== null &&
-        formValues.cache_creation_input_token_cost !== ""
-      ) {
-        formValues.cache_creation_input_token_cost = Number(formValues.cache_creation_input_token_cost) / 1000000;
-      } else {
-        delete formValues.cache_creation_input_token_cost;
-      }
-      // Keep input_cost_per_second as is, no conversion needed
-
       // Iterate through the key-value pairs in formValues
       litellmParamsObj["model"] = mapping.litellm_model;
       for (const [key, value] of Object.entries(formValues)) {
-        if (value === "") {
+        if (value === "" || value === undefined) {
           continue;
         }
         if (key === "litellm_credential_name" && value == null) {
@@ -99,7 +102,7 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
           continue;
         }
         if (key == "model_name") {
-          litellmParamsObj["model"] = value;
+          if (modelMappings.length === 1) litellmParamsObj["model"] = value;
         } else if (key == "custom_llm_provider") {
           const providerKey = value as string;
           const mappingResult = provider_map[providerKey as keyof typeof provider_map] ?? providerKey.toLowerCase();

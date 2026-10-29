@@ -6,6 +6,75 @@ vi.mock("../networking", () => ({
 }));
 
 describe("prepareModelAddRequest", () => {
+  it("converts all token prices once for every model without mutating the form", async () => {
+    const values = {
+      model_mappings: [
+        { public_name: "first", litellm_model: "openai/first" },
+        { public_name: "second", litellm_model: "openai/second" },
+      ],
+      input_cost_per_token: "2",
+      output_cost_per_token: "10",
+      cache_read_input_token_cost: "0.2",
+      cache_creation_input_token_cost: "2.5",
+      model_name: "stale-single-model",
+    };
+    const original = structuredClone(values);
+    const deployments = await prepareModelAddRequest(values, "token", null);
+    expect(deployments).toHaveLength(2);
+    expect(deployments!.map((deployment) => deployment.litellmParamsObj.model)).toEqual([
+      "openai/first",
+      "openai/second",
+    ]);
+    for (const deployment of deployments!) {
+      expect(deployment.litellmParamsObj).toMatchObject({
+        input_cost_per_token: 0.000002,
+        output_cost_per_token: 0.00001,
+        cache_creation_input_token_cost: 0.0000025,
+      });
+      expect(deployment.litellmParamsObj.cache_read_input_token_cost).toBeCloseTo(0.0000002, 15);
+    }
+    expect(values).toEqual(original);
+    expect(await prepareModelAddRequest(values, "token", null)).toEqual(deployments);
+  });
+
+  it("uses the same default cache read price for each model and preserves explicit free pricing", async () => {
+    const deployments = await prepareModelAddRequest(
+      {
+        model_mappings: [
+          { public_name: "first", litellm_model: "first" },
+          { public_name: "second", litellm_model: "second" },
+        ],
+        input_cost_per_token: "2",
+        output_cost_per_token: "0",
+        cache_creation_input_token_cost: "0",
+      },
+      "token",
+      null,
+    );
+    expect(deployments).toHaveLength(2);
+    for (const deployment of deployments!) {
+      expect(deployment.litellmParamsObj).toMatchObject({
+        input_cost_per_token: 0.000002,
+        output_cost_per_token: 0,
+        cache_read_input_token_cost: 0.000002,
+        cache_creation_input_token_cost: 0,
+      });
+    }
+  });
+
+  it("keeps the selected routing model when the old single-name field was cleared", async () => {
+    const deployments = await prepareModelAddRequest(
+      {
+        model_name: undefined,
+        model_mappings: [{ public_name: "friendly", litellm_model: "openai/upstream-model" }],
+      },
+      "token",
+      null,
+    );
+    expect(deployments?.[0].litellmParamsObj.model).toBe("openai/upstream-model");
+    expect(deployments?.[0].modelName).toBe("friendly");
+  });
+
   it("returns deployment data for the most basic form", async () => {
     const formValues = {
       model_mappings: [

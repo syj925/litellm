@@ -14664,6 +14664,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/model-discovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Model Discovery */
+        post: operations["model_discovery_retail_admin_model_discovery_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/model-prices": {
         parameters: {
             query?: never;
@@ -39428,6 +39445,35 @@ export interface components {
              * @description The window (in days) used to bucket 'imminent' models.
              */
             warn_within_days: number;
+        };
+        /** ModelDiscoveryRequest */
+        ModelDiscoveryRequest: {
+            /** Credential Name */
+            credential_name?: string | null;
+            /** Protocol */
+            protocol?: ("openai" | "anthropic" | "gemini" | "ollama") | null;
+            /** Provider */
+            provider: string;
+            /** Upstream Api Base */
+            upstream_api_base?: string | null;
+            /** Upstream Api Key */
+            upstream_api_key?: string | null;
+        };
+        /** ModelDiscoveryResponse */
+        ModelDiscoveryResponse: {
+            /** Count */
+            count: number;
+            /** Models */
+            models: string[];
+            /**
+             * Protocol
+             * @enum {string}
+             */
+            protocol: "openai" | "anthropic" | "gemini" | "ollama";
+            /** Source */
+            source: string;
+            /** Truncated */
+            truncated: boolean;
         };
         /** ModelGroupInfoProxy */
         ModelGroupInfoProxy: {
@@ -72330,6 +72376,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: components["schemas"]["JsonValue"];
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    model_discovery_retail_admin_model_discovery_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelDiscoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelDiscoveryResponse"];
                 };
             };
             /** @description Validation Error */

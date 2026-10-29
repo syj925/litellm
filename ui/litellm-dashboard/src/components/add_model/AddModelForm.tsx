@@ -34,6 +34,7 @@ import AccessGroupTagsCombobox from "./AccessGroupTagsCombobox";
 import AdvancedSettings from "./advanced_settings";
 import ConditionalPublicModelName from "./conditional_public_model_name";
 import LiteLLMModelNameField from "./litellm_model_name";
+import UpstreamModelPicker from "./UpstreamModelPicker";
 import ConnectionErrorDisplay from "./model_connection_test";
 import ProviderSpecificFields from "./provider_specific_fields";
 import { TEST_MODES } from "./add_model_modes";
@@ -167,7 +168,9 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
   const applyProviderSelection = (provider: string | null) => {
     setSelectedProvider(provider);
     form.setValue("model", []);
+    form.setValue("model_mappings", []);
     form.setValue("model_name", undefined);
+    form.setValue("custom_model_name", undefined);
   };
 
   const providerMetadataErrorText = providerMetadataError
@@ -262,6 +265,11 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                         selectedProvider={selectedProvider}
                         providerModels={providerModels}
                         getPlaceholder={getPlaceholder}
+                      />
+                      <UpstreamModelPicker
+                        selectedProvider={selectedProvider}
+                        accessToken={accessToken}
+                        canDiscover={isProxyAdminRole(userRole ?? "") && !isViewOnly}
                       />
                       <DecisionModelNote catalog={decisionCatalog} litellmProvider={pickedLitellmProvider} />
 
