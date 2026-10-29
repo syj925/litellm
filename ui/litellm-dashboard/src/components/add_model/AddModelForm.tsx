@@ -47,6 +47,7 @@ import { toast } from "@/lib/toast";
 import { isProxyAdminRole } from "@/utils/roles";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import ChannelSetup from "./ChannelSetup";
 
 interface AddModelFormProps {
   form: UseFormReturn<MountedFormValues>; // For the Add Model tab
@@ -90,6 +91,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
   const [testMode, setTestMode] = useState<string>("chat");
   const [isResultModalVisible, setIsResultModalVisible] = useState<boolean>(false);
   const [isTestingConnection, setIsTestingConnection] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   // Using a unique ID to force the ConnectionErrorDisplay to remount and run a fresh test
   const [connectionTestId, setConnectionTestId] = useState<string>("");
 
@@ -200,11 +202,15 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void handleOk().then((submitted) => {
-                    if (submitted) {
-                      setTeamAdminSelectedTeam(null);
-                    }
-                  });
+                  if (isSubmitting) return;
+                  setIsSubmitting(true);
+                  void handleOk()
+                    .then((submitted) => {
+                      if (submitted) {
+                        setTeamAdminSelectedTeam(null);
+                      }
+                    })
+                    .finally(() => setIsSubmitting(false));
                 }}
               >
                 <>
@@ -240,6 +246,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                   )}
                   {(isAdmin || (isTeamAdmin && teamAdminSelectedTeam)) && (
                     <>
+                      {isProxyAdminRole(userRole ?? "") && !isViewOnly && <ChannelSetup accessToken={accessToken} />}
                       <MountedFormField
                         label={labelWithHint("Provider", "E.g. OpenAI, Azure OpenAI, Anthropic, Bedrock, etc.")}
                         name="custom_llm_provider"
@@ -482,8 +489,13 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                       >
                         Test Connect
                       </Button>
-                      <Button data-testid="add-model-btn" type="submit">
-                        Add Model
+                      <Button
+                        data-testid="add-model-btn"
+                        type="submit"
+                        disabled={isSubmitting}
+                        aria-busy={isSubmitting}
+                      >
+                        {isSubmitting ? "Saving channel and models..." : "Add Model"}
                       </Button>
                     </div>
                   </div>

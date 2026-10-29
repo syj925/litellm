@@ -41,7 +41,7 @@ import { getPolicyInfoWithGuardrails, keyDeleteCall, keyUpdateCall } from "../ne
 import { useResetKeySpend } from "@/app/(dashboard)/hooks/keys/useResetKeySpend";
 import { useSetKeyBlockedState } from "@/app/(dashboard)/hooks/keys/useSetKeyBlockedState";
 import { keyKeys } from "@/app/(dashboard)/hooks/keys/useKeys";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMCPServers } from "@/app/(dashboard)/hooks/mcpServers/useMCPServers";
 import { useMCPToolsets } from "@/app/(dashboard)/hooks/mcpServers/useMCPToolsets";
 import { extractMcpEntitlement } from "../mcp_server_management/mcpEntitlement";
@@ -51,6 +51,8 @@ import { parseErrorMessage } from "../shared/errorUtils";
 import { InheritedBudgetHint, inheritedBudgetGates, keyOwnerBudgetSource } from "../shared/InheritedBudgetHint";
 import { KeyEditView } from "./key_edit_view";
 import { isTeamAdminEditingMemberKey, teamAdminMemberKeyPayload } from "./teamAdminMemberKeyPayload";
+import { retailKeys, retailRequest, type RetailConfig } from "../retail/api";
+import RotateKeyModal, { type RotatedKey } from "../retail/RotateKeyModal";
 
 export function needsLifetimeSpendBackfill(spend: number, totalSpend: number | null | undefined): boolean {
   return (totalSpend ?? 0) < spend;
@@ -99,6 +101,14 @@ export default function KeyInfoView({
   const accessGroupNames = useModelAccessGroupNames();
   const activityDateRange = useActivityDateRange();
   const queryClient = useQueryClient();
+  const retailConfig = useQuery({
+    queryKey: retailKeys.config,
+    queryFn: () => retailRequest<RetailConfig>("/config", accessToken),
+    enabled: Boolean(accessToken),
+    retry: false,
+    staleTime: 60_000,
+  });
+  const retailRotationEnabled = retailConfig.data?.key_rotation_enabled === true;
   const canEditGuardrails = premiumUser || (userRole != null && rolesWithWriteAccess.includes(userRole));
   const { teams: teamsData } = useTeams();
   const { data: organizations } = useOrganizations();
@@ -450,6 +460,20 @@ export default function KeyInfoView({
     }
   };
 
+  const handleRetailRotation = (rotated: Omit<RotatedKey, "key">) => {
+    const updated = {
+      token: rotated.token_id,
+      token_id: rotated.token_id,
+      key_name: rotated.key_name,
+      settings_updated_at: rotated.rotated_at,
+    };
+    setCurrentKeyData((previous) => (previous ? { ...previous, ...updated } : previous));
+    setKeyDataUpdateHeldUntilModalClose(updated);
+    setLastRegeneratedAt(new Date(rotated.rotated_at));
+    setIsRecentlyRegenerated(true);
+    void queryClient.invalidateQueries({ queryKey: keyKeys.all });
+  };
+
   // Update the formatTimestamp function to use the desired date format
   const formatTimestamp = (timestamp: string | Date) => {
     const date = new Date(timestamp);
@@ -571,19 +595,33 @@ export default function KeyInfoView({
         isBlocked={isBlocked}
         canModifyKey={canModifyKey}
         backButtonText={backButtonText}
-        regenerateDisabled={!premiumUser}
+        regenerateDisabled={!premiumUser && !retailRotationEnabled}
+        regenerateLabel={retailRotationEnabled ? "Rotate Key" : "Regenerate Key"}
         regenerateTooltip={
-          !premiumUser ? "This is a LiteLLM Enterprise feature, and requires a valid key to use." : undefined
+          !premiumUser && !retailRotationEnabled
+            ? "This is a LiteLLM Enterprise feature, and requires a valid key to use."
+            : undefined
         }
       />
 
       {/* Add RegenerateKeyModal */}
-      <RegenerateKeyModal
-        selectedToken={currentKeyData}
-        visible={isRegenerateModalOpen}
-        onClose={handleRegenerateModalClose}
-        onKeyUpdate={handleRegenerateKeyUpdate}
-      />
+      {!retailRotationEnabled && (
+        <RegenerateKeyModal
+          selectedToken={currentKeyData}
+          visible={isRegenerateModalOpen}
+          onClose={handleRegenerateModalClose}
+          onKeyUpdate={handleRegenerateKeyUpdate}
+        />
+      )}
+      {retailRotationEnabled && isRegenerateModalOpen && (
+        <RotateKeyModal
+          accessToken={accessToken}
+          tokenId={currentKeyData.token_id || currentKeyData.token}
+          keyAlias={currentKeyData.key_alias || ""}
+          onClose={handleRegenerateModalClose}
+          onRotated={handleRetailRotation}
+        />
+      )}
 
       {/* Delete Confirmation Modal */}
       <DeleteResourceModal

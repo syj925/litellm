@@ -1,12 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import PoolAccessEditor from "./PoolAccessEditor";
 import PoolPreview from "./PoolPreview";
 import PoolWizard from "./PoolWizard";
 import ResourcePoolsPanel from "./ResourcePoolsPanel";
-import type { ResourcePool } from "./types";
+import type { PoolDeployment, ResourcePool } from "./types";
 
 vi.mock("@/components/networking", () => ({
   getProxyBaseUrl: () => "",
@@ -44,7 +44,7 @@ const poolB: ResourcePool = {
   visibility: "restricted",
 };
 
-function serveApi() {
+function serveApi(deployments?: PoolDeployment[]) {
   const writes: { path: string; body: unknown }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -70,7 +70,7 @@ function serveApi() {
       }
       const data = path.endsWith("deployments")
         ? {
-            items: [
+            items: deployments ?? [
               {
                 deployment_id: "deployment-a",
                 model: "alpha",
@@ -110,8 +110,10 @@ it("saves reviewed source, bindings, access, and pricing in one atomic publish r
   expect(writes).toEqual([]);
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /^Existing unnamed deployments/ }));
   await user.click(await screen.findByRole("checkbox", { name: "Bind alpha deployment deployment-a" }));
   await user.click(screen.getByRole("checkbox", { name: "Bind beta deployment deployment-b" }));
+  await user.click(screen.getByRole("button", { name: "Advanced routing weights and priorities" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Weight for alpha deployment-a" }), { target: { value: "3" } });
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   fireEvent.click(screen.getByRole("button", { name: "Public pool" }));
@@ -142,6 +144,75 @@ it("saves reviewed source, bindings, access, and pricing in one atomic publish r
       },
     ]),
   );
+});
+
+it("shows same-name models under explicit channel names and locks channel membership to its assigned pool", async () => {
+  const writes = serveApi([
+    {
+      deployment_id: "deployment-a",
+      model: "alpha",
+      provider: "anthropic",
+      credential_name: null,
+      channel_id: "official",
+      channel_name: "Official production",
+      pool_id: "pool-a",
+      pool_name: "Source A",
+    },
+    {
+      deployment_id: "deployment-b",
+      model: "beta",
+      provider: "anthropic",
+      credential_name: null,
+      channel_id: "official",
+      channel_name: "Official production",
+      pool_id: "pool-a",
+      pool_name: "Source A",
+    },
+    {
+      deployment_id: "deployment-c",
+      model: "alpha",
+      provider: "anthropic",
+      credential_name: null,
+      channel_id: "cloud",
+      channel_name: "Cloud production",
+      pool_id: "pool-b",
+      pool_name: "Source B",
+    },
+  ]);
+  const pool = {
+    ...poolA,
+    bindings: [
+      { deployment_id: "deployment-a", model: "alpha", weight: 7, priority: 3 },
+      { deployment_id: "deployment-b", model: "beta", weight: 1, priority: 0 },
+    ],
+  };
+  mount(<PoolWizard accessToken="test-admin" pool={pool} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  const official = await screen.findByRole("group", { name: "Official production" });
+  const cloud = screen.getByRole("group", { name: "Cloud production" });
+  expect(within(official).getByRole("checkbox", { name: "Channel Official production" })).toBeChecked();
+  expect(within(official).getByRole("checkbox", { name: "Channel Official production" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(within(cloud).getByRole("checkbox", { name: "Channel Cloud production" })).not.toBeChecked();
+  expect(within(cloud).getByRole("checkbox", { name: "Channel Cloud production" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(within(cloud).getByText("Source B")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Manage channels" })).toHaveAttribute("href", "/ui/channels");
+  fireEvent.change(screen.getByRole("textbox", { name: "Search upstream deployments" }), { target: { value: "beta" } });
+  expect(screen.queryByRole("group", { name: "Cloud production" })).not.toBeInTheDocument();
+  const user = userEvent.setup();
+  await user.click(within(official).getByRole("button", { name: "View models" }));
+  expect(within(official).getByText("alpha")).toBeInTheDocument();
+  expect(within(official).getByText("beta")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save published pool" }));
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(writes[0]).toMatchObject({ path: "/retail/admin/pools/pool-a", body: { bindings: pool.bindings } });
 });
 
 it("allows an empty draft while preventing publication without an upstream binding", async () => {

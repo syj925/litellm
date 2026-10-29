@@ -903,6 +903,7 @@ class LiteLLMRoutes(enum.Enum):
     # the `get_spend_routes` permission retains explicit opt-in access.
     internal_user_routes = (
         [
+            "/retail/keys/rotate",
             "/retail/wallet",
             "/retail/ledger",
             "/retail/plans",

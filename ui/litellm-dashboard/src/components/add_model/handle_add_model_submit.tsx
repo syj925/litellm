@@ -2,10 +2,14 @@ import { toast } from "@/lib/toast";
 import { Model, modelCreateCall } from "../networking";
 import { provider_map } from "../provider_info_helpers";
 import { ptuPickerToUtcIso } from "../../utils/ptuDatetime";
+import { retailRequest } from "../retail/api";
+import type { NamedChannel } from "../retail/channels/types";
+import { parseChannelSelection } from "./channelSelection";
 
 export const prepareModelAddRequest = async (inputValues: Record<string, any>, accessToken: string, form: any) => {
   try {
     const formValues = { ...inputValues };
+    delete formValues.retail_channel;
     // Get model mappings and safely remove from formValues
     const modelMappings = (formValues["model_mappings"] || []).map((mapping: Record<string, string>) => ({
       ...mapping,
@@ -203,30 +207,63 @@ export const prepareModelAddRequest = async (inputValues: Record<string, any>, a
   }
 };
 
-export const handleAddModelSubmit = async (values: any, accessToken: string, form: any, callback?: () => void) => {
+export const handleAddModelSubmit = async (
+  values: any,
+  accessToken: string,
+  form: any,
+  callback?: () => void,
+): Promise<boolean> => {
   try {
     const deployments = await prepareModelAddRequest(values, accessToken, form);
 
     if (!deployments || deployments.length === 0) {
-      return; // Exit if preparation failed or no deployments
+      return false;
     }
 
-    // Create each deployment
-    for (const deployment of deployments) {
-      const { litellmParamsObj, modelInfoObj, modelName } = deployment;
-
-      const new_model: Model = {
-        model_name: modelName,
-        litellm_params: litellmParamsObj,
-        model_info: modelInfoObj,
-      };
-
-      await modelCreateCall(accessToken, new_model);
+    const models: Model[] = deployments.map(({ litellmParamsObj, modelInfoObj, modelName }) => ({
+      model_name: modelName,
+      litellm_params: litellmParamsObj,
+      model_info: modelInfoObj,
+    }));
+    if ("retail_channel" in values) {
+      const selection = parseChannelSelection(values.retail_channel);
+      if (
+        !selection ||
+        (selection.mode === "new" &&
+          (!selection.name.trim() || selection.name.trim().length > 100 || !selection.pool_id)) ||
+        (selection.mode === "existing" && !selection.channel_id)
+      ) {
+        toast.error("Choose a named channel and resource pool before adding models");
+        return false;
+      }
+      const channel = await retailRequest<NamedChannel>(
+        selection.mode === "new"
+          ? "/admin/channels"
+          : `/admin/channels/${encodeURIComponent(selection.channel_id)}/deployments`,
+        accessToken,
+        {
+          method: "POST",
+          body: JSON.stringify(
+            selection.mode === "new"
+              ? { name: selection.name.trim(), pool_id: selection.pool_id, deployments: models }
+              : { deployments: models },
+          ),
+        },
+      );
+      if (channel.status !== "active") {
+        toast.error("Channel setup is incomplete. Check the channel status before retrying");
+        return false;
+      }
+      toast.success(`${models.length} model${models.length === 1 ? "" : "s"} added to ${channel.name}`);
+    } else {
+      for (const model of models) await modelCreateCall(accessToken, model);
     }
 
     callback && callback();
     form.resetFields();
+    return true;
   } catch (error) {
     toast.fromError("Failed to add model: " + error);
+    return false;
   }
 };

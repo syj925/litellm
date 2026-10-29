@@ -1,9 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
-import { prepareModelAddRequest } from "./handle_add_model_submit";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { handleAddModelSubmit, prepareModelAddRequest } from "./handle_add_model_submit";
+import { modelCreateCall } from "../networking";
+import { retailRequest } from "../retail/api";
 
 vi.mock("../networking", () => ({
   modelCreateCall: vi.fn(),
 }));
+
+vi.mock("../retail/api", () => ({ retailRequest: vi.fn() }));
 
 describe("prepareModelAddRequest", () => {
   it("converts all token prices once for every model without mutating the form", async () => {
@@ -202,5 +206,111 @@ describe("prepareModelAddRequest", () => {
     const [deployment] = deployments!;
     expect(deployment.modelName).toBe(wildcardModel);
     expect(deployment.litellmParamsObj.model).toBe(wildcardModel);
+  });
+});
+
+describe("named channel submission", () => {
+  const values = {
+    retail_channel: { mode: "new", name: "  Supplier A  ", pool_id: "pool-a" },
+    api_base: "https://supplier.example.test",
+    model_mappings: [
+      { public_name: "shared", litellm_model: "anthropic/shared" },
+      { public_name: "other", litellm_model: "anthropic/other" },
+    ],
+  };
+  beforeEach(() => vi.clearAllMocks());
+
+  it("saves every selected model in one channel request without forwarding channel fields upstream", async () => {
+    vi.mocked(retailRequest).mockResolvedValue({ id: "channel-a", name: "Supplier A", status: "active" });
+    const form = { resetFields: vi.fn() };
+    const refresh = vi.fn();
+    expect(await handleAddModelSubmit(values, "token", form, refresh)).toBe(true);
+    expect(retailRequest).toHaveBeenCalledExactlyOnceWith("/admin/channels", "token", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Supplier A",
+        pool_id: "pool-a",
+        deployments: [
+          {
+            model_name: "shared",
+            litellm_params: { model: "anthropic/shared", api_base: values.api_base },
+            model_info: {},
+          },
+          {
+            model_name: "other",
+            litellm_params: { model: "anthropic/other", api_base: values.api_base },
+            model_info: {},
+          },
+        ],
+      }),
+    });
+    expect(modelCreateCall).not.toHaveBeenCalled();
+    expect(form.resetFields).toHaveBeenCalledOnce();
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it("appends a batch to the chosen channel without sending a replacement pool or name", async () => {
+    vi.mocked(retailRequest).mockResolvedValue({ id: "channel/a", name: "Supplier A", status: "active" });
+    expect(
+      await handleAddModelSubmit(
+        { ...values, retail_channel: { mode: "existing", channel_id: "channel/a" } },
+        "token",
+        { resetFields: vi.fn() },
+      ),
+    ).toBe(true);
+    const [path, , options] = vi.mocked(retailRequest).mock.calls[0];
+    expect(path).toBe("/admin/channels/channel%2Fa/deployments");
+    expect(JSON.parse(String(options?.body))).toEqual({
+      deployments: [
+        {
+          model_name: "shared",
+          litellm_params: { model: "anthropic/shared", api_base: values.api_base },
+          model_info: {},
+        },
+        {
+          model_name: "other",
+          litellm_params: { model: "anthropic/other", api_base: values.api_base },
+          model_info: {},
+        },
+      ],
+    });
+  });
+
+  it("keeps the completed form and avoids native fallback when channel provisioning fails", async () => {
+    vi.mocked(retailRequest).mockRejectedValue(new Error("Channel setup could not be completed"));
+    const form = { resetFields: vi.fn() };
+    const refresh = vi.fn();
+    expect(await handleAddModelSubmit(values, "token", form, refresh)).toBe(false);
+    expect(form.resetFields).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(modelCreateCall).not.toHaveBeenCalled();
+  });
+
+  it("does not report a channel error state as a successful model creation", async () => {
+    vi.mocked(retailRequest).mockResolvedValue({ id: "channel-a", name: "Supplier A", status: "error" });
+    const form = { resetFields: vi.fn() };
+    expect(await handleAddModelSubmit(values, "token", form)).toBe(false);
+    expect(form.resetFields).not.toHaveBeenCalled();
+    expect(modelCreateCall).not.toHaveBeenCalled();
+  });
+
+  it("rejects a blank channel identity before any create call", async () => {
+    expect(
+      await handleAddModelSubmit(
+        { ...values, retail_channel: { mode: "new", name: " ", pool_id: "pool-a" } },
+        "token",
+        { resetFields: vi.fn() },
+      ),
+    ).toBe(false);
+    expect(retailRequest).not.toHaveBeenCalled();
+    expect(modelCreateCall).not.toHaveBeenCalled();
+  });
+
+  it("retains native model creation when the channel feature is absent", async () => {
+    vi.mocked(modelCreateCall).mockResolvedValue({});
+    const { retail_channel, ...native } = values;
+    expect(await handleAddModelSubmit(native, "token", { resetFields: vi.fn() })).toBe(true);
+    expect(modelCreateCall).toHaveBeenCalledTimes(2);
+    expect(retailRequest).not.toHaveBeenCalled();
   });
 });

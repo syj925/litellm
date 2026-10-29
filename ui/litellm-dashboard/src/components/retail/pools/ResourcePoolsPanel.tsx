@@ -90,6 +90,7 @@ export default function ResourcePoolsPanel() {
     `${pool.name} ${pool.id} ${sourceKindLabel(pool.source_kind)}`.toLowerCase().includes(search.toLowerCase()),
   );
   const published = items.filter((pool) => pool.enabled);
+  const activationLabel = settings.data?.routing_enabled ? "Disable pool routing" : "Enable pool routing";
   const openActivation = () => {
     setActivationReviewed(false);
     activation.reset();
@@ -117,6 +118,10 @@ export default function ResourcePoolsPanel() {
           </PageHeaderDescription>
         </PageHeader>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" nativeButton={false} render={<Link href={uiHref("channels")} />}>
+            <Layers />
+            Channels
+          </Button>
           <Button variant="outline" onClick={() => setShowGuide(!showGuide)}>
             <BookOpen />
             {showGuide ? "Hide guide" : "Getting started"}
@@ -198,10 +203,6 @@ export default function ResourcePoolsPanel() {
             routingEnabled: settings.data?.routing_enabled ?? false,
           }}
           onCreate={() => setEditing({})}
-          onConfigure={() => {
-            const target = items.find((pool) => !pool.enabled) ?? items[0];
-            setEditing(target ? { pool: target } : {});
-          }}
           onActivate={openActivation}
         />
       )}
@@ -230,12 +231,13 @@ export default function ResourcePoolsPanel() {
             Refresh
           </Button>
         </div>
-        {pools.isPending ? (
+        {pools.isPending && (
           <LoadingState
             title="Loading resource pools"
             description="Retrieving source groups and deployment bindings."
           />
-        ) : pools.error ? (
+        )}
+        {!pools.isPending && pools.error && (
           <StateMessage
             role="alert"
             tone="destructive"
@@ -243,7 +245,8 @@ export default function ResourcePoolsPanel() {
             title="Unable to load resource pools"
             description={pools.error.message}
           />
-        ) : filtered.length === 0 ? (
+        )}
+        {!pools.isPending && !pools.error && filtered.length === 0 && (
           <StateMessage
             role="status"
             icon={<Layers />}
@@ -251,10 +254,11 @@ export default function ResourcePoolsPanel() {
             description={
               items.length
                 ? "Try another pool name, source, or ID."
-                : "Start with a blank pool or choose a template below. No existing deployment is assigned automatically."
+                : "Save a draft pool, then choose it when creating a named channel. Existing deployments can be named and grouped in Channels."
             }
           />
-        ) : (
+        )}
+        {!pools.isPending && !pools.error && filtered.length > 0 && (
           <Table>
             <TableHeader className="bg-muted/40">
               <TableRow>
@@ -437,11 +441,7 @@ export default function ResourcePoolsPanel() {
               }
               onClick={() => activation.mutate(!settings.data?.routing_enabled)}
             >
-              {activation.isPending
-                ? "Saving..."
-                : settings.data?.routing_enabled
-                  ? "Disable pool routing"
-                  : "Enable pool routing"}
+              {activation.isPending ? "Saving..." : activationLabel}
             </Button>
           </DialogFooter>
         </DialogContent>

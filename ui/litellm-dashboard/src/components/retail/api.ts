@@ -91,6 +91,17 @@ export interface PageResult<T> {
 export interface RetailConfig {
   registration_enabled: boolean;
   currency: string;
+  key_rotation_enabled?: boolean;
+}
+
+export class RetailRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "RetailRequestError";
+  }
 }
 
 function responseMessage(body: unknown): string | null {
@@ -116,7 +127,10 @@ export async function retailRequest<T>(path: string, token: string | null, optio
   });
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(responseMessage(body) ?? `The request could not be completed (${response.status}).`);
+    throw new RetailRequestError(
+      responseMessage(body) ?? `The request could not be completed (${response.status}).`,
+      response.status,
+    );
   }
   return body as T;
 }

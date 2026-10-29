@@ -173,3 +173,19 @@ CREATE TABLE IF NOT EXISTS retail_plan_pool_model_discounts (
     discount NUMERIC(18,9) NOT NULL CHECK (discount > 0 AND discount <= 1),
     PRIMARY KEY(plan_id,pool_id,model)
 );
+
+CREATE TABLE IF NOT EXISTS retail_channels (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 100),
+    pool_id TEXT NOT NULL REFERENCES retail_resource_pools(id),
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','provisioning','error')),
+    version BIGINT NOT NULL DEFAULT 1,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS retail_channel_names ON retail_channels(lower(name));
+ALTER TABLE retail_channels ADD COLUMN IF NOT EXISTS pending_deployment_ids JSONB NOT NULL DEFAULT '[]';
+CREATE TABLE IF NOT EXISTS retail_channel_deployments (
+    channel_id TEXT NOT NULL REFERENCES retail_channels(id) ON DELETE CASCADE,
+    deployment_id TEXT PRIMARY KEY,
+    model TEXT NOT NULL
+);

@@ -18,12 +18,10 @@ interface GuideProgress {
 export default function PoolGuide({
   progress,
   onCreate,
-  onConfigure,
   onActivate,
 }: {
   progress: GuideProgress;
   onCreate: () => void;
-  onConfigure: () => void;
   onActivate: () => void;
 }) {
   const [step, setStep] = useState(0);
@@ -33,18 +31,18 @@ export default function PoolGuide({
       icon: Layers,
       complete: progress.pools > 0,
       description:
-        "Give the resource pool a name your customers can understand. Choose its actual resource source explicitly, independently from the HTTP protocol used to reach it.",
+        "Give the resource pool a name your customers can understand. Choose its resource source and save a draft. You can add named channels after the pool exists, before publishing it.",
       action: "Create your first pool",
       run: onCreate,
     },
     {
-      title: "Bind upstream deployments",
+      title: "Add named channels to the pool",
       icon: Route,
       complete: progress.boundPools > 0,
       description:
-        "Search the deployments already configured in Models + Endpoints. Add the deployments that belong to this pool, then set their routing weights and priorities. A deployment may support the same public model as another pool.",
-      action: "Configure a pool",
-      run: onConfigure,
+        "When adding an upstream in Models + Endpoints, enter a channel name and choose this resource pool. All models in that submission stay grouped under the channel. Use Channels to name existing deployments or move an entire channel between pools. The Provider field still chooses the HTTP protocol.",
+      action: "Manage channels",
+      href: uiHref("channels"),
     },
     {
       title: "Set access and model discounts",

@@ -419,7 +419,12 @@ def _model_price_view(card: _StoredModelPrice) -> dict[str, JsonValue]:
 
 @router.get("/config")
 async def config() -> dict[str, JsonValue]:
-    return {"registration_enabled": registration_enabled(), "currency": "USD", "login_url": "/ui/login/"}
+    return {
+        "registration_enabled": registration_enabled(),
+        "currency": "USD",
+        "login_url": "/ui/login/",
+        "key_rotation_enabled": True,
+    }
 
 
 @router.post("/signup", status_code=201)

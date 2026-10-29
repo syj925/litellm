@@ -1,6 +1,6 @@
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import useTeams from "@/app/(dashboard)/hooks/useTeams";
-import { renderWithProviders } from "../../../tests/test-utils";
+import { renderWithProviders, testQueryClient } from "../../../tests/test-utils";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -214,6 +214,30 @@ describe("KeyInfoView", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Auto-router usage" }));
 
     expect(screen.getByTestId("key-auto-router-usage")).toHaveTextContent("test-token-123");
+  });
+
+  it("opens retail rotation for an unlicensed owner when the gateway advertises the capability", async () => {
+    vi.mocked(useAuthorized).mockReturnValue({
+      ...baseUseAuthorizedMock,
+      userId: MOCK_KEY_DATA.user_id,
+      userRole: "Internal User",
+      premiumUser: false,
+    });
+    testQueryClient.setQueryData(["retail", "config"], {
+      registration_enabled: true,
+      currency: "USD",
+      key_rotation_enabled: true,
+    });
+    try {
+      renderWithProviders(<KeyInfoView keyData={MOCK_KEY_DATA} onClose={vi.fn()} keyId="test-key-id" teams={[]} />);
+      const rotate = screen.getByRole("button", { name: "Rotate Key" });
+      expect(rotate).toBeEnabled();
+      await userEvent.click(rotate);
+      expect(await screen.findByRole("dialog", { name: "Rotate API key" })).toBeInTheDocument();
+      expect(screen.getByText("The old secret stops working immediately")).toBeInTheDocument();
+    } finally {
+      testQueryClient.removeQueries({ queryKey: ["retail", "config"] });
+    }
   });
 
   it("preserves dates in both directions across unmounted analytics panels", async () => {

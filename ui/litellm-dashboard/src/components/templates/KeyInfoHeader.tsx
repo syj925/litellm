@@ -65,6 +65,7 @@ interface KeyInfoHeaderProps {
   backButtonText?: string;
   regenerateDisabled?: boolean;
   regenerateTooltip?: string;
+  regenerateLabel?: string;
 }
 
 function UserField({ userAlias, userEmail, userId }: { userAlias?: string | null; userEmail: string; userId: string }) {
@@ -172,12 +173,13 @@ export function KeyInfoHeader({
   backButtonText = "Back to Keys",
   regenerateDisabled = false,
   regenerateTooltip,
+  regenerateLabel = "Regenerate Key",
 }: KeyInfoHeaderProps) {
   const regenerateButton = (
     <span>
       <Button variant="outline" onClick={onRegenerate} disabled={regenerateDisabled}>
         <RefreshCw className="size-3.5" />
-        Regenerate Key
+        {regenerateLabel}
       </Button>
     </span>
   );

@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 from litellm.proxy._types import LitellmUserRoles
 
 from .api import Admin, Store, User, _execute, _model_price_view, _StoredModelPrice, _validated_discount
+from .channel_store import ChannelStore
+from .channels import router as channels_router
 from .pool_pricing import pool_default_discount, set_pool_default_discount
 from .pool_store import (
     PoolAccess,
@@ -13,11 +15,11 @@ from .pool_store import (
     PoolDefinition,
     PoolStore,
     ResourcePolicy,
-    deployment_catalog,
     router_deployments,
 )
 
 router: Final = APIRouter(prefix="/retail", tags=["Resource pools"])
+router.include_router(channels_router)
 
 
 class PoolUpsert(PoolDefinition):
@@ -66,8 +68,8 @@ async def admin_pools(admin: Admin, store: Store) -> dict[str, JsonValue]:
 
 
 @router.get("/admin/pools/deployments")
-async def admin_pool_deployments(admin: Admin) -> dict[str, JsonValue]:
-    return {"items": [item.model_dump(mode="json") for item in deployment_catalog(router_deployments())]}
+async def admin_pool_deployments(admin: Admin, store: Store) -> dict[str, JsonValue]:
+    return await _execute(ChannelStore(store).catalog(router_deployments()))
 
 
 @router.get("/admin/pools/settings")

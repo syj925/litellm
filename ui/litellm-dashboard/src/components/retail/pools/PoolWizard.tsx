@@ -4,10 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Check, CircleAlert, Globe2, LockKeyhole } from "lucide-react";
 import { useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/shared/Alert";
-import { LoadingState } from "@/components/shared/LoadingState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -19,16 +17,12 @@ import {
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/lib/toast";
 import { discountDescription, discountToPercent, percentToDiscount, retailRequest } from "../api";
-import { PoolBinding, PoolDeployment, poolIdFromName, ResourcePool, sourceKindLabel, sourceKinds } from "./types";
-
-interface BindingDraft extends Omit<PoolBinding, "weight" | "priority"> {
-  weight: string;
-  priority: string;
-}
+import { PoolDeployment, poolIdFromName, ResourcePool, sourceKindLabel, sourceKinds } from "./types";
+import PoolDeployments from "./PoolDeployments";
+import type { BindingDraft } from "./deploymentGroups";
 
 export interface PoolSeed {
   name: string;
@@ -73,12 +67,6 @@ export default function PoolWizard({
   });
   const resolvedId = identity.id || poolIdFromName(identity.name);
   const price = percentToDiscount(percentage);
-  const matching =
-    deployments.data?.items.filter((item) =>
-      `${item.model} ${item.provider} ${item.deployment_id} ${item.credential_name ?? ""}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-    ) ?? [];
   const save = useMutation({
     mutationFn: (publish: boolean) =>
       retailRequest<ResourcePool>(pool ? `/admin/pools/${encodeURIComponent(pool.id)}` : "/admin/pools", accessToken, {
@@ -141,16 +129,9 @@ export default function PoolWizard({
     setValidation(null);
     save.mutate(publish);
   };
-  const toggle = (item: PoolDeployment, checked: boolean) =>
-    setBindings(
-      checked
-        ? [...bindings, { deployment_id: item.deployment_id, model: item.model, weight: "1", priority: "0" }]
-        : bindings.filter((binding) => binding.deployment_id !== item.deployment_id || binding.model !== item.model),
-    );
-  const editBinding = (index: number, field: "weight" | "priority", value: string) =>
-    setBindings(bindings.map((binding, current) => (current === index ? { ...binding, [field]: value } : binding)));
+  const saveLabel = pool?.enabled ? "Save published pool" : "Save draft";
   const models = [...new Set(bindings.map((item) => item.model))];
-  const steps = ["Identity & source", "Upstream deployments", "Access & pricing", "Review"];
+  const steps = ["Identity & source", "Channels & models", "Access & pricing", "Review"];
   return (
     <Dialog
       open
@@ -263,152 +244,14 @@ export default function PoolWizard({
           </div>
         )}
         {step === 1 && (
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap gap-2">
-              <Input
-                aria-label="Search upstream deployments"
-                className="min-w-56 flex-1"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search model, provider, credential name, or deployment ID..."
-              />
-              <Button
-                variant="outline"
-                disabled={deployments.isPending || Boolean(deployments.error)}
-                onClick={() =>
-                  setBindings([
-                    ...bindings,
-                    ...matching
-                      .filter(
-                        (item) =>
-                          !bindings.some(
-                            (binding) => binding.model === item.model && binding.deployment_id === item.deployment_id,
-                          ),
-                      )
-                      .map((item) => ({
-                        deployment_id: item.deployment_id,
-                        model: item.model,
-                        weight: "1",
-                        priority: "0",
-                      })),
-                  ])
-                }
-              >
-                Select search results
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {bindings.length} deployment bindings selected. Lower priorities run first; weights balance deployments
-              within the same priority. Empty drafts can be completed later.
-            </p>
-            {deployments.isPending ? (
-              <LoadingState
-                title="Loading deployments"
-                description="Retrieving existing upstream deployment references."
-              />
-            ) : deployments.error ? (
-              <Alert variant="error">
-                <AlertTitle>{deployments.error.message}</AlertTitle>
-              </Alert>
-            ) : (
-              <div className="max-h-64 overflow-auto rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Select</TableHead>
-                      <TableHead>Public model</TableHead>
-                      <TableHead>Provider / Credential</TableHead>
-                      <TableHead>Deployment ID</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {matching.map((item) => (
-                      <TableRow key={`${item.deployment_id}:${item.model}`}>
-                        <TableCell>
-                          <Checkbox
-                            aria-label={`Bind ${item.model} deployment ${item.deployment_id}`}
-                            checked={bindings.some(
-                              (binding) => binding.model === item.model && binding.deployment_id === item.deployment_id,
-                            )}
-                            onCheckedChange={(checked) => toggle(item, checked === true)}
-                          />
-                        </TableCell>
-                        <TableCell>{item.model}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {item.provider}
-                          <br />
-                          {item.credential_name ?? "No saved credential name"}
-                        </TableCell>
-                        <TableCell className="max-w-48 break-all whitespace-normal font-mono text-xs">
-                          {item.deployment_id}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {matching.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
-                          No deployments match. Add models in Models + Endpoints first.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-            {bindings.length > 0 && (
-              <div className="max-h-56 overflow-auto rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Selected binding</TableHead>
-                      <TableHead>Weight</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {bindings.map((binding, index) => (
-                      <TableRow key={`${binding.deployment_id}:${binding.model}`}>
-                        <TableCell className="max-w-72 whitespace-normal">
-                          <p className="text-xs font-medium">{binding.model}</p>
-                          <p className="break-all font-mono text-[10px] text-muted-foreground">
-                            {binding.deployment_id}
-                          </p>
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            aria-label={`Weight for ${binding.model} ${binding.deployment_id}`}
-                            className="w-20"
-                            inputMode="numeric"
-                            value={binding.weight}
-                            onChange={(event) => editBinding(index, "weight", event.target.value)}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            aria-label={`Priority for ${binding.model} ${binding.deployment_id}`}
-                            className="w-20"
-                            inputMode="numeric"
-                            value={binding.priority}
-                            onChange={(event) => editBinding(index, "priority", event.target.value)}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => setBindings(bindings.filter((_, current) => current !== index))}
-                          >
-                            Remove
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
+          <PoolDeployments
+            poolId={resolvedId}
+            items={deployments.data?.items ?? []}
+            loading={deployments.isPending}
+            error={deployments.error}
+            bindings={bindings}
+            onChange={setBindings}
+          />
         )}
         {step === 2 && (
           <div className="flex flex-col gap-5">
@@ -529,7 +372,7 @@ export default function PoolWizard({
           ) : (
             <>
               <Button variant="outline" disabled={save.isPending} onClick={() => submit(pool?.enabled ?? false)}>
-                {save.isPending ? "Saving..." : pool?.enabled ? "Save published pool" : "Save draft"}
+                {save.isPending ? "Saving..." : saveLabel}
               </Button>
               {!pool?.enabled && (
                 <Button disabled={save.isPending} onClick={() => submit(true)}>

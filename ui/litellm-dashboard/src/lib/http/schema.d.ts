@@ -14647,6 +14647,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Channels */
+        get: operations["admin_channels_retail_admin_channels_get"];
+        put?: never;
+        /** Admin Create Channel */
+        post: operations["admin_create_channel_retail_admin_channels_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/channels/{channel_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Admin Update Channel */
+        put: operations["admin_update_channel_retail_admin_channels__channel_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/channels/{channel_id}/deployments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Add Channel Deployments */
+        post: operations["admin_add_channel_deployments_retail_admin_channels__channel_id__deployments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/channels/{channel_id}/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Recover Channel */
+        post: operations["admin_recover_channel_retail_admin_channels__channel_id__recover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/credit": {
         parameters: {
             query?: never;
@@ -15059,6 +15128,23 @@ export interface paths {
         get: operations["config_retail_config_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/keys/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate Key */
+        post: operations["rotate_key_retail_keys_rotate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -29463,6 +29549,39 @@ export interface components {
             message: string;
             /** User Id */
             user_id: string;
+        };
+        /** ChannelAddDeployments */
+        ChannelAddDeployments: {
+            /** Deployments */
+            deployments: components["schemas"]["Deployment"][];
+        };
+        /** ChannelCreate */
+        ChannelCreate: {
+            /**
+             * Deployment Ids
+             * @default []
+             */
+            deployment_ids: string[];
+            /**
+             * Deployments
+             * @default []
+             */
+            deployments: components["schemas"]["Deployment"][];
+            /** Name */
+            name: string;
+            /** Pool Id */
+            pool_id: string;
+        };
+        /** ChannelEdit */
+        ChannelEdit: {
+            /** Deployment Ids */
+            deployment_ids: string[];
+            /** Expected Version */
+            expected_version: number;
+            /** Name */
+            name: string;
+            /** Pool Id */
+            pool_id: string;
         };
         /** ChatCompletionAnnotation */
         ChatCompletionAnnotation: {
@@ -46024,6 +46143,28 @@ export interface components {
             roles?: {
                 [key: string]: string[];
             };
+        };
+        /** RotateKeyRequest */
+        RotateKeyRequest: {
+            /**
+             * Key
+             * Format: password
+             */
+            key: string;
+        };
+        /** RotateKeyResponse */
+        RotateKeyResponse: {
+            /** Key */
+            key: string;
+            /** Key Name */
+            key_name: string;
+            /**
+             * Rotated At
+             * Format: date-time
+             */
+            rotated_at: string;
+            /** Token Id */
+            token_id: string;
         };
         /** RouterFieldsResponse */
         RouterFieldsResponse: {
@@ -72814,6 +72955,170 @@ export interface operations {
             };
         };
     };
+    admin_channels_retail_admin_channels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+        };
+    };
+    admin_create_channel_retail_admin_channels_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_update_channel_retail_admin_channels__channel_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_add_channel_deployments_retail_admin_channels__channel_id__deployments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelAddDeployments"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_recover_channel_retail_admin_channels__channel_id__recover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_credit_retail_admin_credit_post: {
         parameters: {
             query?: never;
@@ -73932,6 +74237,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: components["schemas"]["JsonValue"];
                     };
+                };
+            };
+        };
+    };
+    rotate_key_retail_keys_rotate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotateKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotateKeyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

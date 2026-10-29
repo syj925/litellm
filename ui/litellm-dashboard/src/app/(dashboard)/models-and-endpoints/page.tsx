@@ -26,6 +26,7 @@ import AccessGroupBudgetsPanel from "@/app/(dashboard)/models-and-endpoints/pane
 import PriceDataPanel from "@/app/(dashboard)/models-and-endpoints/panels/PriceDataPanel";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useUrlTab } from "@/hooks/useUrlTab";
 
 type ModelTabSlug =
   | "add"
@@ -87,7 +88,6 @@ export default function ModelsAndEndpointsPage() {
   const { modelId, teamId, close } = useModelDetailRouting();
   const { availableModelAccessGroups, allModelsOnProxy } = useModelDashboardData();
 
-  const [activeKey, setActiveKey] = useState<string>(BASE_TAB_KEY);
   const [lastRefreshed, setLastRefreshed] = useState("");
 
   const isInternalUser = userRole && internalUserRoles.includes(userRole);
@@ -124,6 +124,8 @@ export default function ModelsAndEndpointsPage() {
   );
 
   const allModelsLabel = isAdmin ? "Deployed Models" : "Your Models";
+  const tabKeys = useMemo(() => visibleSlugs.map((slug) => slug || BASE_TAB_KEY), [visibleSlugs]);
+  const [activeKey, setActiveKey] = useUrlTab(tabKeys, BASE_TAB_KEY);
   const tabLabel = (slug: "" | ModelTabSlug): React.ReactNode => {
     if (!slug) return allModelsLabel;
     if (slug === "auto-routers" || slug === "access-group-budgets") {

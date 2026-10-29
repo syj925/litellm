@@ -24,6 +24,12 @@ export interface PoolDeployment {
   model: string;
   provider: string;
   credential_name: string | null;
+  channel_id?: string | null;
+  channel_name?: string | null;
+  pool_id?: string | null;
+  pool_name?: string | null;
+  endpoint_host?: string | null;
+  connection_id?: string | null;
 }
 
 export interface PoolSettings {

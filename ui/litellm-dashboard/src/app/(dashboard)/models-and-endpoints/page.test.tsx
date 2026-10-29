@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ModelsAndEndpointsPage from "./page";
+import { NuqsTestingAdapter } from "nuqs/adapters/testing";
 
 vi.mock("./panels/AllModelsPanel", () => ({ default: () => <div data-testid="panel-all-models" /> }));
 vi.mock("./panels/AddModelPanel", () => ({ default: () => <div data-testid="panel-add" /> }));
@@ -61,12 +62,14 @@ const NON_ADMIN = {
 // A proxy_admin_viewer session: effectiveSessionRole masquerades the role as "Admin".
 const VIEW_ONLY_ADMIN = { ...ADMIN, isViewOnly: true };
 
-const renderPage = () => {
+const renderPage = (searchParams = "") => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
-    <QueryClientProvider client={queryClient}>
-      <ModelsAndEndpointsPage />
-    </QueryClientProvider>,
+    <NuqsTestingAdapter searchParams={searchParams} hasMemory>
+      <QueryClientProvider client={queryClient}>
+        <ModelsAndEndpointsPage />
+      </QueryClientProvider>
+    </NuqsTestingAdapter>,
   );
 };
 
@@ -89,6 +92,12 @@ describe("ModelsAndEndpointsPage", () => {
     expect(screen.getByRole("tab", { name: "LLM Credentials" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Health Status" })).toBeInTheDocument();
     expect(screen.getByTestId("panel-all-models")).toBeInTheDocument();
+  });
+
+  it("opens the add-model form from the channel creation shortcut", () => {
+    renderPage("?tab=add");
+    expect(screen.getByTestId("panel-add")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Add Model" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("switches tabs in-memory, mounting only the active panel", async () => {

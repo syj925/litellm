@@ -6,6 +6,7 @@ import { Copy, Info, Loader2, Pencil, RefreshCw, Trash2 } from "lucide-react";
 
 import { ProviderLogo } from "@/components/molecules/models/ProviderLogo";
 import { ModelData } from "@/components/model_dashboard/types";
+import DeploymentChannelIdentity from "@/components/retail/channels/DeploymentChannelIdentity";
 import { DataTableSortHeader } from "@/components/shared/DataTable";
 import { CellTooltip, DateCell, formatCellDate, IdCell, StatusBadge } from "@/components/shared/table_cells";
 import { Badge } from "@/components/ui/badge";
@@ -79,6 +80,7 @@ function ModelInformationCell({ model, displayName }: { model: ModelData; displa
           <span className="max-w-60 truncate font-mono text-xs text-muted-foreground" title={litellmModelName}>
             {litellmModelName}
           </span>
+          <DeploymentChannelIdentity deploymentId={model.model_info.id} />
         </span>
       </HoverCardTrigger>
       <HoverCardContent align="start" className="w-80">

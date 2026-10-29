@@ -9,6 +9,11 @@ import { useForm } from "react-hook-form";
 import AddModelForm from "./AddModelForm";
 import { EMPTY_DECISION_CATALOG } from "@/lib/decisionModels";
 
+vi.mock("../retail/api", async () => {
+  const actual = await vi.importActual("../retail/api");
+  return { ...actual, retailRequest: vi.fn().mockResolvedValue({ enabled: false, items: [] }) };
+});
+
 vi.mock("../molecules/models/ProviderLogo", () => ({
   ProviderLogo: ({ provider, className }: { provider: string; className?: string }) => (
     <div className={className} data-testid={`provider-logo-${provider}`}>

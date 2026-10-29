@@ -36,7 +36,10 @@ export default function AddModelPanel() {
   const decisionCatalog = useMemo(() => buildDecisionCatalog(modelCostMapData), [modelCostMapData]);
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["models", "list"] });
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["models", "list"] });
+    void queryClient.invalidateQueries({ queryKey: ["retail"] });
+  };
 
   const mountedValues = () => projectMountedValues(registry, form.getValues);
 
@@ -45,13 +48,12 @@ export default function AddModelPanel() {
     if (!isValid) {
       return false;
     }
-    await handleAddModelSubmit(
+    return handleAddModelSubmit(
       mountedValues(),
       accessToken,
       { resetFields: () => form.reset(INITIAL_VALUES) },
       refresh,
     );
-    return true;
   };
 
   return (

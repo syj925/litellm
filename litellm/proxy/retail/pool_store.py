@@ -347,7 +347,12 @@ class PoolStore:
         pools: Final = await _many(connection, "SELECT * FROM retail_resource_pools ORDER BY priority,id", (), _PoolRow)
         bindings: Final = await _many(
             connection,
-            "SELECT * FROM retail_pool_bindings ORDER BY pool_id,priority,deployment_id,model",
+            """SELECT b.* FROM retail_pool_bindings b
+            LEFT JOIN retail_channel_deployments m ON m.deployment_id=b.deployment_id
+            LEFT JOIN retail_channels c ON c.id=m.channel_id
+            WHERE c.id IS NULL OR c.status='active' OR
+            (c.pending_deployment_ids<>'[]'::jsonb AND NOT c.pending_deployment_ids ? b.deployment_id)
+            ORDER BY b.pool_id,b.priority,b.deployment_id,b.model""",
             (),
             _StoredBinding,
         )
@@ -408,6 +413,9 @@ class PoolStore:
                     raise HTTPException(
                         400, "Publishing a resource pool requires at least one valid deployment binding"
                     )
+            from .channel_store import validate_channel_bindings
+
+            await validate_channel_bindings(connection, definition.id, selected)
             row: Final = await _one(
                 connection,
                 """INSERT INTO retail_resource_pools
@@ -459,6 +467,9 @@ class PoolStore:
         await self.wallet_store.initialize()
         async with self.wallet_store.transaction() as connection:
             await self._settings(connection, lock=True)
+            from .channel_store import validate_channel_bindings
+
+            await validate_channel_bindings(connection, pool_id, bindings)
             row: Final = await _one(
                 connection, "SELECT * FROM retail_resource_pools WHERE id=%s FOR UPDATE", (pool_id,), _PoolRow
             )
