@@ -2339,6 +2339,8 @@ class Logging(LiteLLMLoggingBaseClass):
         self.mark_logging_complete(event_type=event_type)
 
     def should_run_callback(self, callback: litellm.CALLBACK_TYPES, litellm_params: dict, event_hook: str) -> bool:
+        if isinstance(callback, CustomLogger) and callback.is_accounting_callback:
+            return True
         if litellm.global_disable_no_log_param:
             return True
 

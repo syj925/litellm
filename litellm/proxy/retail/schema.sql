@@ -1,0 +1,89 @@
+CREATE TABLE IF NOT EXISTS retail_pricing_plans (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    multiplier NUMERIC(18,9) NOT NULL CHECK (multiplier > 0 AND multiplier <= 1000),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO retail_pricing_plans (id, name, multiplier)
+VALUES ('standard', 'Standard', 1) ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS retail_wallets (
+    user_id TEXT PRIMARY KEY,
+    balance_nanos BIGINT NOT NULL DEFAULT 0,
+    reserved_nanos BIGINT NOT NULL DEFAULT 0 CHECK (reserved_nanos >= 0),
+    total_credited_nanos BIGINT NOT NULL DEFAULT 0 CHECK (total_credited_nanos >= 0),
+    total_spent_nanos BIGINT NOT NULL DEFAULT 0 CHECK (total_spent_nanos >= 0),
+    plan_id TEXT NOT NULL DEFAULT 'standard' REFERENCES retail_pricing_plans(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS retail_reservations (
+    request_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES retail_wallets(user_id),
+    model TEXT NOT NULL,
+    reserved_nanos BIGINT NOT NULL CHECK (reserved_nanos >= 0),
+    settled_nanos BIGINT CHECK (settled_nanos >= 0),
+    status TEXT NOT NULL DEFAULT 'reserved' CHECK (status IN ('reserved', 'settled', 'released')),
+    price_snapshot JSONB NOT NULL DEFAULT '{}',
+    details JSONB NOT NULL DEFAULT '{}',
+    reason TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS retail_reservations_user_status
+ON retail_reservations(user_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS retail_ledger (
+    id UUID PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES retail_wallets(user_id),
+    kind TEXT NOT NULL CHECK (kind IN ('credit', 'charge', 'release')),
+    amount_nanos BIGINT NOT NULL,
+    balance_after_nanos BIGINT NOT NULL,
+    operation_key TEXT NOT NULL UNIQUE,
+    payload JSONB NOT NULL DEFAULT '{}',
+    reference TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    actor_id TEXT NOT NULL DEFAULT '',
+    request_id TEXT REFERENCES retail_reservations(request_id),
+    model TEXT,
+    details JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS retail_ledger_user_created
+ON retail_ledger(user_id, created_at DESC, id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS retail_ledger_credit_reference_unique
+ON retail_ledger(reference) WHERE kind='credit';
+
+CREATE TABLE IF NOT EXISTS retail_credit_idempotency (
+    operation_key TEXT PRIMARY KEY,
+    ledger_id UUID NOT NULL REFERENCES retail_ledger(id),
+    payload JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS retail_model_prices (
+    model TEXT PRIMARY KEY,
+    input_cost_per_token NUMERIC(30,18) NOT NULL CHECK (input_cost_per_token >= 0),
+    output_cost_per_token NUMERIC(30,18) NOT NULL CHECK (output_cost_per_token >= 0),
+    cache_read_input_token_cost NUMERIC(30,18) NOT NULL CHECK (cache_read_input_token_cost >= 0),
+    cache_creation_input_token_cost NUMERIC(30,18) NOT NULL CHECK (cache_creation_input_token_cost >= 0),
+    version BIGINT NOT NULL DEFAULT 1,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS retail_signup_limits (
+    source_hash TEXT PRIMARY KEY,
+    window_started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    attempts INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS retail_signup_identities (
+    email_normalized TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE REFERENCES "LiteLLM_UserTable"(user_id)
+);

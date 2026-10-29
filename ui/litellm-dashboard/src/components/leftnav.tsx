@@ -334,6 +334,20 @@ const menuGroups: MenuGroup[] = [
     ],
   },
   {
+    groupLabel: "BILLING",
+    items: [
+      { key: "wallet", page: "wallet", label: "Wallet", icon: <Wallet {...ICON} /> },
+      { key: "billing", page: "billing", label: "Billing", icon: <FileText {...ICON} /> },
+      {
+        key: "wallet-admin",
+        page: "wallet-admin",
+        label: "Customer Wallets",
+        icon: <Users {...ICON} />,
+        roles: ["Admin", "proxy_admin"],
+      },
+    ],
+  },
+  {
     groupLabel: "ACCESS CONTROL",
     items: [
       { key: "teams", page: "teams", label: "Teams", icon: <Users {...ICON} /> },

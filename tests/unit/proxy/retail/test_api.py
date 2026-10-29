@@ -1,0 +1,180 @@
+from typing import Final
+
+import httpx
+import pytest
+from fastapi import FastAPI, HTTPException
+from pydantic import ValidationError
+from starlette.requests import Request
+
+from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
+from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+from litellm.proxy.retail.api import (
+    ResolveRequest,
+    SignupRequest,
+    _per_token_price,
+    _PublicLedgerPage,
+    _source_hash,
+    retail_admin,
+    retail_user,
+    router,
+)
+
+
+@pytest.mark.parametrize("field", ("user_id", "user_role", "role", "max_budget", "balance", "plan_id"))
+def test_signup_rejects_client_privilege_and_funding_fields(field: str) -> None:
+    with pytest.raises(ValidationError):
+        SignupRequest.model_validate(
+            {"email": "reader@example.com", "password": "a strong test password", field: "proxy_admin"}
+        )
+
+
+@pytest.mark.parametrize("length", (0, 11, 129))
+def test_signup_rejects_passwords_outside_supported_length(length: int) -> None:
+    with pytest.raises(ValidationError):
+        SignupRequest(email="reader@example.com", password="x" * length)
+
+
+@pytest.mark.parametrize("length", (12, 128))
+def test_signup_preserves_the_password_and_hides_it_in_model_representation(length: int) -> None:
+    password: Final = "x" * length
+    signup: Final = SignupRequest(email="reader@example.com", password=password)
+    assert signup.password.get_secret_value() == password
+    assert password not in repr(signup)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "role",
+    (LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY),
+)
+async def test_non_administrators_cannot_access_administrator_routes(role: LitellmUserRoles) -> None:
+    async def authenticated_user() -> UserAPIKeyAuth:
+        return UserAPIKeyAuth(user_id="reader", user_role=role)
+
+    app: Final = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[user_api_key_auth] = authenticated_user
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://retail.test") as client:
+        response: Final = await client.get("/retail/admin/wallets")
+    assert response.status_code == 403
+    assert "administrator" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_proxy_administrator_dependency_retains_the_native_principal() -> None:
+    auth: Final = UserAPIKeyAuth(user_id="administrator", user_role=LitellmUserRoles.PROXY_ADMIN)
+    assert await retail_admin(auth) is auth
+
+
+@pytest.mark.asyncio
+async def test_a_key_without_an_account_cannot_read_a_customer_wallet() -> None:
+    with pytest.raises(HTTPException) as failure:
+        await retail_user(UserAPIKeyAuth(user_role=LitellmUserRoles.INTERNAL_USER))
+    assert failure.value.status_code == 403
+
+
+def test_customer_ledger_removes_internal_payloads_and_costs() -> None:
+    page: Final = _PublicLedgerPage.model_validate(
+        {
+            "items": [
+                {
+                    "id": "entry-1",
+                    "kind": "charge",
+                    "amount": "-0.200000000",
+                    "balance_after": "0.800000000",
+                    "reference": "",
+                    "description": "API usage",
+                    "request_id": "request-1",
+                    "model": "customer-model",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "payload": {"provider_cost": "0.100000000"},
+                    "details": {
+                        "provider_cost": "0.100000000",
+                        "upstream_secret": "must-not-leak",
+                        "usage": {"input_tokens": 20, "output_tokens": 10, "raw_body": "must-not-leak"},
+                        "price_snapshot": {
+                            "model": "customer-model",
+                            "version": "flat-token-v1",
+                            "multiplier": "2",
+                            "input_cost_per_token": "0.000005",
+                            "provider_cost": "must-not-leak",
+                        },
+                        "billing_basis": "reported_usage",
+                        "gateway_call_id": "call-1",
+                    },
+                    "actor_id": "operator-1",
+                }
+            ],
+            "total": 1,
+            "limit": 25,
+            "offset": 0,
+        }
+    )
+    body: Final = page.model_dump(mode="json")
+    assert body["items"][0]["amount"] == "-0.200000000"
+    assert body["items"][0]["model"] == "customer-model"
+    assert body["items"][0]["details"]["usage"] == {"input_tokens": 20, "output_tokens": 10}
+    assert body["items"][0]["details"]["price_snapshot"]["input_cost_per_token"] == "0.000005"
+    assert body["items"][0]["details"]["billing_basis"] == "reported_usage"
+    assert "payload" not in body["items"][0]
+    assert "actor_id" not in body["items"][0]
+    assert "must-not-leak" not in str(body)
+
+
+@pytest.mark.parametrize("price", ("NaN", "Infinity", "-1", "1000000000001", "0.0000000000001", "1e-99999999"))
+def test_model_sale_price_rejects_negative_nonfinite_oversized_or_unrepresentable_prices(price: str) -> None:
+    with pytest.raises(ValueError):
+        _per_token_price(price)
+
+
+@pytest.mark.parametrize(
+    ("price", "expected"),
+    (("5", "0.000005"), ("0", "0"), ("0e99999999", "0"), ("0.000000000001", "0.000000000000000001")),
+)
+def test_model_sale_price_converts_per_million_without_floats(price: str, expected: str) -> None:
+    assert _per_token_price(price) == expected
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {"action": "settle"},
+        {"action": "release", "amount": "0"},
+        {"action": "refund"},
+        {"action": "settle", "amount": "1", "user_id": "other-user"},
+    ),
+)
+def test_manual_resolution_requires_an_explicit_unambiguous_operation(payload: dict[str, str]) -> None:
+    with pytest.raises(ValidationError):
+        ResolveRequest.model_validate({"reference": "ticket-1", "reason": "Verified upstream result", **payload})
+
+
+def test_explicit_zero_dollar_settlement_is_allowed() -> None:
+    resolution: Final = ResolveRequest(action="settle", amount="0", reference="ticket-1", reason="No billable usage")
+    assert resolution.amount == "0"
+
+
+def test_registration_rate_key_ignores_untrusted_forwarded_addresses(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RETAIL_RATE_LIMIT_SECRET", "test-only-source-key")
+    direct: Final = Request({"type": "http", "client": ("192.0.2.10", 1000), "headers": []})
+    forged: Final = Request(
+        {
+            "type": "http",
+            "client": ("192.0.2.10", 1000),
+            "headers": [(b"x-forwarded-for", b"198.51.100.99")],
+        }
+    )
+    assert _source_hash(direct) == _source_hash(forged)
+    assert "192.0.2.10" not in _source_hash(direct)
+
+
+@pytest.mark.asyncio
+async def test_public_config_reports_disabled_registration_without_a_database(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RETAIL_REGISTRATION_ENABLED", "false")
+    app: Final = FastAPI()
+    app.include_router(router)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://retail.test") as client:
+        response: Final = await client.get("/retail/config")
+    assert response.status_code == 200
+    assert response.json()["registration_enabled"] is False
+    assert response.json()["login_url"] == "/ui/login/"

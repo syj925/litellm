@@ -2,7 +2,7 @@
 
 import React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Plus, MessageSquare, LayoutGrid, KeyRound, Lock, BarChart3, ScrollText } from "lucide-react";
+import { Plus, MessageSquare, LayoutGrid, KeyRound, Lock, BarChart3, ScrollText, Wallet, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { uiHref } from "@/utils/uiHref";
@@ -121,6 +121,16 @@ const ChatShell: React.FC<ChatShellProps> = ({ children }) => {
               label="Usage"
               onClick={() => router.push(routes.usage)}
               active={pathname === routes.usage}
+            />
+            <NavItem
+              icon={<Wallet className="h-4 w-4" />}
+              label="Wallet"
+              onClick={() => router.push(uiHref("wallet"))}
+            />
+            <NavItem
+              icon={<FileText className="h-4 w-4" />}
+              label="Billing"
+              onClick={() => router.push(uiHref("billing"))}
             />
           </div>
 

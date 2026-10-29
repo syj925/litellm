@@ -20663,6 +20663,11 @@ async def get_routes():
 #     return {"token": token}
 
 
+if os.getenv("RETAIL_PORTAL_ENABLED", "false").lower() == "true":
+    from litellm.proxy.retail.api import router as retail_router
+
+    app.include_router(retail_router)
+
 app.include_router(router)
 app.include_router(response_router)
 app.include_router(public_endpoints_router)

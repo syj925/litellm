@@ -903,6 +903,9 @@ class LiteLLMRoutes(enum.Enum):
     # the `get_spend_routes` permission retains explicit opt-in access.
     internal_user_routes = (
         [
+            "/retail/wallet",
+            "/retail/ledger",
+            "/retail/plans",
             "/global/activity",
             "/global/activity/model",
             "/global/activity/cache_hits",
@@ -935,6 +938,9 @@ class LiteLLMRoutes(enum.Enum):
         spend_tracking_routes
         + compliance_check_routes
         + [
+            "/retail/wallet",
+            "/retail/ledger",
+            "/retail/plans",
             # Tag usage endpoints scope internal viewers to tags produced by
             # their own keys in tag_management_endpoints.py.
             "/tag/daily/activity",

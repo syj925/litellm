@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 import { z } from "zod";
 import { useWorker } from "@/hooks/useWorker";
+import { RegistrationLink } from "@/components/retail/SignupPanel";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Please enter your username"),
@@ -227,7 +228,7 @@ function LoginPageContent() {
 
               <div className="text-center">
                 <h3 className="text-2xl font-semibold text-foreground">Login</h3>
-                <p className="text-sm text-muted-foreground">Access your LiteLLM Admin UI.</p>
+                <p className="text-sm text-muted-foreground">Access your LiteLLM account.</p>
               </div>
 
               {!uiConfig?.hide_default_credentials_hint && (
@@ -348,6 +349,7 @@ function LoginPageContent() {
                   )}
                 </FieldGroup>
               </form>
+              <RegistrationLink />
             </div>
             {uiConfig?.sso_configured && <SsoEnabledNotice />}
           </TooltipProvider>
