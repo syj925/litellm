@@ -1,8 +1,10 @@
 from decimal import Decimal
+from typing import Final
 
 import pytest
 
 from litellm.proxy.retail.models import InvalidAmount, amount_to_nanos, cost_to_nanos, nanos_to_amount
+from litellm.proxy.retail.store import _wallet_view, _WalletRow
 
 
 @pytest.mark.parametrize("amount", ("0", "0.000000001", "0.125", "12.345678901", "1000000"))
@@ -42,3 +44,45 @@ def test_manual_credit_cannot_silently_become_a_zero_amount() -> None:
 
 def test_negative_balance_remains_visible_as_debt() -> None:
     assert nanos_to_amount(-1250000000) == "-1.250000000"
+
+
+def test_customer_override_replaces_the_plan_discount_and_clearing_it_restores_the_plan() -> None:
+    row: Final = _WalletRow(
+        user_id="customer",
+        balance_nanos=1000000000,
+        reserved_nanos=0,
+        total_credited_nanos=1000000000,
+        total_spent_nanos=0,
+        plan_id="shared",
+        plan_name="Shared",
+        multiplier=Decimal("0.8"),
+        discount_override=Decimal("0.65"),
+        pending_requests=0,
+    )
+    overridden: Final = _wallet_view(row)
+    inherited: Final = _wallet_view(row.model_copy(update={"discount_override": None}))
+    assert overridden["discount"] == "0.65"
+    assert overridden["discount_source"] == "customer"
+    assert overridden["pricing_plan"]["discount"] == "0.8"
+    assert inherited["discount"] == "0.8"
+    assert inherited["discount_source"] == "plan"
+    assert inherited["discount_override"] is None
+    assert overridden["balance"] == inherited["balance"] == "1.000000000"
+
+
+def test_legacy_markup_is_readable_without_being_clamped_or_rewritten() -> None:
+    row: Final = _WalletRow(
+        user_id="legacy",
+        balance_nanos=1000000000,
+        reserved_nanos=0,
+        total_credited_nanos=1000000000,
+        total_spent_nanos=0,
+        plan_id="legacy",
+        plan_name="Legacy",
+        multiplier=Decimal("1.25"),
+        pending_requests=0,
+    )
+    view: Final = _wallet_view(row)
+    assert view["discount"] == "1.25"
+    assert view["pricing_plan"]["multiplier"] == "1.25"
+    assert view["discount_source"] == "plan"

@@ -14716,6 +14716,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/reference-prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Reference Prices */
+        get: operations["admin_reference_prices_retail_admin_reference_prices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/reference-prices/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Import Reference Prices */
+        post: operations["admin_import_reference_prices_retail_admin_reference_prices_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/reservations": {
         parameters: {
             query?: never;
@@ -14760,6 +14794,23 @@ export interface paths {
         /** Admin Wallets */
         get: operations["admin_wallets_retail_admin_wallets_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/wallets/{user_id}/discount": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Admin Set Discount */
+        put: operations["admin_set_discount_retail_admin_wallets__user_id__discount_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -41837,10 +41888,10 @@ export interface components {
         };
         /** PlanRequest */
         PlanRequest: {
+            /** Discount */
+            discount: string;
             /** Id */
             id: string;
-            /** Multiplier */
-            multiplier: string;
             /** Name */
             name: string;
         };
@@ -43155,6 +43206,20 @@ export interface components {
             generate_summary?: ("auto" | "concise" | "detailed") | null;
             /** Summary */
             summary?: ("auto" | "concise" | "detailed") | null;
+        };
+        /** ReferenceImportRequest */
+        ReferenceImportRequest: {
+            /** Items */
+            items: components["schemas"]["ReferenceSelection"][];
+        };
+        /** ReferenceSelection */
+        ReferenceSelection: {
+            /** Catalog Model */
+            catalog_model: string;
+            /** Model */
+            model: string;
+            /** Source Label */
+            source_label: string;
         };
         /** RegenerateKeyRequest */
         RegenerateKeyRequest: {
@@ -46421,6 +46486,11 @@ export interface components {
         SessionLogoutResponse: {
             /** Message */
             message: string;
+        };
+        /** SetDiscountRequest */
+        SetDiscountRequest: {
+            /** Discount */
+            discount: string | null;
         };
         /** SetPlanRequest */
         SetPlanRequest: {
@@ -72514,6 +72584,63 @@ export interface operations {
             };
         };
     };
+    admin_reference_prices_retail_admin_reference_prices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+        };
+    };
+    admin_import_reference_prices_retail_admin_reference_prices_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReferenceImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_reservations_retail_admin_reservations_get: {
         parameters: {
             query?: {
@@ -72601,6 +72728,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_set_discount_retail_admin_wallets__user_id__discount_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetDiscountRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

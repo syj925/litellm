@@ -5,7 +5,15 @@ vi.mock("@/components/networking", () => ({
   getProxyBaseUrl: () => "",
 }));
 
-import { formatMoney, isPositiveAmount, ledgerReceiptSections, usdPerTokenToPerMillion } from "./api";
+import {
+  discountDescription,
+  discountToPercent,
+  formatMoney,
+  isPositiveAmount,
+  ledgerReceiptSections,
+  percentToDiscount,
+  usdPerTokenToPerMillion,
+} from "./api";
 
 describe("wallet amounts", () => {
   it("preserves the smallest billable amount instead of displaying a zero charge", () => {
@@ -71,13 +79,44 @@ describe("customer billing receipts", () => {
       {
         title: "Pricing snapshot",
         rows: [
-          { label: "Pricing plan", value: "contract-a" },
-          { label: "Plan multiplier", value: "3.5×" },
+          { label: "Discount plan", value: "contract-a" },
           { label: "Price version", value: "7" },
+          { label: "Customer discount", value: "Legacy markup: 350% of reference price" },
           { label: "Input base price / 1M", value: "$5.00 USD" },
+          { label: "Input customer price / 1M", value: "$17.50 USD" },
           { label: "Output base price / 1M", value: "$25.00 USD" },
+          { label: "Output customer price / 1M", value: "$87.50 USD" },
           { label: "Cache read base price / 1M", value: "$0.50 USD" },
+          { label: "Cache read customer price / 1M", value: "$1.75 USD" },
           { label: "Cache write base price / 1M", value: "$6.25 USD" },
+          { label: "Cache write customer price / 1M", value: "$21.875 USD" },
+        ],
+      },
+    ]);
+  });
+
+  it("shows the saved customer override and exact effective rates instead of applying a current plan", () => {
+    const sections = ledgerReceiptSections({
+      price_snapshot: {
+        plan_id: "shared",
+        discount: "0.701234567",
+        multiplier: "1",
+        discount_source: "customer",
+        source: "catalog",
+        source_label: "Reference catalog revision example",
+        input_cost_per_token: "0.00000123456789123456789",
+      },
+    });
+    expect(sections).toEqual([
+      {
+        title: "Pricing snapshot",
+        rows: [
+          { label: "Discount plan", value: "shared" },
+          { label: "Customer discount", value: "70.1234567% of reference price (29.8765433% off)" },
+          { label: "Discount source", value: "Customer override" },
+          { label: "Reference source", value: "Reference catalog revision example" },
+          { label: "Input reference price / 1M", value: "$1.23456789123456789 USD" },
+          { label: "Input customer price / 1M", value: "$0.86572168064197530977625363 USD" },
         ],
       },
     ]);
@@ -91,5 +130,28 @@ describe("customer billing receipts", () => {
         price_snapshot: { provider_cost: "private", input_cost_per_token: "NaN" },
       }),
     ).toEqual([]);
+  });
+});
+
+describe("customer discounts", () => {
+  it.each([
+    ["70", "0.7"],
+    ["100", "1"],
+    ["70.1234567", "0.701234567"],
+    ["0.0000001", "0.000000001"],
+  ])("converts %s percent paid to exact discount %s", (percent, discount) => {
+    expect(percentToDiscount(percent)).toBe(discount);
+    expect(discountToPercent(discount)).toBe(percent);
+  });
+
+  it.each(["0", "100.0000001", "-1", "101", "1e2", "NaN", "0.00000001", "70.12345678", ""])(
+    "rejects an invalid reference-price percentage %s",
+    (percent) => expect(percentToDiscount(percent)).toBeNull(),
+  );
+
+  it("clearly distinguishes percentage paid from percentage saved and preserves legacy markups", () => {
+    expect(discountDescription("0.7")).toBe("70% of reference price (30% off)");
+    expect(discountDescription("1")).toBe("100% of reference price (0% off)");
+    expect(discountDescription("3.5")).toBe("Legacy markup: 350% of reference price");
   });
 });

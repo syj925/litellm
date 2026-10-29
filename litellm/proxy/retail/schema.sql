@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS retail_reservations (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE retail_wallets ADD COLUMN IF NOT EXISTS discount_override NUMERIC(18,9)
+CHECK (discount_override > 0 AND discount_override <= 1);
+
 CREATE INDEX IF NOT EXISTS retail_reservations_user_status
 ON retail_reservations(user_id, status, created_at DESC);
 
@@ -82,6 +85,10 @@ CREATE TABLE IF NOT EXISTS retail_signup_limits (
     window_started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     attempts INTEGER NOT NULL DEFAULT 0
 );
+
+ALTER TABLE retail_model_prices ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'legacy';
+ALTER TABLE retail_model_prices ADD COLUMN IF NOT EXISTS catalog_model TEXT;
+ALTER TABLE retail_model_prices ADD COLUMN IF NOT EXISTS source_label TEXT NOT NULL DEFAULT 'Existing reference, review required';
 
 CREATE TABLE IF NOT EXISTS retail_signup_identities (
     email_normalized TEXT PRIMARY KEY,

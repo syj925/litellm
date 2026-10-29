@@ -5,7 +5,7 @@ from typing import Final
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-import litellm
+from litellm.litellm_core_utils.get_model_cost_map import GetModelCostMap, get_model_cost_map_source_info
 
 from .models import cost_to_nanos, nanos_to_amount
 
@@ -74,50 +74,90 @@ def _rate(value: object) -> Decimal | None:
         return None
 
 
-def catalog_snapshot(model: str, deployments: Sequence[Mapping[str, object]], multiplier: str) -> dict[str, JsonValue]:
-    cards: Final = tuple(_deployment_card(deployment) for deployment in deployments)
-    valid: Final = tuple(card for card in cards if card is not None)
-    if not valid:
-        raise ValueError("This model needs explicit input and output token prices before wallet billing can be enabled")
-    return {
-        "version": "flat-token-v1",
-        "model": model,
-        "multiplier": multiplier,
-        "input_cost_per_token": str(max(card["input_cost_per_token"] for card in valid)),
-        "output_cost_per_token": str(max(card["output_cost_per_token"] for card in valid)),
-        "cache_read_input_token_cost": str(max(card["cache_read_input_token_cost"] for card in valid)),
-        "cache_creation_input_token_cost": str(max(card["cache_creation_input_token_cost"] for card in valid)),
-    }
+def catalog_candidates(
+    model: str,
+    deployments: Sequence[Mapping[str, object]],
+    catalog: Mapping[str, Mapping[str, object]] | None = None,
+    source_label: str | None = None,
+) -> tuple[dict[str, JsonValue], ...]:
+    source: Final = GetModelCostMap.loaded_model_cost_map() if catalog is None else catalog
+    label: Final = source_label or catalog_source_label()
+    names: Final = tuple(_catalog_model(deployment, source) for deployment in deployments)
+    unique_names: Final = tuple(dict.fromkeys(name for name in names if name is not None))
+    cards: Final = tuple(_catalog_card(name, source[name]) for name in unique_names)
+    return tuple({"model": model, "source": "catalog", "source_label": label, **card} for card in cards if card)
 
 
-def _deployment_card(deployment: Mapping[str, object]) -> dict[str, Decimal] | None:
+def catalog_source_label() -> str:
+    provenance: Final = get_model_cost_map_source_info()
+    revision: Final = provenance["source_revision"] or "unknown revision"
+    return f"LiteLLM reference catalog ({revision})"
+
+
+def _catalog_model(
+    deployment: Mapping[str, object],
+    catalog: Mapping[str, Mapping[str, object]],
+) -> str | None:
     params: Final = as_mapping(deployment.get("litellm_params"))
     info: Final = as_mapping(deployment.get("model_info"))
-    native: Final = _native_card(str(params.get("model", "")))
-    source: Final = {**native, **{key: value for key, value in info.items() if value is not None}}
-    rates: Final = {**source, **{key: value for key, value in params.items() if value is not None}}
+    name: Final = str(info.get("base_model") or params.get("model", ""))
+    if name in catalog:
+        return name
+    suffix: Final = name.partition("/")[2]
+    return suffix if suffix and suffix in catalog else None
+
+
+def _catalog_card(name: str, rates: Mapping[str, object]) -> dict[str, JsonValue] | None:
+    supported_rates: Final = {
+        "input_cost_per_token",
+        "output_cost_per_token",
+        "cache_read_input_token_cost",
+        "cache_creation_input_token_cost",
+    }
+    if rates.get("mode") not in {None, "chat", "completion", "embedding"}:
+        return None
+    if any(
+        "cost" in key
+        and key not in supported_rates
+        and value is not None
+        and any(marker in key for marker in ("above_", "below_", "tier"))
+        for key, value in rates.items()
+    ):
+        return None
     input_rate: Final = _rate(rates.get("input_cost_per_token"))
     output_rate: Final = _rate(rates.get("output_cost_per_token", 0 if rates.get("mode") == "embedding" else None))
     if input_rate is None or output_rate is None:
         return None
+    read: Final = rates.get("cache_read_input_token_cost")
+    write: Final = rates.get("cache_creation_input_token_cost")
+    read_rate: Final = input_rate if read is None else _rate(read)
+    write_rate: Final = input_rate if write is None else _rate(write)
+    if read_rate is None or write_rate is None:
+        return None
     return {
-        "input_cost_per_token": input_rate,
-        "output_cost_per_token": output_rate,
-        "cache_read_input_token_cost": _optional_rate(rates.get("cache_read_input_token_cost"), input_rate),
-        "cache_creation_input_token_cost": _optional_rate(rates.get("cache_creation_input_token_cost"), input_rate),
+        "catalog_model": name,
+        "input_cost_per_token": str(input_rate),
+        "output_cost_per_token": str(output_rate),
+        "cache_read_input_token_cost": str(read_rate),
+        "cache_creation_input_token_cost": str(write_rate),
     }
 
 
-def _native_card(model: str) -> Mapping[str, object]:
-    try:
-        return as_mapping(litellm.get_model_info(model=model))
-    except Exception:
-        return {}
-
-
-def _optional_rate(value: object, fallback: Decimal) -> Decimal:
-    rate: Final = _rate(value)
-    return fallback if rate is None else rate
+def catalog_snapshot(
+    model: str,
+    deployments: Sequence[Mapping[str, object]],
+    multiplier: str,
+    catalog: Mapping[str, Mapping[str, object]] | None = None,
+) -> dict[str, JsonValue]:
+    source: Final = GetModelCostMap.loaded_model_cost_map() if catalog is None else catalog
+    candidates: Final = catalog_candidates(model, deployments, source)
+    if len(candidates) != 1 or any(
+        _catalog_model(deployment, source) != candidates[0]["catalog_model"] for deployment in deployments
+    ):
+        raise ValueError(
+            "A single supported catalog reference is required. Import the model's official reference price in Customer wallets"
+        )
+    return {"version": "flat-token-v1", "multiplier": multiplier, **candidates[0]}
 
 
 def charge_for_usage(snapshot: Mapping[str, object], usage: UsageFacts) -> str:
@@ -126,7 +166,7 @@ def charge_for_usage(snapshot: Mapping[str, object], usage: UsageFacts) -> str:
         + Decimal(str(snapshot["output_cost_per_token"])) * usage.output_tokens
         + Decimal(str(snapshot["cache_read_input_token_cost"])) * usage.cache_read_tokens
         + Decimal(str(snapshot["cache_creation_input_token_cost"])) * usage.cache_write_tokens
-    ) * Decimal(str(snapshot["multiplier"]))
+    ) * Decimal(str(snapshot.get("discount", snapshot.get("multiplier"))))
     return nanos_to_amount(cost_to_nanos(amount))
 
 
@@ -149,5 +189,5 @@ def reserve_quote(
     )
     amount: Final = (
         input_rate * upper_input + Decimal(str(snapshot["output_cost_per_token"])) * output_limit
-    ) * Decimal(str(snapshot["multiplier"]))
+    ) * Decimal(str(snapshot.get("discount", snapshot.get("multiplier"))))
     return nanos_to_amount(cost_to_nanos(amount))

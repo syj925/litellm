@@ -4,6 +4,7 @@ export interface PricingPlan {
   id: string;
   name: string;
   multiplier: string;
+  discount?: string;
 }
 
 export interface WalletAccount {
@@ -16,6 +17,9 @@ export interface WalletAccount {
   total_spent: string;
   pending_requests: number;
   pricing_plan: PricingPlan;
+  discount?: string;
+  discount_override?: string | null;
+  discount_source?: "customer" | "plan";
 }
 
 export interface LedgerEntry {
@@ -82,12 +86,12 @@ export function isPositiveAmount(value: string): boolean {
   return /^\d{1,9}(?:\.\d{1,9})?$/.test(value) && /[1-9]/.test(value);
 }
 
-export function usdPerTokenToPerMillion(value: string): string | null {
+function shiftDecimal(value: string, places: number): string | null {
   const matched = /^\+?(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d{1,3}))?$/.exec(value);
   if (!matched) return null;
   const [, whole, fraction = "", exponent = "0"] = matched;
   const digits = whole + fraction;
-  const point = whole.length + 6 + parseInt(exponent, 10);
+  const point = whole.length + places + parseInt(exponent, 10);
   const shifted =
     point <= 0
       ? `0.${"0".repeat(-point)}${digits}`
@@ -98,6 +102,52 @@ export function usdPerTokenToPerMillion(value: string): string | null {
   const normalizedInteger = integer.replace(/^0+(?=\d)/, "");
   const normalizedDecimals = decimals.replace(/0+$/, "");
   return normalizedDecimals ? `${normalizedInteger}.${normalizedDecimals}` : normalizedInteger;
+}
+
+export function usdPerTokenToPerMillion(value: string): string | null {
+  return shiftDecimal(value, 6);
+}
+
+function decimalFromInteger(value: bigint, places: number): string {
+  const digits = value.toString().padStart(places + 1, "0");
+  const whole = digits.slice(0, -places);
+  const fraction = digits.slice(-places).replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole;
+}
+
+export function percentToDiscount(value: string): string | null {
+  const matched = /^(\d{1,3})(?:\.(\d{1,7}))?$/.exec(value);
+  if (!matched) return null;
+  const units = BigInt(matched[1]) * BigInt(10_000_000) + BigInt((matched[2] ?? "").padEnd(7, "0"));
+  return units > BigInt(0) && units <= BigInt(1_000_000_000) ? decimalFromInteger(units, 9) : null;
+}
+
+export function discountToPercent(value: string): string {
+  return shiftDecimal(value, 2) ?? value;
+}
+
+export function discountDescription(value: string): string {
+  const percent = discountToPercent(value);
+  const normalized = shiftDecimal(value, 9);
+  if (!normalized || !/^\d+$/.test(normalized)) return `${percent}% of reference price`;
+  const units = BigInt(normalized);
+  if (units > BigInt(1_000_000_000)) return `Legacy markup: ${percent}% of reference price`;
+  return `${percent}% of reference price (${decimalFromInteger(BigInt(1_000_000_000) - units, 7)}% off)`;
+}
+
+export function effectiveDiscount(wallet: WalletAccount): string {
+  return wallet.discount ?? wallet.pricing_plan.discount ?? wallet.pricing_plan.multiplier;
+}
+
+function multiplyDecimals(left: string, right: string): string | null {
+  const a = /^(\d+)(?:\.(\d+))?$/.exec(left);
+  const b = /^(\d+)(?:\.(\d+))?$/.exec(right);
+  if (!a || !b) return null;
+  const fractionA = a[2] ?? "";
+  const fractionB = b[2] ?? "";
+  const units = BigInt(a[1] + fractionA) * BigInt(b[1] + fractionB);
+  const places = fractionA.length + fractionB.length;
+  return places === 0 ? units.toString() : decimalFromInteger(units, places);
 }
 
 export interface ReceiptSection {
@@ -112,6 +162,8 @@ function detailRecord(value: unknown): Record<string, unknown> {
 export function ledgerReceiptSections(details: Record<string, unknown>): ReceiptSection[] {
   const usage = detailRecord(details.usage);
   const snapshot = detailRecord(details.price_snapshot);
+  const discount = typeof snapshot.discount === "string" ? snapshot.discount : snapshot.multiplier;
+  const hasReference = snapshot.source === "catalog" || snapshot.source === "manual";
   const usageRows = [
     { key: "input_tokens", label: "Input tokens (uncached)" },
     { key: "output_tokens", label: "Output tokens" },
@@ -124,28 +176,50 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
       ? [{ label, value: String(value) }]
       : [];
   });
-  const priceRows = [
+  const prices = [
     { key: "input_cost_per_token", label: "Input base price / 1M" },
     { key: "output_cost_per_token", label: "Output base price / 1M" },
     { key: "cache_read_input_token_cost", label: "Cache read base price / 1M" },
     { key: "cache_creation_input_token_cost", label: "Cache write base price / 1M" },
-  ].flatMap(({ key, label }) => {
+  ];
+  const priceRows = prices.flatMap(({ key, label }) => {
     const value = snapshot[key];
     const scaled = typeof value === "string" ? usdPerTokenToPerMillion(value) : null;
-    return scaled === null ? [] : [{ label, value: `${formatMoney(scaled)} USD` }];
+    const referenceLabel = hasReference ? label.replace("base price", "reference price") : label;
+    const effective = scaled !== null && typeof discount === "string" ? multiplyDecimals(scaled, discount) : null;
+    return scaled === null
+      ? []
+      : [
+          { label: referenceLabel, value: `${formatMoney(scaled)} USD` },
+          ...(effective === null
+            ? []
+            : [{ label: label.replace("base price", "customer price"), value: `${formatMoney(effective)} USD` }]),
+        ];
   });
   const planRows = [
-    { key: "plan_id", label: "Pricing plan" },
-    { key: "multiplier", label: "Plan multiplier" },
+    { key: "plan_id", label: "Discount plan" },
     { key: "price_version", label: "Price version" },
   ].flatMap(({ key, label }) => {
     const value = snapshot[key];
     if (typeof value !== "string" && !(typeof value === "number" && Number.isSafeInteger(value))) return [];
-    return [{ label, value: key === "multiplier" ? `${value}×` : String(value) }];
+    return [{ label, value: String(value) }];
   });
+  const discountRows =
+    typeof discount === "string" ? [{ label: "Customer discount", value: discountDescription(discount) }] : [];
+  const sourceRows =
+    snapshot.discount_source === "customer" || snapshot.discount_source === "plan"
+      ? [
+          {
+            label: "Discount source",
+            value: snapshot.discount_source === "customer" ? "Customer override" : "Shared plan",
+          },
+        ]
+      : [];
+  const referenceRows =
+    typeof snapshot.source_label === "string" ? [{ label: "Reference source", value: snapshot.source_label }] : [];
   return [
     { title: "Token usage", rows: usageRows },
-    { title: "Pricing snapshot", rows: [...planRows, ...priceRows] },
+    { title: "Pricing snapshot", rows: [...planRows, ...discountRows, ...sourceRows, ...referenceRows, ...priceRows] },
   ].filter(({ rows }) => rows.length > 0);
 }
 

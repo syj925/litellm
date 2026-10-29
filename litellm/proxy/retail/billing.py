@@ -108,7 +108,9 @@ class RetailBilling(CustomLogger):
             **card,
             "version": "flat-token-v1",
             "price_version": card.get("version"),
-            "multiplier": str(as_mapping(wallet["pricing_plan"])["multiplier"]),
+            "multiplier": str(wallet["discount"]),
+            "discount": str(wallet["discount"]),
+            "discount_source": wallet["discount_source"],
             "plan_id": as_mapping(wallet["pricing_plan"])["id"],
             "billing_mode": "embedding" if call_type in {"embedding", "aembedding"} else "text",
         }

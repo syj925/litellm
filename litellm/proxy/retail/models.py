@@ -1,5 +1,5 @@
 from decimal import ROUND_CEILING, Decimal, InvalidOperation
-from typing import Final
+from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
@@ -73,6 +73,7 @@ class PricePlan(BaseModel):
     id: str
     name: str
     multiplier: str
+    discount: str
 
 
 class WalletView(BaseModel):
@@ -86,7 +87,20 @@ class WalletView(BaseModel):
     total_credited: str
     total_spent: str
     pricing_plan: PricePlan
+    discount: str
+    discount_override: str | None
+    discount_source: Literal["customer", "plan"]
     pending_requests: int
+
+
+def parse_discount(value: str) -> Decimal:
+    try:
+        discount: Final = Decimal(value)
+        if not discount.is_finite() or not 0 < discount <= 1 or discount.as_tuple().exponent < -9:
+            raise InvalidAmount("Discount must be greater than zero and at most 1, with up to nine decimal places")
+        return discount
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise InvalidAmount("Discount must be a decimal value between zero and 1") from exc
 
 
 class ReservationView(BaseModel):

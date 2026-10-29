@@ -1,7 +1,17 @@
 from decimal import Decimal
+from typing import Final
+
+import pytest
 
 from litellm.proxy.retail.billing import reservation_id
-from litellm.proxy.retail.pricing import UsageFacts, charge_for_usage, reserve_quote, usage_facts
+from litellm.proxy.retail.pricing import (
+    UsageFacts,
+    catalog_candidates,
+    catalog_snapshot,
+    charge_for_usage,
+    reserve_quote,
+    usage_facts,
+)
 
 SNAPSHOT = {
     "input_cost_per_token": "0.000002",
@@ -77,3 +87,76 @@ def test_logging_metadata_preserves_server_reservation_across_stream_callbacks()
         reservation_id({"litellm_params": {"litellm_metadata": {"retail_request_id": "server-reservation"}}})
         == "server-reservation"
     )
+
+
+def test_customer_discount_is_the_final_factor_and_legacy_snapshots_keep_the_original_multiplier() -> None:
+    facts: Final = UsageFacts(input_tokens=10, output_tokens=2, cache_read_tokens=5, cache_write_tokens=3)
+    snapshot: Final = {**SNAPSHOT, "multiplier": "0.8", "discount": "0.65"}
+    assert charge_for_usage(snapshot, facts) == "0.000031525"
+    assert charge_for_usage(SNAPSHOT, facts) == "0.000072750"
+    assert snapshot["multiplier"] == "0.8"
+
+
+def test_catalog_reference_ignores_all_configured_channel_cost_overrides() -> None:
+    catalog: Final = {"model-a": {"input_cost_per_token": "0.000002", "output_cost_per_token": "0.000010"}}
+    deployments: Final = (
+        {
+            "litellm_params": {"model": "openai/model-a", "input_cost_per_token": 99, "output_cost_per_token": 999},
+            "model_info": {"input_cost_per_token": 11, "output_cost_per_token": 111},
+        },
+    )
+    card: Final = catalog_snapshot("public-model", deployments, "0.7", catalog)
+    assert card["input_cost_per_token"] == "0.000002"
+    assert card["output_cost_per_token"] == "0.000010"
+    assert card["model"] == "public-model"
+    assert card["catalog_model"] == "model-a"
+    assert card["source"] == "catalog"
+    assert card["multiplier"] == "0.7"
+
+
+def test_multiple_channel_credentials_for_one_catalog_model_share_one_reference() -> None:
+    catalog: Final = {"model-a": {"input_cost_per_token": "0.000002", "output_cost_per_token": "0.000010"}}
+    deployments: Final = (
+        {"litellm_params": {"model": "openai/model-a", "api_base": "https://one.example"}},
+        {"litellm_params": {"model": "openai/model-a", "api_base": "https://two.example"}},
+    )
+    assert len(catalog_candidates("public-model", deployments, catalog)) == 1
+    assert catalog_snapshot("public-model", deployments, "1", catalog)["catalog_model"] == "model-a"
+
+
+@pytest.mark.parametrize("second_model", ("model-b", "unknown-model"))
+def test_ambiguous_or_unrecognized_deployments_require_an_explicit_reference_choice(second_model: str) -> None:
+    catalog: Final = {
+        "model-a": {"input_cost_per_token": "0.000002", "output_cost_per_token": "0.000010"},
+        "model-b": {"input_cost_per_token": "0.000001", "output_cost_per_token": "0.000020"},
+    }
+    deployments: Final = (
+        {"litellm_params": {"model": "model-a"}},
+        {"litellm_params": {"model": second_model}},
+    )
+    with pytest.raises(ValueError, match="single supported catalog reference"):
+        catalog_snapshot("public-model", deployments, "1", catalog)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    (
+        {"input_cost_per_token_above_200k_tokens": "0.000004"},
+        {"cache_creation_input_token_cost_above_1hr": "0.000004"},
+        {"mode": "image_generation"},
+        {"cache_read_input_token_cost": "NaN"},
+        {"output_cost_per_token": None},
+    ),
+)
+def test_unsupported_or_invalid_catalog_prices_cannot_silently_become_flat_or_free(extra: dict[str, object]) -> None:
+    catalog: Final = {
+        "model-a": {
+            "input_cost_per_token": "0.000002",
+            "output_cost_per_token": "0.000010",
+            **extra,
+        }
+    }
+    deployments: Final = ({"litellm_params": {"model": "model-a"}},)
+    assert catalog_candidates("public-model", deployments, catalog) == ()
+    with pytest.raises(ValueError):
+        catalog_snapshot("public-model", deployments, "1", catalog)

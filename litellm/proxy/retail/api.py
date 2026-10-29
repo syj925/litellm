@@ -4,12 +4,14 @@ import hmac
 import os
 from collections.abc import Awaitable, Mapping
 from decimal import Decimal, InvalidOperation
+from itertools import chain
 from typing import Annotated, Final, Literal, TypeAlias
 from uuid import uuid4
 
 import psycopg
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import (
+    AliasChoices,
     BaseModel,
     ConfigDict,
     EmailStr,
@@ -36,7 +38,9 @@ from .models import (
     WalletError,
     WalletNotFound,
     amount_to_nanos,
+    parse_discount,
 )
+from .pricing import catalog_candidates
 from .store import WalletStore, get_store
 
 router: Final = APIRouter(prefix="/retail", tags=["Retail accounts"])
@@ -64,7 +68,30 @@ class PlanRequest(BaseModel):
 
     id: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
     name: str = Field(min_length=1, max_length=100)
-    multiplier: str = Field(min_length=1, max_length=30)
+    discount: str = Field(min_length=1, max_length=30, validation_alias=AliasChoices("discount", "multiplier"))
+
+    @field_validator("discount")
+    @classmethod
+    def valid_discount(cls, value: str) -> str:
+        return _validated_discount(value)
+
+
+class SetDiscountRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    discount: str | None = Field(min_length=1, max_length=30)
+
+    @field_validator("discount")
+    @classmethod
+    def valid_discount(cls, value: str | None) -> str | None:
+        return _validated_discount(value) if value is not None else None
+
+
+def _validated_discount(value: str) -> str:
+    try:
+        return format(parse_discount(value), "f")
+    except InvalidAmount as exc:
+        raise ValueError(str(exc)) from exc
 
 
 class SetPlanRequest(BaseModel):
@@ -93,6 +120,29 @@ class _StoredModelPrice(BaseModel):
     output_cost_per_token: str
     cache_read_input_token_cost: str
     cache_creation_input_token_cost: str
+    source: str = "legacy"
+    catalog_model: str | None = None
+    source_label: str = "Existing reference, review required"
+
+
+class ReferenceSelection(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    model: str = Field(min_length=1, max_length=191)
+    catalog_model: str = Field(min_length=1, max_length=300)
+    source_label: str = Field(min_length=1, max_length=300)
+
+
+class ReferenceImportRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    items: tuple[ReferenceSelection, ...] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def unique_models(self) -> "ReferenceImportRequest":
+        if len({item.model for item in self.items}) != len(self.items):
+            raise ValueError("Select exactly one catalog reference per public model")
+        return self
 
 
 class ResolveRequest(BaseModel):
@@ -160,6 +210,11 @@ def _public_ledger_details(value: object) -> dict[str, JsonValue]:
         "version",
         "price_version",
         "multiplier",
+        "discount",
+        "discount_source",
+        "source",
+        "source_label",
+        "catalog_model",
         "input_cost_per_token",
         "output_cost_per_token",
         "cache_read_input_token_cost",
@@ -316,6 +371,9 @@ def _model_price_view(card: _StoredModelPrice) -> dict[str, JsonValue]:
         "model": card.model,
         "version": card.version,
         "updated_at": card.updated_at,
+        "source": card.source,
+        "catalog_model": card.catalog_model,
+        "source_label": card.source_label,
         "input_per_million": format(Decimal(card.input_cost_per_token) * 1000000, "f"),
         "output_per_million": format(Decimal(card.output_cost_per_token) * 1000000, "f"),
         "cache_read_per_million": format(Decimal(card.cache_read_input_token_cost) * 1000000, "f"),
@@ -404,7 +462,74 @@ async def admin_credit(
 
 @router.post("/admin/plans")
 async def admin_plan(data: PlanRequest, admin: Admin, store: Store) -> dict[str, JsonValue]:
-    return await _execute(store.save_plan(data.id, data.name, data.multiplier))
+    return await _execute(store.save_plan(data.id, data.name, data.discount))
+
+
+def _configured_references() -> tuple[tuple[str, tuple[dict[str, JsonValue], ...]], ...]:
+    from litellm.proxy.proxy_server import llm_router
+
+    if llm_router is None:
+        return ()
+    return tuple(
+        (model, catalog_candidates(model, tuple(llm_router.get_model_list(model) or ())))
+        for model in sorted(llm_router.model_names)
+    )
+
+
+def _reference_price_view(card: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    return {
+        "model": card["model"],
+        "catalog_model": card["catalog_model"],
+        "source_label": card["source_label"],
+        "input_per_million": format(Decimal(str(card["input_cost_per_token"])) * 1000000, "f"),
+        "output_per_million": format(Decimal(str(card["output_cost_per_token"])) * 1000000, "f"),
+        "cache_read_per_million": format(Decimal(str(card["cache_read_input_token_cost"])) * 1000000, "f"),
+        "cache_write_per_million": format(Decimal(str(card["cache_creation_input_token_cost"])) * 1000000, "f"),
+    }
+
+
+@router.get("/admin/reference-prices")
+async def admin_reference_prices(admin: Admin) -> dict[str, JsonValue]:
+    groups: Final = _configured_references()
+    candidates: Final = chain.from_iterable(cards for _, cards in groups)
+    return {
+        "items": [_reference_price_view(card) for card in candidates],
+        "unavailable": [
+            {
+                "model": model,
+                "reason": "No supported flat token reference in the loaded catalog. Unknown, tiered and non-token prices require a reviewed manual reference",
+            }
+            for model, cards in groups
+            if not cards
+        ],
+    }
+
+
+@router.post("/admin/reference-prices/import")
+async def admin_import_reference_prices(
+    data: ReferenceImportRequest,
+    admin: Admin,
+    store: Store,
+) -> dict[str, JsonValue]:
+    candidates: Final = chain.from_iterable(cards for _, cards in _configured_references())
+    index: Final = {(str(card["model"]), str(card["catalog_model"])): card for card in candidates}
+    selected: Final = _select_references(data, index)
+    saved: Final = await _execute(store.save_reference_prices(selected))
+    cards: Final = TypeAdapter(tuple[_StoredModelPrice, ...]).validate_python(saved["items"])
+    return {"items": [_model_price_view(card) for card in cards]}
+
+
+def _select_references(
+    data: ReferenceImportRequest,
+    index: Mapping[tuple[str, str], dict[str, JsonValue]],
+) -> tuple[dict[str, JsonValue], ...]:
+    try:
+        selected: Final = tuple(index[(item.model, item.catalog_model)] for item in data.items)
+    except KeyError as exc:
+        raise HTTPException(400, "Select a supported catalog reference for a configured public model") from exc
+    if any(item.source_label != card["source_label"] for item, card in zip(data.items, selected, strict=True)):
+        raise HTTPException(409, "The reference catalog changed. Refresh and review prices before importing")
+    return selected
 
 
 @router.get("/admin/model-prices")
@@ -432,6 +557,13 @@ async def admin_save_model_price(data: ModelPriceRequest, admin: Admin, store: S
 @router.put("/admin/wallets/{user_id}/plan")
 async def admin_set_plan(user_id: str, data: SetPlanRequest, admin: Admin, store: Store) -> dict[str, JsonValue]:
     return await _execute(store.set_plan(user_id, data.plan_id))
+
+
+@router.put("/admin/wallets/{user_id}/discount")
+async def admin_set_discount(
+    user_id: str, data: SetDiscountRequest, admin: Admin, store: Store
+) -> dict[str, JsonValue]:
+    return await _execute(store.set_discount(user_id, data.discount))
 
 
 @router.get("/admin/reservations")

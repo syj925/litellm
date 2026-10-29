@@ -29,7 +29,11 @@ import { toast } from "@/lib/toast";
 import { isProxyAdminRole } from "@/utils/roles";
 import {
   formatMoney,
+  discountDescription,
+  discountToPercent,
+  effectiveDiscount,
   isPositiveAmount,
+  percentToDiscount,
   PageResult,
   PricingPlan,
   retailKeys,
@@ -64,10 +68,14 @@ export default function AdminWalletsPanel() {
   const [attempt, setAttempt] = useState<{ body: string; key: string } | null>(null);
   const [creditValidation, setCreditValidation] = useState<string | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
-  const [newPlan, setNewPlan] = useState({ id: "", name: "", multiplier: "1" });
+  const [newPlan, setNewPlan] = useState({ id: "", name: "", percentage: "100" });
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [planValidation, setPlanValidation] = useState<string | null>(null);
   const [planTarget, setPlanTarget] = useState<WalletAccount | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [discountTarget, setDiscountTarget] = useState<WalletAccount | null>(null);
+  const [customerPercentage, setCustomerPercentage] = useState("");
+  const [discountValidation, setDiscountValidation] = useState<string | null>(null);
   const page = Math.max(1, filters.page);
 
   const wallets = useQuery({
@@ -101,12 +109,19 @@ export default function AdminWalletsPanel() {
   });
   const planMutation = useMutation({
     mutationFn: () =>
-      retailRequest<PricingPlan>("/admin/plans", accessToken, { method: "POST", body: JSON.stringify(newPlan) }),
+      retailRequest<PricingPlan>("/admin/plans", accessToken, {
+        method: "POST",
+        body: JSON.stringify({
+          id: newPlan.id,
+          name: newPlan.name.trim(),
+          discount: percentToDiscount(newPlan.percentage),
+        }),
+      }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["retail"] });
       setPlanOpen(false);
-      setNewPlan({ id: "", name: "", multiplier: "1" });
-      toast.success("Pricing plan saved");
+      setNewPlan({ id: "", name: "", percentage: "100" });
+      toast.success("Discount plan saved");
     },
   });
   const assignmentMutation = useMutation({
@@ -119,7 +134,23 @@ export default function AdminWalletsPanel() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["retail"] });
       setPlanTarget(null);
-      toast.success("Pricing plan assigned");
+      toast.success("Discount plan assigned");
+    },
+  });
+  const discountMutation = useMutation({
+    mutationFn: (discount: string | null) =>
+      retailRequest<WalletAccount>(
+        `/admin/wallets/${encodeURIComponent(discountTarget?.user_id ?? "")}/discount`,
+        accessToken,
+        {
+          method: "PUT",
+          body: JSON.stringify({ discount }),
+        },
+      ),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["retail"] });
+      setDiscountTarget(null);
+      toast.success("Customer discount saved");
     },
   });
   const openCredit = (userId = "") => {
@@ -156,9 +187,11 @@ export default function AdminWalletsPanel() {
     if (
       !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(newPlan.id) ||
       !newPlan.name.trim() ||
-      !isPositiveAmount(newPlan.multiplier)
+      percentToDiscount(newPlan.percentage) === null
     ) {
-      setPlanValidation("Use a lowercase plan ID, a name, and a positive pricing multiplier.");
+      setPlanValidation(
+        "Use a lowercase plan ID, a name, and a reference-price percentage greater than 0 and at most 100 (up to 7 decimal places).",
+      );
       return;
     }
     setPlanValidation(null);
@@ -171,7 +204,7 @@ export default function AdminWalletsPanel() {
         role="alert"
         icon={<CircleAlert className="size-5" />}
         title="Administrator access required"
-        description="Only proxy administrators can credit wallets or manage pricing plans."
+        description="Only proxy administrators can credit wallets or manage customer discounts."
       />
     );
   const total = wallets.data?.total ?? 0;
@@ -186,7 +219,8 @@ export default function AdminWalletsPanel() {
             Customer wallets
           </PageHeaderTitle>
           <PageHeaderDescription>
-            Manage prepaid balances, record manual credits, and assign shared pricing plans.
+            Manage prepaid balances, record manual credits, and set customer discounts against official reference
+            prices.
           </PageHeaderDescription>
         </PageHeader>
         <div className="flex gap-2">
@@ -263,7 +297,8 @@ export default function AdminWalletsPanel() {
             <TableHeader className="bg-muted/40">
               <TableRow>
                 <TableHead className="pl-5">Account</TableHead>
-                <TableHead>Pricing plan</TableHead>
+                <TableHead>Discount plan</TableHead>
+                <TableHead>Customer discount</TableHead>
                 <TableHead className="text-right">Available (USD)</TableHead>
                 <TableHead className="text-right">Reserved</TableHead>
                 <TableHead className="text-right">Lifetime spend</TableHead>
@@ -285,6 +320,12 @@ export default function AdminWalletsPanel() {
                   <TableCell>
                     <Badge variant="outline">{wallet.pricing_plan.name}</Badge>
                   </TableCell>
+                  <TableCell>
+                    <p className="text-xs tabular-nums">{discountDescription(effectiveDiscount(wallet))}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {wallet.discount_source === "customer" ? "Customer override" : "Inherited from plan"}
+                    </p>
+                  </TableCell>
                   <TableCell className="text-right font-medium tabular-nums">{formatMoney(wallet.available)}</TableCell>
                   <TableCell className="text-right text-muted-foreground tabular-nums">
                     {formatMoney(wallet.reserved)}
@@ -295,6 +336,18 @@ export default function AdminWalletsPanel() {
                     <div className="flex justify-end gap-1">
                       <Button size="xs" variant="outline" onClick={() => openCredit(wallet.user_id)}>
                         Add credit
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => {
+                          setDiscountTarget(wallet);
+                          setCustomerPercentage(discountToPercent(effectiveDiscount(wallet)));
+                          setDiscountValidation(null);
+                          discountMutation.reset();
+                        }}
+                      >
+                        Set discount
                       </Button>
                       <Button
                         size="xs"
@@ -344,12 +397,13 @@ export default function AdminWalletsPanel() {
 
       <Card className="shadow-none">
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
-          <CardTitle>Pricing plans</CardTitle>
+          <CardTitle>Discount plans</CardTitle>
           <Button
             variant="outline"
             size="sm"
             onClick={() => {
-              setNewPlan({ id: "", name: "", multiplier: "1" });
+              setNewPlan({ id: "", name: "", percentage: "100" });
+              setEditingPlanId(null);
               planMutation.reset();
               setPlanValidation(null);
               setPlanOpen(true);
@@ -361,8 +415,8 @@ export default function AdminWalletsPanel() {
         </CardHeader>
         <CardContent>
           <p className="mb-4 text-sm text-muted-foreground">
-            Reuse a plan across customers. Updating a shared plan applies to new requests. Existing reservations keep
-            their original pricing snapshot.
+            Reuse one discount across customers. A customer override takes priority over the shared plan. Changes apply
+            to new requests; existing reservations and historical bills keep their saved prices and discounts.
           </p>
           {plans.error ? (
             <Alert variant="error">
@@ -371,7 +425,7 @@ export default function AdminWalletsPanel() {
             </Alert>
           ) : plans.isPending ? (
             <p className="text-sm text-muted-foreground" role="status">
-              Loading pricing plans...
+              Loading discount plans...
             </p>
           ) : (
             <div className="flex flex-wrap gap-3">
@@ -379,14 +433,19 @@ export default function AdminWalletsPanel() {
                 <div key={plan.id} className="min-w-44 rounded-lg border px-4 py-3">
                   <p className="font-medium">{plan.name}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {plan.id} · {plan.multiplier}× sales price
+                    {plan.id} · {discountDescription(plan.discount ?? plan.multiplier)}
                   </p>
                   <Button
                     variant="link"
                     size="xs"
                     className="mt-2 px-0"
                     onClick={() => {
-                      setNewPlan(plan);
+                      setNewPlan({
+                        id: plan.id,
+                        name: plan.name,
+                        percentage: discountToPercent(plan.discount ?? plan.multiplier),
+                      });
+                      setEditingPlanId(plan.id);
                       planMutation.reset();
                       setPlanValidation(null);
                       setPlanOpen(true);
@@ -499,8 +558,10 @@ export default function AdminWalletsPanel() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Save pricing plan</DialogTitle>
-            <DialogDescription>Customers assigned to this plan share the same pricing multiplier.</DialogDescription>
+            <DialogTitle>Save discount plan</DialogTitle>
+            <DialogDescription>
+              Customers without a personal override pay this percentage of official reference prices.
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitPlan} className="flex flex-col gap-5">
             <FieldGroup>
@@ -513,7 +574,7 @@ export default function AdminWalletsPanel() {
                   onChange={(event) => setNewPlan({ ...newPlan, id: event.target.value })}
                   required
                   maxLength={64}
-                  disabled={planMutation.isPending}
+                  disabled={planMutation.isPending || editingPlanId !== null}
                 />
               </Field>
               <Field>
@@ -529,16 +590,18 @@ export default function AdminWalletsPanel() {
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="plan-multiplier">Pricing multiplier</FieldLabel>
+                <FieldLabel htmlFor="plan-percentage">Pay percentage of reference price (%)</FieldLabel>
                 <Input
-                  id="plan-multiplier"
+                  id="plan-percentage"
                   inputMode="decimal"
-                  value={newPlan.multiplier}
-                  onChange={(event) => setNewPlan({ ...newPlan, multiplier: event.target.value })}
+                  value={newPlan.percentage}
+                  onChange={(event) => setNewPlan({ ...newPlan, percentage: event.target.value })}
                   required
                   disabled={planMutation.isPending}
                 />
-                <p className="text-xs text-muted-foreground">Customer charge = model sales price × multiplier</p>
+                <p className="text-xs text-muted-foreground">
+                  70 means pay 70% of the reference price, a 30% discount. Enter more than 0 and at most 100.
+                </p>
               </Field>
             </FieldGroup>
             {(planValidation || planMutation.error) && (
@@ -572,11 +635,11 @@ export default function AdminWalletsPanel() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Assign pricing plan</DialogTitle>
+            <DialogTitle>Assign discount plan</DialogTitle>
             <DialogDescription className="break-all">{planTarget?.user_id}</DialogDescription>
           </DialogHeader>
           <Field>
-            <FieldLabel htmlFor="assigned-plan">Pricing plan</FieldLabel>
+            <FieldLabel htmlFor="assigned-plan">Discount plan</FieldLabel>
             <Select
               items={(plans.data?.items ?? []).map((plan) => ({ value: plan.id, label: plan.name }))}
               value={selectedPlan}
@@ -589,12 +652,18 @@ export default function AdminWalletsPanel() {
               <SelectContent>
                 {plans.data?.items.map((plan) => (
                   <SelectItem key={plan.id} value={plan.id}>
-                    {plan.name} ({plan.multiplier}×)
+                    {plan.name} ({discountToPercent(plan.discount ?? plan.multiplier)}% of reference)
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </Field>
+          {planTarget?.discount_source === "customer" && (
+            <p className="text-sm text-muted-foreground">
+              This account has a customer override. Assigning a plan preserves that override. Use Set discount to
+              restore plan inheritance.
+            </p>
+          )}
           {assignmentMutation.error && (
             <Alert variant="error">
               <CircleAlert />
@@ -612,6 +681,76 @@ export default function AdminWalletsPanel() {
               {assignmentMutation.isPending ? "Saving..." : "Assign plan"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={discountTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !discountMutation.isPending) setDiscountTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Set customer discount</DialogTitle>
+            <DialogDescription className="break-all">{discountTarget?.user_id}</DialogDescription>
+          </DialogHeader>
+          <form
+            className="flex flex-col gap-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const discount = percentToDiscount(customerPercentage);
+              if (discount === null) {
+                setDiscountValidation(
+                  "Enter a percentage greater than 0 and at most 100, with up to 7 decimal places.",
+                );
+                return;
+              }
+              setDiscountValidation(null);
+              discountMutation.mutate(discount);
+            }}
+          >
+            <p className="text-sm text-muted-foreground">
+              A personal discount applies to all priced models and overrides the shared plan. It does not change model
+              access or rate limits.
+            </p>
+            <Field>
+              <FieldLabel htmlFor="customer-percentage">Pay percentage of reference price (%)</FieldLabel>
+              <Input
+                id="customer-percentage"
+                inputMode="decimal"
+                value={customerPercentage}
+                onChange={(event) => setCustomerPercentage(event.target.value)}
+                required
+                disabled={discountMutation.isPending}
+              />
+              <p className="text-xs text-muted-foreground">70 means pay 70% of the reference price, a 30% discount.</p>
+            </Field>
+            <p className="text-sm text-muted-foreground">
+              Shared plan: {discountTarget?.pricing_plan.name} (
+              {discountTarget &&
+                discountDescription(discountTarget.pricing_plan.discount ?? discountTarget.pricing_plan.multiplier)}
+              )
+            </p>
+            {(discountValidation || discountMutation.error) && (
+              <Alert variant="error">
+                <AlertTitle>{discountValidation || discountMutation.error?.message}</AlertTitle>
+              </Alert>
+            )}
+            <DialogFooter className="flex-wrap">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={discountMutation.isPending}
+                onClick={() => discountMutation.mutate(null)}
+              >
+                Use plan discount
+              </Button>
+              <Button type="submit" disabled={discountMutation.isPending}>
+                {discountMutation.isPending ? "Saving..." : "Save customer discount"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

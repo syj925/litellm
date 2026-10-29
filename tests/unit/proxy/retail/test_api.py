@@ -9,15 +9,89 @@ from starlette.requests import Request
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.retail.api import (
+    PlanRequest,
+    ReferenceImportRequest,
     ResolveRequest,
+    SetDiscountRequest,
     SignupRequest,
     _per_token_price,
     _PublicLedgerPage,
+    _select_references,
     _source_hash,
     retail_admin,
     retail_user,
     router,
 )
+
+
+@pytest.mark.parametrize("field", ("discount", "multiplier"))
+def test_discount_plan_accepts_a_fraction_and_retains_the_legacy_request_field(field: str) -> None:
+    data: Final = PlanRequest.model_validate({"id": "shared", "name": "Shared", field: "0.7"})
+    assert data.discount == "0.7"
+
+
+@pytest.mark.parametrize("value", ("0", "-0.1", "1.01", "NaN", "Infinity", "0.1234567891", "1e-99999999"))
+def test_plan_and_customer_discount_reject_markup_or_unrepresentable_values(value: str) -> None:
+    with pytest.raises(ValidationError):
+        PlanRequest(id="shared", name="Shared", discount=value)
+    with pytest.raises(ValidationError):
+        SetDiscountRequest(discount=value)
+
+
+def test_an_explicit_null_clears_the_customer_override_but_an_omitted_field_does_not() -> None:
+    assert SetDiscountRequest(discount=None).discount is None
+    with pytest.raises(ValidationError):
+        SetDiscountRequest.model_validate({})
+
+
+def test_one_public_model_cannot_import_two_different_catalog_references() -> None:
+    with pytest.raises(ValidationError, match="exactly one"):
+        ReferenceImportRequest.model_validate(
+            {
+                "items": [
+                    {"model": "public", "catalog_model": "model-a", "source_label": "v1"},
+                    {"model": "public", "catalog_model": "model-b", "source_label": "v1"},
+                ]
+            }
+        )
+
+
+def test_reference_import_rejects_unconfigured_models_and_stale_previews_before_writes() -> None:
+    index: Final = {("public", "model-a"): {"model": "public", "catalog_model": "model-a", "source_label": "v2"}}
+    stale: Final = ReferenceImportRequest.model_validate(
+        {
+            "items": [
+                {"model": "public", "catalog_model": "model-a", "source_label": "v1"},
+            ]
+        }
+    )
+    with pytest.raises(HTTPException) as conflict:
+        _select_references(stale, index)
+    assert conflict.value.status_code == 409
+    unknown: Final = ReferenceImportRequest.model_validate(
+        {
+            "items": [
+                {"model": "other", "catalog_model": "model-a", "source_label": "v2"},
+            ]
+        }
+    )
+    with pytest.raises(HTTPException) as invalid:
+        _select_references(unknown, index)
+    assert invalid.value.status_code == 400
+    valid: Final = ReferenceImportRequest.model_validate(
+        {
+            "items": [
+                {"model": "public", "catalog_model": "model-a", "source_label": "v2"},
+            ]
+        }
+    )
+    assert _select_references(valid, index) == (index[("public", "model-a")],)
+
+
+@pytest.mark.parametrize("fields", ({}, {"source_label": ""}, {"source_label": None}))
+def test_reference_import_requires_the_reviewed_catalog_version(fields: dict[str, str | None]) -> None:
+    with pytest.raises(ValidationError, match="source_label"):
+        ReferenceImportRequest.model_validate({"items": [{"model": "public", "catalog_model": "model-a", **fields}]})
 
 
 @pytest.mark.parametrize("field", ("user_id", "user_role", "role", "max_budget", "balance", "plan_id"))

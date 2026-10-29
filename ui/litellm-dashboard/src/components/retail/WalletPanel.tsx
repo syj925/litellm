@@ -12,7 +12,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { uiHref } from "@/utils/uiHref";
-import { formatMoney, PageResult, LedgerEntry, retailKeys, retailRequest, WalletAccount } from "./api";
+import {
+  discountDescription,
+  effectiveDiscount,
+  formatMoney,
+  PageResult,
+  LedgerEntry,
+  retailKeys,
+  retailRequest,
+  WalletAccount,
+} from "./api";
 import { LedgerTable } from "./BillingPanel";
 
 export default function WalletPanel() {
@@ -140,8 +149,17 @@ export default function WalletPanel() {
                   <span className="font-medium tabular-nums">{formatMoney(wallet.data.balance)}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">Pricing plan</span>
+                  <span className="text-muted-foreground">Discount plan</span>
                   <Badge variant="outline">{wallet.data.pricing_plan.name}</Badge>
+                </div>
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-muted-foreground">Customer discount</span>
+                  <div className="text-right">
+                    <p className="font-medium">{discountDescription(effectiveDiscount(wallet.data))}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {wallet.data.discount_source === "customer" ? "Customer override" : "Inherited from your plan"}
+                    </p>
+                  </div>
                 </div>
                 <div className="border-t pt-3 text-xs leading-relaxed text-muted-foreground">
                   A reservation sets funds aside while a request runs. The final charge is recorded after settlement.

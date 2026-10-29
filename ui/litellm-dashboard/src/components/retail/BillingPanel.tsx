@@ -185,8 +185,8 @@ export function LedgerTable({
                   </dl>
                   {section.title === "Pricing snapshot" && (
                     <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-                      These are the sales prices saved for this request. The plan multiplier applies to the token
-                      charges before final settlement.
+                      These are the reference prices, customer discount, and effective token prices saved for this
+                      request. Later price or discount changes do not alter this bill.
                     </p>
                   )}
                 </section>
@@ -290,8 +290,8 @@ export default function BillingPanel() {
         </div>
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        This statement shows customer charges under your pricing plan. Gateway costs shown in the Usage dashboard can
-        differ from your wallet charges.
+        This statement shows customer charges after your discount. Gateway costs shown in the Usage dashboard can differ
+        from your wallet charges.
       </p>
     </div>
   );

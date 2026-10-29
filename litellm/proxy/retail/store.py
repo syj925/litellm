@@ -28,6 +28,7 @@ from .models import (
     amount_to_nanos,
     cost_to_nanos,
     nanos_to_amount,
+    parse_discount,
 )
 
 
@@ -42,6 +43,7 @@ class _WalletRow(BaseModel):
     plan_id: str
     plan_name: str
     multiplier: Decimal
+    discount_override: Decimal | None = None
     pending_requests: int
 
 
@@ -108,6 +110,9 @@ class _ModelPriceRow(BaseModel):
     cache_creation_input_token_cost: Decimal
     version: int
     updated_at: datetime
+    source: str = "legacy"
+    catalog_model: str | None = None
+    source_label: str = "Existing reference, review required"
 
 
 class _UserIdRow(BaseModel):
@@ -136,8 +141,8 @@ _MODEL_PRICE_KEYS: Final = (
 )
 _MODEL_PRICE_INSERT: Final = """
     INSERT INTO retail_model_prices(model,input_cost_per_token,output_cost_per_token,
-           cache_read_input_token_cost,cache_creation_input_token_cost)
-    VALUES (%s,%s,%s,%s,%s)
+           cache_read_input_token_cost,cache_creation_input_token_cost,source,catalog_model,source_label)
+    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
 """
 
 
@@ -171,7 +176,15 @@ def _wallet_view(row: _WalletRow) -> dict[str, JsonValue]:
         available=nanos_to_amount(row.balance_nanos - row.reserved_nanos),
         total_credited=nanos_to_amount(row.total_credited_nanos),
         total_spent=nanos_to_amount(row.total_spent_nanos),
-        pricing_plan=PricePlan(id=row.plan_id, name=row.plan_name, multiplier=format(row.multiplier, "f")),
+        pricing_plan=PricePlan(
+            id=row.plan_id,
+            name=row.plan_name,
+            multiplier=format(row.multiplier, "f"),
+            discount=format(row.multiplier, "f"),
+        ),
+        discount=format(row.discount_override if row.discount_override is not None else row.multiplier, "f"),
+        discount_override=format(row.discount_override, "f") if row.discount_override is not None else None,
+        discount_source="customer" if row.discount_override is not None else "plan",
         pending_requests=row.pending_requests,
     ).model_dump(mode="json")
 
@@ -228,6 +241,9 @@ def _model_price_view(row: _ModelPriceRow) -> dict[str, JsonValue]:
         "cache_creation_input_token_cost": format(row.cache_creation_input_token_cost, "f"),
         "version": row.version,
         "updated_at": row.updated_at.isoformat(),
+        "source": row.source,
+        "catalog_model": row.catalog_model,
+        "source_label": row.source_label,
     }
 
 
@@ -599,7 +615,15 @@ class WalletStore:
                 connection, "SELECT id,name,multiplier FROM retail_pricing_plans ORDER BY created_at,id", (), _PlanRow
             )
             return {
-                "items": [{"id": row.id, "name": row.name, "multiplier": format(row.multiplier, "f")} for row in rows]
+                "items": [
+                    {
+                        "id": row.id,
+                        "name": row.name,
+                        "multiplier": format(row.multiplier, "f"),
+                        "discount": format(row.multiplier, "f"),
+                    }
+                    for row in rows
+                ]
             }
 
     async def get_model_price(
@@ -608,7 +632,16 @@ class WalletStore:
         async with self.transaction() as connection:
             if initial_snapshot is not None:
                 rates: Final = _model_price_rates(initial_snapshot)
-                await connection.execute(_MODEL_PRICE_INSERT + " ON CONFLICT(model) DO NOTHING", (model, *rates))
+                await connection.execute(
+                    _MODEL_PRICE_INSERT + " ON CONFLICT(model) DO NOTHING",
+                    (
+                        model,
+                        *rates,
+                        initial_snapshot.get("source", "legacy"),
+                        initial_snapshot.get("catalog_model"),
+                        initial_snapshot.get("source_label", "Existing reference, review required"),
+                    ),
+                )
             row: Final = await _one(
                 connection, "SELECT * FROM retail_model_prices WHERE model=%s", (model,), _ModelPriceRow
             )
@@ -621,37 +654,77 @@ class WalletStore:
             )
             return {"items": [_model_price_view(row) for row in rows]}
 
-    async def save_model_price(self, model: str, rates: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    async def save_model_price(
+        self,
+        model: str,
+        rates: Mapping[str, JsonValue],
+        *,
+        source: str = "manual",
+        catalog_model: str | None = None,
+        source_label: str = "Manual official reference",
+    ) -> dict[str, JsonValue]:
         if not model or len(model) > 191:
             raise ValueError("A model name of at most 191 characters is required")
         parsed: Final = _model_price_rates(rates)
         async with self.transaction() as connection:
-            row: Final = await _one(
+            return await self._save_model_price(
                 connection,
-                _MODEL_PRICE_INSERT
-                + """ ON CONFLICT(model) DO UPDATE SET
-                    input_cost_per_token=EXCLUDED.input_cost_per_token,
-                    output_cost_per_token=EXCLUDED.output_cost_per_token,
-                    cache_read_input_token_cost=EXCLUDED.cache_read_input_token_cost,
-                    cache_creation_input_token_cost=EXCLUDED.cache_creation_input_token_cost,
-                    version=retail_model_prices.version+1,updated_at=now()
-                    RETURNING *""",
-                (model, *parsed),
-                _ModelPriceRow,
+                model,
+                parsed,
+                source,
+                catalog_model,
+                source_label,
             )
-            if row is None:
-                raise ValueError("The model price could not be saved")
-            return _model_price_view(row)
+
+    async def save_reference_prices(self, cards: Sequence[Mapping[str, JsonValue]]) -> dict[str, JsonValue]:
+        parsed: Final = tuple((card, _model_price_rates(card)) for card in cards)
+        async with self.transaction() as connection:
+            saved: Final = tuple(
+                [
+                    await self._save_model_price(
+                        connection,
+                        str(card["model"]),
+                        rates,
+                        "catalog",
+                        str(card["catalog_model"]),
+                        str(card["source_label"]),
+                    )
+                    for card, rates in parsed
+                ]
+            )
+            return {"items": list(saved)}
+
+    async def _save_model_price(
+        self,
+        connection: psycopg.AsyncConnection,
+        model: str,
+        rates: Sequence[Decimal],
+        source: str,
+        catalog_model: str | None,
+        source_label: str,
+    ) -> dict[str, JsonValue]:
+        if not model or len(model) > 191 or source not in {"manual", "catalog"}:
+            raise ValueError("A configured model name and reference source are required")
+        row: Final = await _one(
+            connection,
+            _MODEL_PRICE_INSERT
+            + """ ON CONFLICT(model) DO UPDATE SET
+                input_cost_per_token=EXCLUDED.input_cost_per_token,
+                output_cost_per_token=EXCLUDED.output_cost_per_token,
+                cache_read_input_token_cost=EXCLUDED.cache_read_input_token_cost,
+                cache_creation_input_token_cost=EXCLUDED.cache_creation_input_token_cost,
+                source=EXCLUDED.source,catalog_model=EXCLUDED.catalog_model,source_label=EXCLUDED.source_label,
+                version=retail_model_prices.version+1,updated_at=now()
+                RETURNING *""",
+            (model, *rates, source, catalog_model, source_label),
+            _ModelPriceRow,
+        )
+        if row is None:
+            raise ValueError("The model reference price could not be saved")
+        return _model_price_view(row)
 
     async def save_plan(self, plan_id: str, name: str, multiplier: str) -> dict[str, JsonValue]:
-        try:
-            value: Final = Decimal(multiplier)
-        except (InvalidOperation, TypeError, ValueError) as exc:
-            raise InvalidAmount("The pricing multiplier must be a decimal value") from exc
-        if not value.is_finite() or value <= 0 or value > 1000 or value.as_tuple().exponent < -9:
-            raise InvalidAmount(
-                "The pricing multiplier must be greater than zero, at most 1000, with up to nine decimals"
-            )
+        value: Final = parse_discount(multiplier)
         if not plan_id or len(plan_id) > 100 or not name or len(name) > 200:
             raise ValueError("A pricing plan ID and name are required")
         async with self.transaction() as connection:
@@ -665,7 +738,21 @@ class WalletStore:
             )
             if row is None:
                 raise PlanNotFound("Pricing plan could not be saved")
-            return {"id": row.id, "name": row.name, "multiplier": format(row.multiplier, "f")}
+            return {
+                "id": row.id,
+                "name": row.name,
+                "multiplier": format(row.multiplier, "f"),
+                "discount": format(row.multiplier, "f"),
+            }
+
+    async def set_discount(self, user_id: str, discount: str | None) -> dict[str, JsonValue]:
+        value: Final = parse_discount(discount) if discount is not None else None
+        async with self.transaction() as connection:
+            await self._lock_wallet(connection, user_id)
+            await connection.execute(
+                "UPDATE retail_wallets SET discount_override=%s,updated_at=now() WHERE user_id=%s", (value, user_id)
+            )
+            return _wallet_view(await self._read_wallet(connection, user_id))
 
     async def set_plan(self, user_id: str, plan_id: str) -> dict[str, JsonValue]:
         async with self.transaction() as connection:
