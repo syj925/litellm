@@ -169,8 +169,9 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
         <div className="border-t">
           <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-              Customer charges use these reference rates multiplied by the customer discount. Channel procurement costs
-              are separate. Catalog imports require review and confirmation; existing bills keep their saved prices.
+              Customer charges use these reference rates multiplied by the negotiated discount for that customer and
+              model. Channel procurement costs are separate. Catalog imports require review and confirmation; existing
+              bills keep their saved prices.
             </p>
             <div className="flex gap-2">
               <Button

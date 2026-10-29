@@ -906,6 +906,7 @@ class LiteLLMRoutes(enum.Enum):
             "/retail/wallet",
             "/retail/ledger",
             "/retail/plans",
+            "/retail/model-discounts",
             "/global/activity",
             "/global/activity/model",
             "/global/activity/cache_hits",
@@ -941,6 +942,7 @@ class LiteLLMRoutes(enum.Enum):
             "/retail/wallet",
             "/retail/ledger",
             "/retail/plans",
+            "/retail/model-discounts",
             # Tag usage endpoints scope internal viewers to tags produced by
             # their own keys in tag_management_endpoints.py.
             "/tag/daily/activity",

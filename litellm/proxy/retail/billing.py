@@ -44,6 +44,24 @@ def reservation_id(data: Mapping[str, object]) -> str | None:
     return None
 
 
+def price_snapshot(
+    card: Mapping[str, JsonValue],
+    discount: Mapping[str, JsonValue],
+    call_type: str,
+) -> dict[str, JsonValue]:
+    return {
+        **card,
+        "version": "flat-token-v1",
+        "price_version": card.get("version"),
+        "multiplier": str(discount["discount"]),
+        "discount": str(discount["discount"]),
+        "discount_source": discount["discount_source"],
+        "discount_model": discount["model"],
+        "plan_id": discount["plan_id"],
+        "billing_mode": "embedding" if call_type in {"embedding", "aembedding"} else "text",
+    }
+
+
 class RetailBilling(CustomLogger):
     is_accounting_callback = True
 
@@ -89,7 +107,7 @@ class RetailBilling(CustomLogger):
             )
         store: Final = self._store()
         await store.initialize()
-        wallet: Final = await store.get_wallet(user_id, create=True)
+        await store.get_wallet(user_id, create=True)
         from litellm.proxy.proxy_server import llm_router
 
         model: Final = str(data.get("model", ""))
@@ -104,16 +122,8 @@ class RetailBilling(CustomLogger):
             raise HTTPException(422, str(exc)) from exc
         if card is None:
             raise HTTPException(422, "A model sales price is required")
-        snapshot: Final = {
-            **card,
-            "version": "flat-token-v1",
-            "price_version": card.get("version"),
-            "multiplier": str(wallet["discount"]),
-            "discount": str(wallet["discount"]),
-            "discount_source": wallet["discount_source"],
-            "plan_id": as_mapping(wallet["pricing_plan"])["id"],
-            "billing_mode": "embedding" if call_type in {"embedding", "aembedding"} else "text",
-        }
+        discount: Final = await store.get_model_discount(user_id, model)
+        snapshot: Final = price_snapshot(card, discount, call_type)
         embedding: Final = call_type in {"embedding", "aembedding"}
         limit_key: Final = "max_output_tokens" if call_type in {"responses", "aresponses"} else "max_tokens"
         if (

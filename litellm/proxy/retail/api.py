@@ -40,7 +40,7 @@ from .models import (
     amount_to_nanos,
     parse_discount,
 )
-from .pricing import catalog_candidates
+from .pricing import as_mapping, catalog_candidates
 from .store import WalletStore, get_store
 
 router: Final = APIRouter(prefix="/retail", tags=["Retail accounts"])
@@ -68,12 +68,21 @@ class PlanRequest(BaseModel):
 
     id: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
     name: str = Field(min_length=1, max_length=100)
-    discount: str = Field(min_length=1, max_length=30, validation_alias=AliasChoices("discount", "multiplier"))
+    discount: str | None = Field(
+        default=None, min_length=1, max_length=30, validation_alias=AliasChoices("discount", "multiplier")
+    )
 
     @field_validator("discount")
     @classmethod
-    def valid_discount(cls, value: str) -> str:
-        return _validated_discount(value)
+    def valid_discount(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized: Final = _validated_discount(value)
+        if Decimal(normalized) != 1:
+            raise ValueError(
+                "Use model-discounts to configure selected models. A global plan discount may only reset to 1"
+            )
+        return normalized
 
 
 class SetDiscountRequest(BaseModel):
@@ -84,7 +93,30 @@ class SetDiscountRequest(BaseModel):
     @field_validator("discount")
     @classmethod
     def valid_discount(cls, value: str | None) -> str | None:
+        if value is not None:
+            raise ValueError(
+                "Use model-discounts to configure selected models. The legacy global override may only be cleared"
+            )
+        return None
+
+
+class SetModelDiscountRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    models: tuple[Annotated[str, Field(min_length=1, max_length=191)], ...] = Field(min_length=1, max_length=500)
+    discount: str | None = Field(min_length=1, max_length=30)
+
+    @field_validator("discount")
+    @classmethod
+    def valid_discount(cls, value: str | None) -> str | None:
         return _validated_discount(value) if value is not None else None
+
+    @field_validator("models")
+    @classmethod
+    def valid_models(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not model.strip() for model in value) or len(set(value)) != len(value):
+            raise ValueError("Select distinct non-empty public model names")
+        return value
 
 
 def _validated_discount(value: str) -> str:
@@ -212,6 +244,7 @@ def _public_ledger_details(value: object) -> dict[str, JsonValue]:
         "multiplier",
         "discount",
         "discount_source",
+        "discount_model",
         "source",
         "source_label",
         "catalog_model",
@@ -427,6 +460,75 @@ async def plans(user: User, store: Store) -> dict[str, JsonValue]:
         return await _execute(store.list_plans())
     own_wallet: Final = await _execute(store.get_wallet(user.user_id or "", create=True))
     return {"items": [own_wallet["pricing_plan"]]}
+
+
+def _configured_model_names() -> tuple[str, ...]:
+    from litellm.proxy.proxy_server import llm_router
+
+    return tuple(sorted(llm_router.model_names)) if llm_router is not None else ()
+
+
+@router.get("/model-discounts")
+async def own_model_discounts(user: User, store: Store) -> dict[str, JsonValue]:
+    await _execute(store.get_wallet(user.user_id or "", create=True))
+    return await _execute(store.list_model_discounts(user.user_id or "", _configured_model_names()))
+
+
+@router.get("/admin/discount-models")
+async def admin_discount_models(admin: Admin) -> dict[str, JsonValue]:
+    return {"models": list(_configured_model_names())}
+
+
+@router.get("/admin/wallets/{user_id}/model-discounts")
+async def admin_customer_model_discounts(user_id: str, admin: Admin, store: Store) -> dict[str, JsonValue]:
+    return await _execute(store.list_model_discounts(user_id, _configured_model_names()))
+
+
+@router.get("/admin/plans/{plan_id}/model-discounts")
+async def admin_plan_model_discounts(plan_id: str, admin: Admin, store: Store) -> dict[str, JsonValue]:
+    return await _execute(store.list_plan_model_discounts(plan_id, _configured_model_names()))
+
+
+def _validate_discount_selection(
+    data: SetModelDiscountRequest,
+    configured: tuple[str, ...],
+    current: Mapping[str, JsonValue],
+) -> None:
+    rows: Final = current.get("items")
+    stored: Final = (
+        frozenset(str(as_mapping(row).get("model")) for row in rows) if isinstance(rows, list) else frozenset()
+    )
+    allowed: Final = frozenset(configured) | (stored if data.discount is None else frozenset())
+    if any(model not in allowed for model in data.models):
+        raise HTTPException(400, "Select configured public models. Inactive stored rules may only be removed")
+
+
+@router.put("/admin/wallets/{user_id}/model-discounts")
+async def admin_set_customer_model_discounts(
+    user_id: str,
+    data: SetModelDiscountRequest,
+    admin: Admin,
+    store: Store,
+) -> dict[str, JsonValue]:
+    names: Final = _configured_model_names()
+    current: Final = await _execute(store.list_model_discounts(user_id))
+    _validate_discount_selection(data, names, current)
+    await _execute(store.set_model_discounts(user_id, data.models, data.discount))
+    return await _execute(store.list_model_discounts(user_id, names))
+
+
+@router.put("/admin/plans/{plan_id}/model-discounts")
+async def admin_set_plan_model_discounts(
+    plan_id: str,
+    data: SetModelDiscountRequest,
+    admin: Admin,
+    store: Store,
+) -> dict[str, JsonValue]:
+    names: Final = _configured_model_names()
+    current: Final = await _execute(store.list_plan_model_discounts(plan_id))
+    _validate_discount_selection(data, names, current)
+    await _execute(store.set_plan_model_discounts(plan_id, data.models, data.discount))
+    return await _execute(store.list_plan_model_discounts(plan_id, names))
 
 
 @router.get("/admin/wallets")

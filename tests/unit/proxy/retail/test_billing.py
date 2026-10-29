@@ -6,7 +6,8 @@ from fastapi import HTTPException
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
-from litellm.proxy.retail.billing import RetailBilling, reservation_id
+from litellm.proxy.retail.billing import RetailBilling, price_snapshot, reservation_id
+from litellm.proxy.retail.pricing import UsageFacts, charge_for_usage
 
 
 @pytest.mark.parametrize(
@@ -124,3 +125,25 @@ async def test_multiple_generated_candidates_cannot_expand_a_single_candidate_re
     with pytest.raises(HTTPException) as failure:
         await RetailBilling().async_pre_call_hook(user, None, {"model": "test-model", **data}, "acompletion")
     assert failure.value.status_code == 400
+
+
+def test_pricing_snapshot_keeps_the_model_and_plan_from_the_same_discount_decision() -> None:
+    card: Final = {
+        "model": "model-a",
+        "version": 3,
+        "input_cost_per_token": "0.000002",
+        "output_cost_per_token": "0.000010",
+        "cache_read_input_token_cost": "0.0000002",
+        "cache_creation_input_token_cost": "0.0000025",
+    }
+    decision: Final = {"model": "model-a", "plan_id": "plan-b", "discount": "0.7", "discount_source": "customer_model"}
+    saved: Final = price_snapshot(card, decision, "acompletion")
+    current: Final = price_snapshot(card, {**decision, "plan_id": "plan-c", "discount": "0.8"}, "acompletion")
+    assert saved["plan_id"] == "plan-b"
+    assert saved["discount_model"] == "model-a"
+    assert saved["discount_source"] == "customer_model"
+    assert saved["price_version"] == 3
+    assert saved["discount"] == saved["multiplier"] == "0.7"
+    assert charge_for_usage(saved, UsageFacts(input_tokens=10, output_tokens=1)) == "0.000021000"
+    assert charge_for_usage(current, UsageFacts(input_tokens=10, output_tokens=1)) == "0.000024000"
+    assert saved["discount"] == "0.7"

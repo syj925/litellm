@@ -12,17 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { uiHref } from "@/utils/uiHref";
-import {
-  discountDescription,
-  effectiveDiscount,
-  formatMoney,
-  PageResult,
-  LedgerEntry,
-  retailKeys,
-  retailRequest,
-  WalletAccount,
-} from "./api";
+import { formatMoney, PageResult, LedgerEntry, retailKeys, retailRequest, WalletAccount } from "./api";
 import { LedgerTable } from "./BillingPanel";
+import { CustomerModelDiscounts } from "./ModelDiscounts";
 
 export default function WalletPanel() {
   const { accessToken, userId, isAuthorized } = useAuthorized();
@@ -153,13 +145,8 @@ export default function WalletPanel() {
                   <Badge variant="outline">{wallet.data.pricing_plan.name}</Badge>
                 </div>
                 <div className="flex items-start justify-between gap-3">
-                  <span className="text-muted-foreground">Customer discount</span>
-                  <div className="text-right">
-                    <p className="font-medium">{discountDescription(effectiveDiscount(wallet.data))}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {wallet.data.discount_source === "customer" ? "Customer override" : "Inherited from your plan"}
-                    </p>
-                  </div>
+                  <span className="text-muted-foreground">Model pricing</span>
+                  <p className="text-right font-medium">Model-specific discounts</p>
                 </div>
                 <div className="border-t pt-3 text-xs leading-relaxed text-muted-foreground">
                   A reservation sets funds aside while a request runs. The final charge is recorded after settlement.
@@ -173,6 +160,8 @@ export default function WalletPanel() {
           </div>
         </>
       )}
+
+      <CustomerModelDiscounts accessToken={accessToken} userId={userId} enabled={isAuthorized} />
 
       <section className="overflow-hidden rounded-xl border">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">

@@ -41,6 +41,28 @@ describe("wallet amounts", () => {
 });
 
 describe("customer billing receipts", () => {
+  it("identifies the exact negotiated model and rule source saved with the request", () => {
+    expect(
+      ledgerReceiptSections({
+        price_snapshot: {
+          plan_id: "shared",
+          discount: "0.65",
+          discount_model: "public-alpha",
+          discount_source: "customer_model",
+        },
+      }),
+    ).toEqual([
+      {
+        title: "Pricing snapshot",
+        rows: [
+          { label: "Discount plan", value: "shared" },
+          { label: "Customer discount", value: "65% of reference price (35% off)" },
+          { label: "Discount model", value: "public-alpha" },
+          { label: "Discount source", value: "Customer model override" },
+        ],
+      },
+    ]);
+  });
   it.each([
     ["0.000005", "5"],
     ["5E-7", "0.5"],

@@ -13,11 +13,13 @@ from litellm.proxy.retail.api import (
     ReferenceImportRequest,
     ResolveRequest,
     SetDiscountRequest,
+    SetModelDiscountRequest,
     SignupRequest,
     _per_token_price,
     _PublicLedgerPage,
     _select_references,
     _source_hash,
+    _validate_discount_selection,
     retail_admin,
     retail_user,
     router,
@@ -25,9 +27,75 @@ from litellm.proxy.retail.api import (
 
 
 @pytest.mark.parametrize("field", ("discount", "multiplier"))
-def test_discount_plan_accepts_a_fraction_and_retains_the_legacy_request_field(field: str) -> None:
-    data: Final = PlanRequest.model_validate({"id": "shared", "name": "Shared", field: "0.7"})
-    assert data.discount == "0.7"
+def test_plan_metadata_accepts_an_explicit_neutral_legacy_discount_field(field: str) -> None:
+    data: Final = PlanRequest.model_validate({"id": "shared", "name": "Shared", field: "1"})
+    assert data.discount == "1"
+
+
+@pytest.mark.parametrize("field", ("discount", "multiplier"))
+def test_new_whole_plan_discounts_are_rejected_in_favor_of_selected_models(field: str) -> None:
+    with pytest.raises(ValidationError, match="model-discounts"):
+        PlanRequest.model_validate({"id": "shared", "name": "Shared", field: "0.7"})
+
+
+@pytest.mark.parametrize("discount", ("0.7", "1"))
+def test_new_whole_customer_discounts_are_rejected_but_selected_model_discounts_remain_available(discount: str) -> None:
+    with pytest.raises(ValidationError, match="model-discounts"):
+        SetDiscountRequest(discount=discount)
+    assert SetModelDiscountRequest(models=("model-a",), discount=discount).discount == discount
+
+
+def test_plan_metadata_edit_can_omit_the_legacy_global_discount() -> None:
+    assert PlanRequest(id="shared", name="Renamed").discount is None
+
+
+@pytest.mark.parametrize("models", ([], [""], [" "], ["same", "same"], ["a" * 192]))
+def test_model_discount_selection_rejects_empty_duplicate_or_oversized_names(models: list[str]) -> None:
+    with pytest.raises(ValidationError):
+        SetModelDiscountRequest(models=models, discount="0.7")
+
+
+def test_inactive_stored_model_rules_can_be_removed_but_cannot_receive_new_discounts() -> None:
+    current: Final = {"items": [{"model": "inactive", "customer_discount": "0.7"}]}
+    clearing: Final = SetModelDiscountRequest(models=("inactive",), discount=None)
+    assert _validate_discount_selection(clearing, ("configured",), current) is None
+    applying: Final = SetModelDiscountRequest(models=("configured", "inactive"), discount="0.8")
+    with pytest.raises(HTTPException) as failure:
+        _validate_discount_selection(applying, ("configured",), current)
+    assert failure.value.status_code == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ("POST", "PUT", "PATCH", "DELETE"))
+async def test_customer_model_discount_endpoint_has_no_write_methods(method: str) -> None:
+    app: Final = FastAPI()
+    app.include_router(router)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://retail.test") as client:
+        response: Final = await client.request(method, "/retail/model-discounts")
+    assert response.status_code == 405
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path"),
+    (
+        ("GET", "/retail/admin/discount-models"),
+        ("GET", "/retail/admin/wallets/other/model-discounts"),
+        ("PUT", "/retail/admin/wallets/other/model-discounts"),
+        ("GET", "/retail/admin/plans/shared/model-discounts"),
+        ("PUT", "/retail/admin/plans/shared/model-discounts"),
+    ),
+)
+async def test_customers_cannot_read_or_edit_administrator_model_discount_routes(method: str, path: str) -> None:
+    async def authenticated_user() -> UserAPIKeyAuth:
+        return UserAPIKeyAuth(user_id="reader", user_role=LitellmUserRoles.INTERNAL_USER)
+
+    app: Final = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[user_api_key_auth] = authenticated_user
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://retail.test") as client:
+        response: Final = await client.request(method, path, json={"models": ["model-a"], "discount": "0.7"})
+    assert response.status_code == 403
 
 
 @pytest.mark.parametrize("value", ("0", "-0.1", "1.01", "NaN", "Infinity", "0.1234567891", "1e-99999999"))

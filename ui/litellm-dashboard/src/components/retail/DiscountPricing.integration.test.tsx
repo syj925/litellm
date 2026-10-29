@@ -21,7 +21,7 @@ vi.mock("@/app/(dashboard)/hooks/useAuthorized", () => ({
 }));
 vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn() } }));
 
-const plan = { id: "standard", name: "Standard", multiplier: "0.8", discount: "0.8" };
+const plan = { id: "standard", name: "Standard", multiplier: "1", discount: "1" };
 const wallet = {
   user_id: "customer-example",
   currency: "USD",
@@ -32,10 +32,27 @@ const wallet = {
   total_spent: "0",
   pending_requests: 0,
   pricing_plan: plan,
-  discount: "0.65",
-  discount_override: "0.65",
-  discount_source: "customer",
+  discount: "1",
+  discount_override: null,
+  discount_source: "plan",
 };
+const modelDiscounts = [
+  {
+    model: "alpha-model",
+    discount: "0.65",
+    discount_source: "customer_model",
+    customer_discount: "0.65",
+    plan_discount: "0.8",
+  },
+  {
+    model: "beta-model",
+    discount: "0.8",
+    discount_source: "plan_model",
+    customer_discount: null,
+    plan_discount: "0.8",
+  },
+  { model: "gamma-model", discount: "1", discount_source: "standard", customer_discount: null, plan_discount: null },
+];
 const rate = {
   input_per_million: "2",
   output_per_million: "10",
@@ -58,7 +75,7 @@ const candidates = [
   },
 ];
 
-function serveApi() {
+function serveApi(activeModels = modelDiscounts.map((row) => row.model)) {
   const writes: { path: string; body: unknown }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -69,28 +86,45 @@ function serveApi() {
         writes.push({ path, body });
         return new Response(JSON.stringify(path.endsWith("import") ? { items: [] } : wallet), { status: 200 });
       }
-      const data = path.endsWith("/plans")
-        ? { items: [plan] }
-        : path.endsWith("/wallets")
-          ? { items: [wallet], total: 1 }
-          : path.endsWith("/wallet")
-            ? wallet
-            : path.endsWith("/model-prices")
-              ? {
-                  items: [
-                    {
-                      ...rate,
-                      model: "legacy-model",
-                      version: 1,
-                      updated_at: "2026-01-01T00:00:00Z",
-                      source: "legacy",
-                      source_label: "Existing unverified base price",
-                    },
-                  ],
-                }
-              : path.endsWith("/reference-prices")
-                ? { items: candidates, unavailable: [{ model: "unpriced-model", reason: "Manual reference required" }] }
-                : { items: [], total: 0 };
+      const data = path.endsWith("/model-discounts")
+        ? {
+            user_id: wallet.user_id,
+            plan_id: plan.id,
+            items: path.includes("/admin/plans/")
+              ? modelDiscounts.map((row) => ({
+                  ...row,
+                  discount: row.plan_discount ?? "1",
+                  discount_source: row.plan_discount ? "plan_model" : "standard",
+                }))
+              : modelDiscounts,
+          }
+        : path.endsWith("/discount-models")
+          ? { models: activeModels }
+          : path.endsWith("/plans")
+            ? { items: [plan] }
+            : path.endsWith("/wallets")
+              ? { items: [wallet], total: 1 }
+              : path.endsWith("/wallet")
+                ? wallet
+                : path.endsWith("/model-prices")
+                  ? {
+                      items: [
+                        {
+                          ...rate,
+                          model: "legacy-model",
+                          version: 1,
+                          updated_at: "2026-01-01T00:00:00Z",
+                          source: "legacy",
+                          source_label: "Existing unverified base price",
+                        },
+                      ],
+                    }
+                  : path.endsWith("/reference-prices")
+                    ? {
+                        items: candidates,
+                        unavailable: [{ model: "unpriced-model", reason: "Manual reference required" }],
+                      }
+                    : { items: [], total: 0 };
       return new Response(JSON.stringify(data), { status: 200 });
     }),
   );
@@ -108,56 +142,91 @@ function renderPanel(panel = <AdminWalletsPanel />) {
 
 afterEach(() => vi.unstubAllGlobals());
 
-it("sends a percentage-paid plan as an exact discount, without changing model rates", async () => {
+it("creates a shared model pricing table without an account-wide discount", async () => {
   const writes = serveApi();
   renderPanel();
   fireEvent.click(await screen.findByRole("button", { name: "New plan" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Plan ID" }), { target: { value: "contract" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Plan name" }), { target: { value: "Contract" } });
-  fireEvent.change(screen.getByRole("textbox", { name: "Pay percentage of reference price (%)" }), {
-    target: { value: "70.1234567" },
-  });
+  expect(screen.queryByRole("textbox", { name: "Pay percentage of reference price (%)" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Save plan" }));
   await waitFor(() =>
+    expect(writes).toEqual([{ path: "/retail/admin/plans", body: { id: "contract", name: "Contract" } }]),
+  );
+});
+
+it("applies a precise customer discount only to explicitly selected models and can remove one override", async () => {
+  const writes = serveApi();
+  renderPanel();
+  fireEvent.click(await screen.findByRole("button", { name: "Model discounts for customer customer-example" }));
+  expect(await screen.findByRole("checkbox", { name: "Select model alpha-model" })).not.toBeChecked();
+  expect(screen.getByRole("button", { name: "Apply to 0 models" })).toBeDisabled();
+  const user = userEvent.setup();
+  fireEvent.change(screen.getByRole("textbox", { name: "Search model discounts" }), { target: { value: "alpha" } });
+  fireEvent.click(screen.getByRole("button", { name: "Select visible models" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Search model discounts" }), { target: { value: "" } });
+  await user.click(screen.getByRole("checkbox", { name: "Select model beta-model" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Pay percentage of reference price (%)" }), {
+    target: { value: "65.1250001" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Apply to 2 models" }));
+  await waitFor(() =>
+    expect(writes[0]).toEqual({
+      path: "/retail/admin/wallets/customer-example/model-discounts",
+      body: { models: ["alpha-model", "beta-model"], discount: "0.651250001" },
+    }),
+  );
+  await waitFor(() => expect(screen.getByRole("button", { name: "Apply to 0 models" })).toBeDisabled());
+  await user.click(screen.getByRole("checkbox", { name: "Select model alpha-model" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove selected overrides" }));
+  await waitFor(() =>
+    expect(writes[1]).toEqual({
+      path: "/retail/admin/wallets/customer-example/model-discounts",
+      body: { models: ["alpha-model"], discount: null },
+    }),
+  );
+});
+
+it("can remove an inactive model's existing customer override without applying a new discount", async () => {
+  const writes = serveApi(["beta-model", "gamma-model"]);
+  renderPanel();
+  fireEvent.click(await screen.findByRole("button", { name: "Model discounts for customer customer-example" }));
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("checkbox", { name: "Select model alpha-model" }));
+  expect(screen.getByRole("button", { name: "Apply to 1 models" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Remove selected overrides" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Remove selected overrides" }));
+  await waitFor(() =>
     expect(writes).toEqual([
-      { path: "/retail/admin/plans", body: { id: "contract", name: "Contract", discount: "0.701234567" } },
+      {
+        path: "/retail/admin/wallets/customer-example/model-discounts",
+        body: { models: ["alpha-model"], discount: null },
+      },
     ]),
   );
 });
 
-it("saves a customer override and can explicitly restore shared-plan inheritance", async () => {
+it("shares selected model rules through a plan and rejects a markup", async () => {
   const writes = serveApi();
   renderPanel();
-  fireEvent.click(await screen.findByRole("button", { name: "Set discount" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Pay percentage of reference price (%)" }), {
-    target: { value: "65.1250001" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Save customer discount" }));
-  await waitFor(() =>
-    expect(writes[0]).toEqual({
-      path: "/retail/admin/wallets/customer-example/discount",
-      body: { discount: "0.651250001" },
-    }),
-  );
-  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-  fireEvent.click(screen.getByRole("button", { name: "Set discount" }));
-  fireEvent.click(screen.getByRole("button", { name: "Use plan discount" }));
-  await waitFor(() =>
-    expect(writes[1]).toEqual({ path: "/retail/admin/wallets/customer-example/discount", body: { discount: null } }),
-  );
-});
-
-it("rejects a markup when editing an ordinary discount plan", async () => {
-  const writes = serveApi();
-  renderPanel();
-  fireEvent.click(await screen.findByRole("button", { name: "Edit plan" }));
-  expect(screen.getByRole("textbox", { name: "Plan ID" })).toBeDisabled();
+  fireEvent.click(await screen.findByRole("button", { name: "Model discounts for plan Standard" }));
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("checkbox", { name: "Select model beta-model" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Pay percentage of reference price (%)" }), {
     target: { value: "101" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Save plan" }));
+  fireEvent.click(screen.getByRole("button", { name: "Apply to 1 models" }));
   expect(screen.getByRole("alert")).toHaveTextContent("at most 100");
   expect(writes).toEqual([]);
+  fireEvent.change(screen.getByRole("textbox", { name: "Pay percentage of reference price (%)" }), {
+    target: { value: "70" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Apply to 1 models" }));
+  await waitFor(() =>
+    expect(writes).toEqual([
+      { path: "/retail/admin/plans/standard/model-discounts", body: { models: ["beta-model"], discount: "0.7" } },
+    ]),
+  );
 });
 
 it("requires explicit catalog import and a choice for aliases with multiple references", async () => {
@@ -195,11 +264,13 @@ it("requires explicit catalog import and a choice for aliases with multiple refe
   );
 });
 
-it("shows a customer's effective override separately from the shared plan", async () => {
+it("shows different effective discounts for each customer model without an account-wide percentage", async () => {
   serveApi();
   renderPanel(<WalletPanel />);
   const account = await screen.findByText("65% of reference price (35% off)");
   expect(account).toBeInTheDocument();
-  expect(screen.getByText("Customer override")).toBeInTheDocument();
+  expect(screen.getByText("Customer model override")).toBeInTheDocument();
+  expect(screen.getByText("80% of reference price (20% off)")).toBeInTheDocument();
+  expect(screen.getByText("100% of reference price (0% off)")).toBeInTheDocument();
   expect(screen.getByText("Standard")).toBeInTheDocument();
 });

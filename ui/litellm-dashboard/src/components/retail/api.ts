@@ -22,6 +22,33 @@ export interface WalletAccount {
   discount_source?: "customer" | "plan";
 }
 
+export type ModelDiscountSource = "customer_model" | "plan_model" | "standard" | "legacy_customer" | "legacy_plan";
+
+export interface ModelDiscount {
+  model: string;
+  discount: string;
+  discount_source: ModelDiscountSource;
+  customer_discount?: string | null;
+  plan_discount: string | null;
+}
+
+export interface ModelDiscountList {
+  user_id?: string;
+  plan_id: string;
+  items: ModelDiscount[];
+}
+
+export function modelDiscountSourceLabel(source: ModelDiscountSource): string {
+  const labels = {
+    customer_model: "Customer model override",
+    plan_model: "Shared plan model discount",
+    standard: "Standard reference price",
+    legacy_customer: "Legacy account fallback",
+    legacy_plan: "Legacy plan fallback",
+  };
+  return labels[source];
+}
+
 export interface LedgerEntry {
   id: string;
   kind: "credit" | "charge" | "release";
@@ -207,19 +234,27 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
   const discountRows =
     typeof discount === "string" ? [{ label: "Customer discount", value: discountDescription(discount) }] : [];
   const sourceRows =
-    snapshot.discount_source === "customer" || snapshot.discount_source === "plan"
-      ? [
-          {
-            label: "Discount source",
-            value: snapshot.discount_source === "customer" ? "Customer override" : "Shared plan",
-          },
-        ]
-      : [];
+    typeof snapshot.discount_source === "string" &&
+    ["customer_model", "plan_model", "standard", "legacy_customer", "legacy_plan"].includes(snapshot.discount_source)
+      ? [{ label: "Discount source", value: modelDiscountSourceLabel(snapshot.discount_source as ModelDiscountSource) }]
+      : snapshot.discount_source === "customer" || snapshot.discount_source === "plan"
+        ? [
+            {
+              label: "Discount source",
+              value: snapshot.discount_source === "customer" ? "Customer override" : "Shared plan",
+            },
+          ]
+        : [];
+  const modelRows =
+    typeof snapshot.discount_model === "string" ? [{ label: "Discount model", value: snapshot.discount_model }] : [];
   const referenceRows =
     typeof snapshot.source_label === "string" ? [{ label: "Reference source", value: snapshot.source_label }] : [];
   return [
     { title: "Token usage", rows: usageRows },
-    { title: "Pricing snapshot", rows: [...planRows, ...discountRows, ...sourceRows, ...referenceRows, ...priceRows] },
+    {
+      title: "Pricing snapshot",
+      rows: [...planRows, ...discountRows, ...modelRows, ...sourceRows, ...referenceRows, ...priceRows],
+    },
   ].filter(({ rows }) => rows.length > 0);
 }
 

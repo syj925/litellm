@@ -94,3 +94,19 @@ CREATE TABLE IF NOT EXISTS retail_signup_identities (
     email_normalized TEXT PRIMARY KEY,
     user_id TEXT NOT NULL UNIQUE REFERENCES "LiteLLM_UserTable"(user_id)
 );
+
+CREATE TABLE IF NOT EXISTS retail_customer_model_discounts (
+    user_id TEXT NOT NULL REFERENCES retail_wallets(user_id),
+    model TEXT NOT NULL CHECK (length(model) BETWEEN 1 AND 191),
+    discount NUMERIC(18,9) NOT NULL CHECK (discount > 0 AND discount <= 1),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, model)
+);
+
+CREATE TABLE IF NOT EXISTS retail_plan_model_discounts (
+    plan_id TEXT NOT NULL REFERENCES retail_pricing_plans(id),
+    model TEXT NOT NULL CHECK (length(model) BETWEEN 1 AND 191),
+    discount NUMERIC(18,9) NOT NULL CHECK (discount > 0 AND discount <= 1),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (plan_id, model)
+);

@@ -14664,6 +14664,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/discount-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Discount Models */
+        get: operations["admin_discount_models_retail_admin_discount_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/model-discovery": {
         parameters: {
             query?: never;
@@ -14710,6 +14727,24 @@ export interface paths {
         put?: never;
         /** Admin Plan */
         post: operations["admin_plan_retail_admin_plans_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/plans/{plan_id}/model-discounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Plan Model Discounts */
+        get: operations["admin_plan_model_discounts_retail_admin_plans__plan_id__model_discounts_get"];
+        /** Admin Set Plan Model Discounts */
+        put: operations["admin_set_plan_model_discounts_retail_admin_plans__plan_id__model_discounts_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -14818,6 +14853,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/wallets/{user_id}/model-discounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Customer Model Discounts */
+        get: operations["admin_customer_model_discounts_retail_admin_wallets__user_id__model_discounts_get"];
+        /** Admin Set Customer Model Discounts */
+        put: operations["admin_set_customer_model_discounts_retail_admin_wallets__user_id__model_discounts_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/wallets/{user_id}/plan": {
         parameters: {
             query?: never;
@@ -14861,6 +14914,23 @@ export interface paths {
         };
         /** Ledger */
         get: operations["ledger_retail_ledger_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/model-discounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Own Model Discounts */
+        get: operations["own_model_discounts_retail_model_discounts_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -41889,7 +41959,7 @@ export interface components {
         /** PlanRequest */
         PlanRequest: {
             /** Discount */
-            discount: string;
+            discount?: string | null;
             /** Id */
             id: string;
             /** Name */
@@ -46491,6 +46561,13 @@ export interface components {
         SetDiscountRequest: {
             /** Discount */
             discount: string | null;
+        };
+        /** SetModelDiscountRequest */
+        SetModelDiscountRequest: {
+            /** Discount */
+            discount: string | null;
+            /** Models */
+            models: string[];
         };
         /** SetPlanRequest */
         SetPlanRequest: {
@@ -72459,6 +72536,28 @@ export interface operations {
             };
         };
     };
+    admin_discount_models_retail_admin_discount_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+        };
+    };
     model_discovery_retail_admin_model_discovery_post: {
         parameters: {
             query?: never;
@@ -72559,6 +72658,76 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_plan_model_discounts_retail_admin_plans__plan_id__model_discounts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_set_plan_model_discounts_retail_admin_plans__plan_id__model_discounts_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetModelDiscountRequest"];
             };
         };
         responses: {
@@ -72788,6 +72957,76 @@ export interface operations {
             };
         };
     };
+    admin_customer_model_discounts_retail_admin_wallets__user_id__model_discounts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_set_customer_model_discounts_retail_admin_wallets__user_id__model_discounts_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetModelDiscountRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_set_plan_retail_admin_wallets__user_id__plan_put: {
         parameters: {
             query?: never;
@@ -72878,6 +73117,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    own_model_discounts_retail_model_discounts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
                 };
             };
         };

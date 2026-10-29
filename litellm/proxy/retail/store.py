@@ -55,6 +55,24 @@ class _PlanRow(BaseModel):
     multiplier: Decimal
 
 
+class _ModelDiscountRow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model: str
+    discount: Decimal
+
+
+class _ModelDiscountFactors(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    user_id: str
+    plan_id: str
+    customer_discount: Decimal | None
+    plan_discount: Decimal | None
+    legacy_customer: Decimal | None
+    legacy_plan: Decimal
+
+
 class _ReservationRow(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -261,6 +279,47 @@ def _model_price_rates(rates: Mapping[str, JsonValue]) -> tuple[Decimal, ...]:
         return parsed
     except (InvalidOperation, ValueError, TypeError, KeyError) as exc:
         raise InvalidAmount("All four token prices are required as decimal USD values") from exc
+
+
+def model_discount_view(
+    model: str,
+    *,
+    customer_discount: Decimal | None = None,
+    plan_discount: Decimal | None = None,
+    legacy_customer: Decimal | None = None,
+    legacy_plan: Decimal = Decimal("1"),
+) -> dict[str, JsonValue]:
+    factor, source = _model_discount_factor(customer_discount, plan_discount, legacy_customer, legacy_plan)
+    return {
+        "model": model,
+        "discount": format(factor, "f"),
+        "discount_source": source,
+        "customer_discount": format(customer_discount, "f") if customer_discount is not None else None,
+        "plan_discount": format(plan_discount, "f") if plan_discount is not None else None,
+    }
+
+
+def _model_discount_factor(
+    customer: Decimal | None,
+    plan: Decimal | None,
+    legacy_customer: Decimal | None,
+    legacy_plan: Decimal,
+) -> tuple[Decimal, str]:
+    if customer is not None:
+        return customer, "customer_model"
+    if plan is not None:
+        return plan, "plan_model"
+    if legacy_customer is not None:
+        return legacy_customer, "legacy_customer" if legacy_customer != 1 else "standard"
+    if legacy_plan != 1:
+        return legacy_plan, "legacy_plan"
+    return Decimal("1"), "standard"
+
+
+def _discount_models(models: Sequence[str]) -> tuple[str, ...]:
+    if not models or len(models) > 500 or any(not model.strip() or len(model) > 191 for model in models):
+        raise ValueError("Select between 1 and 500 public model names of at most 191 characters")
+    return tuple(dict.fromkeys(models))
 
 
 class WalletStore:
@@ -723,17 +782,18 @@ class WalletStore:
             raise ValueError("The model reference price could not be saved")
         return _model_price_view(row)
 
-    async def save_plan(self, plan_id: str, name: str, multiplier: str) -> dict[str, JsonValue]:
-        value: Final = parse_discount(multiplier)
+    async def save_plan(self, plan_id: str, name: str, multiplier: str | None = None) -> dict[str, JsonValue]:
+        value: Final = parse_discount(multiplier) if multiplier is not None else None
         if not plan_id or len(plan_id) > 100 or not name or len(name) > 200:
             raise ValueError("A pricing plan ID and name are required")
         async with self.transaction() as connection:
             row: Final = await _one(
                 connection,
-                """INSERT INTO retail_pricing_plans(id,name,multiplier) VALUES (%s,%s,%s)
-                   ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,multiplier=EXCLUDED.multiplier,updated_at=now()
+                """INSERT INTO retail_pricing_plans(id,name,multiplier) VALUES (%s,%s,COALESCE(%s,1))
+                   ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,
+                       multiplier=COALESCE(%s,retail_pricing_plans.multiplier),updated_at=now()
                    RETURNING id,name,multiplier""",
-                (plan_id, name, value),
+                (plan_id, name, value, value),
                 _PlanRow,
             )
             if row is None:
@@ -753,6 +813,146 @@ class WalletStore:
                 "UPDATE retail_wallets SET discount_override=%s,updated_at=now() WHERE user_id=%s", (value, user_id)
             )
             return _wallet_view(await self._read_wallet(connection, user_id))
+
+    async def get_model_discount(self, user_id: str, model: str) -> dict[str, JsonValue]:
+        async with self.transaction() as connection:
+            row: Final = await _one(
+                connection,
+                """SELECT w.user_id,w.plan_id,w.discount_override AS legacy_customer,p.multiplier AS legacy_plan,
+                    c.discount AS customer_discount,d.discount AS plan_discount
+                    FROM retail_wallets w JOIN retail_pricing_plans p ON p.id=w.plan_id
+                    LEFT JOIN retail_customer_model_discounts c ON c.user_id=w.user_id AND c.model=%s
+                    LEFT JOIN retail_plan_model_discounts d ON d.plan_id=w.plan_id AND d.model=%s
+                    WHERE w.user_id=%s""",
+                (model, model, user_id),
+                _ModelDiscountFactors,
+            )
+            if row is None:
+                raise WalletNotFound("Wallet is not enabled for this user")
+            return {
+                "user_id": row.user_id,
+                "plan_id": row.plan_id,
+                **model_discount_view(
+                    model,
+                    customer_discount=row.customer_discount,
+                    plan_discount=row.plan_discount,
+                    legacy_customer=row.legacy_customer,
+                    legacy_plan=row.legacy_plan,
+                ),
+            }
+
+    async def list_model_discounts(self, user_id: str, models: Sequence[str] = ()) -> dict[str, JsonValue]:
+        async with self.transaction() as connection:
+            wallet: Final = await self._read_wallet(connection, user_id)
+            customer_rows: Final = await _many(
+                connection,
+                "SELECT model,discount FROM retail_customer_model_discounts WHERE user_id=%s",
+                (user_id,),
+                _ModelDiscountRow,
+            )
+            plan_rows: Final = await _many(
+                connection,
+                "SELECT model,discount FROM retail_plan_model_discounts WHERE plan_id=%s",
+                (wallet.plan_id,),
+                _ModelDiscountRow,
+            )
+            customer: Final = {row.model: row.discount for row in customer_rows}
+            plan: Final = {row.model: row.discount for row in plan_rows}
+            names: Final = sorted(frozenset(models) | customer.keys() | plan.keys())
+            return {
+                "user_id": user_id,
+                "plan_id": wallet.plan_id,
+                "items": [
+                    model_discount_view(
+                        model,
+                        customer_discount=customer.get(model),
+                        plan_discount=plan.get(model),
+                        legacy_customer=wallet.discount_override,
+                        legacy_plan=wallet.multiplier,
+                    )
+                    for model in names
+                ],
+            }
+
+    async def list_plan_model_discounts(self, plan_id: str, models: Sequence[str] = ()) -> dict[str, JsonValue]:
+        async with self.transaction() as connection:
+            plan: Final = await _one(
+                connection,
+                "SELECT id,name,multiplier FROM retail_pricing_plans WHERE id=%s",
+                (plan_id,),
+                _PlanRow,
+            )
+            if plan is None:
+                raise PlanNotFound("Pricing plan does not exist")
+            rows: Final = await _many(
+                connection,
+                "SELECT model,discount FROM retail_plan_model_discounts WHERE plan_id=%s",
+                (plan_id,),
+                _ModelDiscountRow,
+            )
+            discounts: Final = {row.model: row.discount for row in rows}
+            return {
+                "plan_id": plan_id,
+                "items": [
+                    model_discount_view(model, plan_discount=discounts.get(model), legacy_plan=plan.multiplier)
+                    for model in sorted(frozenset(models) | discounts.keys())
+                ],
+            }
+
+    async def set_model_discounts(
+        self,
+        user_id: str,
+        models: Sequence[str],
+        discount: str | None,
+    ) -> dict[str, JsonValue]:
+        names: Final = _discount_models(models)
+        value: Final = parse_discount(discount) if discount is not None else None
+        async with self.transaction() as connection:
+            await self._lock_wallet(connection, user_id)
+            if value is None:
+                await connection.execute(
+                    "DELETE FROM retail_customer_model_discounts WHERE user_id=%s AND model=ANY(%s::text[])",
+                    (user_id, list(names)),
+                )
+            else:
+                await connection.execute(
+                    """INSERT INTO retail_customer_model_discounts(user_id,model,discount)
+                    SELECT %s,model,%s FROM unnest(%s::text[]) AS selected(model)
+                    ON CONFLICT(user_id,model) DO UPDATE SET discount=EXCLUDED.discount,updated_at=now()""",
+                    (user_id, value, list(names)),
+                )
+        return await self.list_model_discounts(user_id)
+
+    async def set_plan_model_discounts(
+        self,
+        plan_id: str,
+        models: Sequence[str],
+        discount: str | None,
+    ) -> dict[str, JsonValue]:
+        names: Final = _discount_models(models)
+        value: Final = parse_discount(discount) if discount is not None else None
+        async with self.transaction() as connection:
+            plan: Final = await _one(
+                connection,
+                "SELECT id,name,multiplier FROM retail_pricing_plans WHERE id=%s FOR UPDATE",
+                (plan_id,),
+                _PlanRow,
+            )
+            if plan is None:
+                raise PlanNotFound("Pricing plan does not exist")
+            if value is None:
+                await connection.execute(
+                    "DELETE FROM retail_plan_model_discounts WHERE plan_id=%s AND model=ANY(%s::text[])",
+                    (plan_id, list(names)),
+                )
+            else:
+                await connection.execute(
+                    """INSERT INTO retail_plan_model_discounts(plan_id,model,discount)
+                    SELECT %s,model,%s FROM unnest(%s::text[]) AS selected(model)
+                    ON CONFLICT(plan_id,model) DO UPDATE SET discount=EXCLUDED.discount,updated_at=now()""",
+                    (plan_id, value, list(names)),
+                )
+        return await self.list_plan_model_discounts(plan_id)
 
     async def set_plan(self, user_id: str, plan_id: str) -> dict[str, JsonValue]:
         async with self.transaction() as connection:
