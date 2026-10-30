@@ -52,6 +52,17 @@ def test_new_pools_are_disabled_and_restricted_until_explicitly_published_and_gr
     assert pool.default_discount == "1"
 
 
+def test_openai_is_a_first_class_pool_source_and_preserves_safe_defaults() -> None:
+    definition: Final = PoolDefinition(id="openai-resource", name="openAI", source_kind="openai")
+    stored: Final = _PoolRow(**definition.model_dump(), version=1, updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    assert stored.source_kind == "openai"
+    assert stored.name == "openAI"
+    assert stored.enabled is False
+    assert stored.visibility == "restricted"
+    with pytest.raises(ValidationError):
+        PoolDefinition.model_validate({**definition.model_dump(), "source_kind": "unconfigured-source"})
+
+
 def test_deployment_catalog_never_exposes_keys_or_upstream_hosts() -> None:
     raw: Final = _deployment("deployment-a", "public-a")
     record: Final = {

@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS retail_plan_model_discounts (
 CREATE TABLE IF NOT EXISTS retail_resource_pools (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    source_kind TEXT NOT NULL CHECK (source_kind IN ('anthropic','bedrock','vertex','anthropic_subscribe','custom')),
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('anthropic','openai','bedrock','vertex','anthropic_subscribe','custom')),
     description TEXT NOT NULL DEFAULT '',
     enabled BOOLEAN NOT NULL DEFAULT false,
     visibility TEXT NOT NULL DEFAULT 'restricted' CHECK (visibility IN ('public','restricted')),
@@ -123,6 +123,21 @@ CREATE TABLE IF NOT EXISTS retail_resource_pools (
     version BIGINT NOT NULL DEFAULT 1,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+DO $migration$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid='retail_resource_pools'::regclass
+          AND conname='retail_resource_pools_source_kind_check'
+          AND pg_get_constraintdef(oid) LIKE '%''openai''%'
+    ) THEN
+        ALTER TABLE retail_resource_pools DROP CONSTRAINT IF EXISTS retail_resource_pools_source_kind_check;
+        ALTER TABLE retail_resource_pools ADD CONSTRAINT retail_resource_pools_source_kind_check
+            CHECK (source_kind IN ('anthropic','openai','bedrock','vertex','anthropic_subscribe','custom'));
+    END IF;
+END
+$migration$;
 
 CREATE TABLE IF NOT EXISTS retail_pool_bindings (
     pool_id TEXT NOT NULL REFERENCES retail_resource_pools(id),

@@ -58,6 +58,7 @@ export interface PoolCatalog {
 export const sourceKinds = [
   { value: "bedrock", label: "AWS Bedrock" },
   { value: "anthropic", label: "Anthropic" },
+  { value: "openai", label: "OpenAI" },
   { value: "vertex", label: "Vertex AI" },
   { value: "anthropic_subscribe", label: "Anthropic Subscribe" },
   { value: "custom", label: "Custom source" },

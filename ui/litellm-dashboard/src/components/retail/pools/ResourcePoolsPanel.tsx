@@ -147,9 +147,9 @@ export default function ResourcePoolsPanel() {
             icon: CheckCircle2,
           },
           {
-            label: "Unassigned models",
+            label: "Models without a published pool",
             value: settings.data ? String(settings.data.unassigned_models.length) : "...",
-            description: "Review model coverage before activation",
+            description: "Models assigned to draft pools remain here until publication",
             icon: CircleAlert,
           },
           {
@@ -397,7 +397,7 @@ export default function ResourcePoolsPanel() {
           </div>
           {Boolean(settings.data?.unassigned_models.length) && (
             <div className="rounded-lg border p-4">
-              <p className="text-sm font-medium">Unassigned models</p>
+              <p className="text-sm font-medium">Models without a published pool</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 These models have no published pool route. They will not gain access through legacy routing when pool
                 routing is enabled.

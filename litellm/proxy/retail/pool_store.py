@@ -19,7 +19,7 @@ class PoolDefinition(BaseModel):
 
     id: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
     name: str = Field(min_length=1, max_length=100)
-    source_kind: Literal["anthropic", "bedrock", "vertex", "anthropic_subscribe", "custom"] = "custom"
+    source_kind: Literal["anthropic", "openai", "bedrock", "vertex", "anthropic_subscribe", "custom"] = "custom"
     description: str = Field(default="", max_length=1000)
     enabled: bool = False
     visibility: Literal["public", "restricted"] = "restricted"

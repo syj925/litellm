@@ -43143,7 +43143,7 @@ export interface components {
              * @default custom
              * @enum {string}
              */
-            source_kind: "anthropic" | "bedrock" | "vertex" | "anthropic_subscribe" | "custom";
+            source_kind: "anthropic" | "openai" | "bedrock" | "vertex" | "anthropic_subscribe" | "custom";
             /**
              * Visibility
              * @default restricted
