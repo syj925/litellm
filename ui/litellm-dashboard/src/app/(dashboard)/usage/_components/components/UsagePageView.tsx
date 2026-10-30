@@ -9,6 +9,7 @@
 import { Download, Search, Sparkles, X } from "lucide-react";
 import type { DateRangePickerValue } from "@/components/shared/date_picker_types";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { parseAsStringLiteral, useQueryState } from "nuqs";
 
 import { StackedUsageChart } from "@/components/shared/charts";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/shared/Alert";
@@ -22,7 +23,8 @@ import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import useIsOrgAdmin from "@/app/(dashboard)/hooks/useIsOrgAdmin";
 import { useCurrentUser } from "@/app/(dashboard)/hooks/users/useCurrentUser";
 import { hasCapability } from "@/utils/capabilities";
-import { internalUserRoles } from "@/utils/roles";
+import { internalUserRoles, isProxyAdminRole } from "@/utils/roles";
+import { ChannelActivityPanel } from "@/components/retail/channels/metrics/ChannelActivityPanel";
 import { isProxyDashboardRole } from "@/utils/dashboardAccess";
 import { ActivityMetrics, processActivityData } from "@/components/activity_metrics";
 import CloudZeroExportModal from "@/components/cloudzero_export_modal";
@@ -72,8 +74,11 @@ interface UsagePageProps {
   organizations: Organization[];
 }
 
+const usageTabs = ["cost", "models", "keys", "mcp", "endpoints", "channels"] as const;
+
 const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
   const { accessToken, userRole, userId: userID, premiumUser } = useAuthorized();
+  const [usageTab, setUsageTab] = useQueryState("usage_tab", parseAsStringLiteral(usageTabs).withDefault("cost"));
   const [gatewayActivityData, setGatewayActivityData] = useState<FetchedGatewayActivity | null>(null);
 
   // Create initial dates outside of state to prevent recreation
@@ -113,6 +118,8 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
   // the selector never holds a value it no longer offers.
   const usageView: UsageOption =
     selectedUsageView === "organization" && !canViewOrganizationUsage ? "global" : selectedUsageView;
+  const canViewChannels = isProxyAdminRole(userRole) && usageView === "global";
+  const activeUsageTab = usageTab === "channels" && !canViewChannels ? "cost" : usageTab;
 
   const [showCredentialBanner, setShowCredentialBanner] = useState(true);
   const [topKeysLimit, setTopKeysLimit] = useState<number>(5);
@@ -353,16 +360,18 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
           canViewTagUsage={canViewTagUsage}
           isOrgAdmin={isOrgAdmin}
         />
-        <div className="flex flex-wrap items-center gap-2">
-          {isAdmin && usageView === "global" && (
-            <div className="w-64">
-              <UserDropdown value={selectedUserId} onChange={setSelectedUserId} />
-            </div>
-          )}
-          <AdvancedDatePicker value={dateValue} onValueChange={handleDateChange} />
-        </div>
+        {activeUsageTab !== "channels" && (
+          <div className="flex flex-wrap items-center gap-2">
+            {isAdmin && usageView === "global" && (
+              <div className="w-64">
+                <UserDropdown value={selectedUserId} onChange={setSelectedUserId} />
+              </div>
+            )}
+            <AdvancedDatePicker value={dateValue} onValueChange={handleDateChange} />
+          </div>
+        )}
       </header>
-      {aggregatedFailed && (
+      {aggregatedFailed && activeUsageTab !== "channels" && (
         <Alert variant="error" className="mb-3">
           <AlertDescription className="text-inherit">
             Fetching spend data failed, so the totals below may be empty rather than final. Reload the page to try
@@ -375,7 +384,14 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
           {/* Your Usage / Global Usage Panel */}
           {(usageView === "global" || usageView === "my-usage") && (
             <>
-              <Tabs defaultValue="cost" className="gap-3">
+              <Tabs
+                value={activeUsageTab}
+                onValueChange={(value) => {
+                  const next = usageTabs.find((tab) => tab === value);
+                  if (next) void setUsageTab(next);
+                }}
+                className="gap-3"
+              >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <TabsList variant="line">
                     <TabsTrigger value="cost" className="flex-none px-3">
@@ -393,19 +409,26 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
                     <TabsTrigger value="endpoints" className="flex-none px-3">
                       Endpoint Activity
                     </TabsTrigger>
+                    {canViewChannels && (
+                      <TabsTrigger value="channels" className="flex-none px-3">
+                        Channel Activity
+                      </TabsTrigger>
+                    )}
                   </TabsList>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setIsAiChatOpen(true)}>
-                      <Sparkles />
-                      Ask AI
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => setIsGlobalExportModalOpen(true)}>
-                      <Download />
-                      Export Data
-                    </Button>
-                  </div>
+                  {activeUsageTab !== "channels" && (
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setIsAiChatOpen(true)}>
+                        <Sparkles />
+                        Ask AI
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setIsGlobalExportModalOpen(true)}>
+                        <Download />
+                        Export Data
+                      </Button>
+                    </div>
+                  )}
                 </div>
-                <TabsContent value="cost" keepMounted>
+                <TabsContent value="cost" keepMounted={activeUsageTab !== "channels"}>
                   <UsageOverview
                     results={sortedDailyResults}
                     totals={totals}
@@ -461,7 +484,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
                 </TabsContent>
 
                 {/* Activity Panel */}
-                <TabsContent value="models" keepMounted>
+                <TabsContent value="models" keepMounted={activeUsageTab !== "channels"}>
                   <div className="mt-2 mb-4 flex flex-wrap items-center justify-between gap-3">
                     <InputGroup className="max-w-md">
                       <InputGroupAddon>
@@ -500,7 +523,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
                     />
                   )}
                 </TabsContent>
-                <TabsContent value="keys" keepMounted>
+                <TabsContent value="keys" keepMounted={activeUsageTab !== "channels"}>
                   <KeyActivityPanel
                     summary={summaryMetrics}
                     summaryLoading={loading}
@@ -510,12 +533,17 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
                     searchKeys={searchKeys}
                   />
                 </TabsContent>
-                <TabsContent value="mcp" keepMounted>
+                <TabsContent value="mcp" keepMounted={activeUsageTab !== "channels"}>
                   <ActivityMetrics modelMetrics={mcpServerMetrics} />
                 </TabsContent>
-                <TabsContent value="endpoints" keepMounted>
+                <TabsContent value="endpoints" keepMounted={activeUsageTab !== "channels"}>
                   <EndpointUsage userSpendData={userSpendData} />
                 </TabsContent>
+                {canViewChannels && (
+                  <TabsContent value="channels">
+                    {activeUsageTab === "channels" && <ChannelActivityPanel accessToken={accessToken} />}
+                  </TabsContent>
+                )}
               </Tabs>
             </>
           )}

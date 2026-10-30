@@ -14665,6 +14665,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/channels/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Channel Metrics */
+        get: operations["admin_channel_metrics_retail_admin_channels_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/channels/{channel_id}": {
         parameters: {
             query?: never;
@@ -14693,6 +14710,23 @@ export interface paths {
         put?: never;
         /** Admin Add Channel Deployments */
         post: operations["admin_add_channel_deployments_retail_admin_channels__channel_id__deployments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/channels/{channel_id}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Channel Metric Detail */
+        get: operations["admin_channel_metric_detail_retail_admin_channels__channel_id__metrics_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -29696,6 +29730,28 @@ export interface components {
             /** User Id */
             user_id: string;
         };
+        /** ChannelActivity */
+        ChannelActivity: {
+            /** Deployment Count */
+            deployment_count: number;
+            /** Id */
+            id: string;
+            metrics: components["schemas"]["PeriodMetrics"];
+            /** Name */
+            name: string;
+            /** Pool Id */
+            pool_id: string;
+            /** Pool Name */
+            pool_name: string;
+            rolling: components["schemas"]["RollingMetrics"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "provisioning" | "error";
+            /** Upstream Error Events */
+            upstream_error_events: number;
+        };
         /** ChannelAddDeployments */
         ChannelAddDeployments: {
             /** Deployments */
@@ -29728,6 +29784,55 @@ export interface components {
             name: string;
             /** Pool Id */
             pool_id: string;
+        };
+        /** ChannelIdentity */
+        ChannelIdentity: {
+            /** Deployment Count */
+            deployment_count: number;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Pool Id */
+            pool_id: string;
+            /** Pool Name */
+            pool_name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "provisioning" | "error";
+        };
+        /** ChannelMetricsDetail */
+        ChannelMetricsDetail: {
+            channel: components["schemas"]["ChannelIdentity"];
+            coverage: components["schemas"]["MetricsCoverage"];
+            metrics: components["schemas"]["PeriodMetrics"];
+            /** Models */
+            models: components["schemas"]["ModelActivity"][];
+            /** Notes */
+            notes: string[];
+            /** Recent Errors */
+            recent_errors: components["schemas"]["SafeMetricsError"][];
+            /** Request Error Groups */
+            request_error_groups: components["schemas"]["MetricsErrorGroup"][];
+            rolling: components["schemas"]["RollingMetrics"];
+            /** Trend */
+            trend: components["schemas"]["MetricsTrend"][];
+            /** Upstream Error Events */
+            upstream_error_events: number;
+            /** Upstream Error Groups */
+            upstream_error_groups: components["schemas"]["MetricsErrorGroup"][];
+            window: components["schemas"]["MetricsWindow"];
+        };
+        /** ChannelMetricsPage */
+        ChannelMetricsPage: {
+            /** Channels */
+            channels: components["schemas"]["ChannelActivity"][];
+            coverage: components["schemas"]["MetricsCoverage"];
+            /** Notes */
+            notes: string[];
+            window: components["schemas"]["MetricsWindow"];
         };
         /** ChatCompletionAnnotation */
         ChatCompletionAnnotation: {
@@ -34737,6 +34842,11 @@ export interface components {
              */
             vault_token?: string | null;
         };
+        /**
+         * Hours
+         * @enum {integer}
+         */
+        Hours: 1 | 6 | 24 | 168 | 720;
         /** Hyperparameters */
         Hyperparameters: {
             /** Batch Size */
@@ -39935,6 +40045,63 @@ export interface components {
             };
             metrics: components["schemas"]["SpendMetrics"];
         };
+        /** MetricsCoverage */
+        MetricsCoverage: {
+            /** Attributed Requests */
+            attributed_requests: number;
+            /** Model Id Coverage */
+            model_id_coverage: number | null;
+            /**
+             * Scope
+             * @default gateway
+             * @constant
+             */
+            scope: "gateway";
+            /** Unattributed Requests */
+            unattributed_requests: number;
+            /** Window Log Rows */
+            window_log_rows: number;
+        };
+        /** MetricsErrorGroup */
+        MetricsErrorGroup: {
+            /** Count */
+            count: number;
+            /** Error Type */
+            error_type: string;
+            /** Status Code */
+            status_code: number | null;
+        };
+        /** MetricsTrend */
+        MetricsTrend: {
+            metrics: components["schemas"]["PeriodMetrics"];
+            /**
+             * Time
+             * Format: date-time
+             */
+            time: string;
+        };
+        /** MetricsWindow */
+        MetricsWindow: {
+            /** Bucket Minutes */
+            bucket_minutes: number;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            hours: components["schemas"]["Hours"];
+            /**
+             * Rolling Seconds
+             * @default 60
+             * @constant
+             */
+            rolling_seconds: 60;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+        };
         /** Mode */
         Mode: {
             /**
@@ -39966,6 +40133,13 @@ export interface components {
             team_ids: string[];
             /** Timezone */
             timezone: string;
+        };
+        /** ModelActivity */
+        ModelActivity: {
+            metrics: components["schemas"]["PeriodMetrics"];
+            /** Model */
+            model: string;
+            rolling: components["schemas"]["RollingMetrics"];
         };
         /** ModelDeprecationInfo */
         ModelDeprecationInfo: {
@@ -42367,6 +42541,99 @@ export interface components {
             user_email?: string | null;
             /** User Id */
             user_id: string;
+        };
+        /** PeriodMetrics */
+        PeriodMetrics: {
+            /**
+             * Billed Attempts
+             * @default 0
+             */
+            billed_attempts: number;
+            /** Cache Hit Rate Pct */
+            cache_hit_rate_pct?: number | null;
+            /**
+             * Cache Hit Requests
+             * @default 0
+             */
+            cache_hit_requests: number;
+            /** Cache Read Tokens */
+            cache_read_tokens?: number | null;
+            /**
+             * Cache Status Samples
+             * @default 0
+             */
+            cache_status_samples: number;
+            /** Cache Write Tokens */
+            cache_write_tokens?: number | null;
+            /** Error Rate Pct */
+            error_rate_pct?: number | null;
+            /**
+             * Failed Requests
+             * @default 0
+             */
+            failed_requests: number;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Latency Avg Ms */
+            latency_avg_ms?: number | null;
+            /** Latency P50 Ms */
+            latency_p50_ms?: number | null;
+            /** Latency P95 Ms */
+            latency_p95_ms?: number | null;
+            /**
+             * Latency Samples
+             * @default 0
+             */
+            latency_samples: number;
+            /** Native Spend Usd */
+            native_spend_usd?: string | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Reasoning Tokens */
+            reasoning_tokens?: number | null;
+            /**
+             * Requests
+             * @default 0
+             */
+            requests: number;
+            /**
+             * Spend Samples
+             * @default 0
+             */
+            spend_samples: number;
+            /**
+             * Streaming Requests
+             * @default 0
+             */
+            streaming_requests: number;
+            /**
+             * Successful Requests
+             * @default 0
+             */
+            successful_requests: number;
+            /** Total Tokens */
+            total_tokens?: number | null;
+            /** Ttft Avg Ms */
+            ttft_avg_ms?: number | null;
+            /** Ttft P50 Ms */
+            ttft_p50_ms?: number | null;
+            /** Ttft P95 Ms */
+            ttft_p95_ms?: number | null;
+            /**
+             * Ttft Samples
+             * @default 0
+             */
+            ttft_samples: number;
+            /**
+             * Unknown Status Requests
+             * @default 0
+             */
+            unknown_status_requests: number;
+            /**
+             * Usage Samples
+             * @default 0
+             */
+            usage_samples: number;
         };
         /**
          * PiiAction
@@ -46290,6 +46557,26 @@ export interface components {
                 [key: string]: string[];
             };
         };
+        /** RollingMetrics */
+        RollingMetrics: {
+            /** Native Usd Per Minute */
+            native_usd_per_minute?: string | null;
+            /**
+             * Requests
+             * @default 0
+             */
+            requests: number;
+            /** Rpm */
+            rpm?: number | null;
+            /** Tpm */
+            tpm?: number | null;
+            /**
+             * Window Seconds
+             * @default 60
+             * @constant
+             */
+            window_seconds: 60;
+        };
         /** RotateKeyRequest */
         RotateKeyRequest: {
             /**
@@ -46910,6 +47197,29 @@ export interface components {
             values: {
                 [key: string]: unknown;
             };
+        };
+        /** SafeMetricsError */
+        SafeMetricsError: {
+            /** Error Type */
+            error_type: string;
+            /** Message */
+            message: string;
+            /** Model */
+            model: string;
+            /** Request Id */
+            request_id: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "request" | "upstream_event";
+            /** Status Code */
+            status_code: number | null;
+            /**
+             * Time
+             * Format: date-time
+             */
+            time: string;
         };
         /** Sample */
         Sample: {
@@ -73158,6 +73468,37 @@ export interface operations {
             };
         };
     };
+    admin_channel_metrics_retail_admin_channels_metrics_get: {
+        parameters: {
+            query?: {
+                hours?: components["schemas"]["Hours"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelMetricsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_update_channel_retail_admin_channels__channel_id__put: {
         parameters: {
             query?: never;
@@ -73219,6 +73560,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: components["schemas"]["JsonValue"];
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_channel_metric_detail_retail_admin_channels__channel_id__metrics_get: {
+        parameters: {
+            query?: {
+                hours?: components["schemas"]["Hours"];
+            };
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelMetricsDetail"];
                 };
             };
             /** @description Validation Error */

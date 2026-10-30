@@ -166,6 +166,7 @@ _STAMPED_METADATA_KEYS: Final = frozenset(
         "autorouter_savings_estimate",
         "autorouter_baseline_observation",
         "used_client_oauth_token",
+        "observed_stream",
         "litellm_roi_estimator",
     )
 )
@@ -192,6 +193,7 @@ def _get_spend_logs_metadata(
     router_metadata: SpendLogsRouterMetadata | None = None,
     azure_spillover: AzureSpillover | None = None,
     used_client_oauth_token: bool | None = None,
+    observed_stream: bool | None = None,
 ) -> SpendLogsMetadata:
     if metadata is None:
         return SpendLogsMetadata(
@@ -238,6 +240,7 @@ def _get_spend_logs_metadata(
             router_metadata=router_metadata,
             azure_spillover=azure_spillover,
             used_client_oauth_token=used_client_oauth_token,
+            observed_stream=observed_stream,
         )
     verbose_proxy_logger.debug(
         "getting payload for SpendLogs, available keys in metadata: " + str(list(metadata.keys()))
@@ -254,6 +257,7 @@ def _get_spend_logs_metadata(
         router_metadata=router_metadata,
         azure_spillover=azure_spillover,
         used_client_oauth_token=used_client_oauth_token,
+        observed_stream=observed_stream,
         litellm_roi_estimator=metadata.get("litellm_roi_estimator") is True,
     )
     _raw_key: Final = clean_metadata.get("user_api_key")
@@ -506,6 +510,16 @@ def _scrub_raw_model_from_error_information(
     )
 
 
+def _observed_stream(
+    kwargs: Mapping[str, object], standard_logging_payload: StandardLoggingPayload | None,
+) -> bool | None:
+    request_stream: Final = kwargs.get("stream")
+    if isinstance(request_stream, bool):
+        return request_stream
+    logged_stream: Final = standard_logging_payload.get("stream") if standard_logging_payload is not None else None
+    return logged_stream if isinstance(logged_stream, bool) else None
+
+
 def get_logging_payload(
     kwargs: dict | None,
     response_obj: object,
@@ -735,6 +749,7 @@ def get_logging_payload(
         used_client_oauth_token=resolve_used_client_oauth_token(
             proxy_stamped_used_client_oauth_token(litellm_params.get("metadata"), litellm_params), custom_llm_provider
         ),
+        observed_stream=_observed_stream(kwargs, standard_logging_payload),
         azure_spillover=azure_spillover(
             response_headers=kwargs.get("response_headers")
             if isinstance(kwargs.get("response_headers"), Mapping)

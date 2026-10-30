@@ -26,6 +26,7 @@ describe("dashboard role boundaries", () => {
     "models-and-endpoints",
     "moyai",
     "channels",
+    "channel-details",
     "resource-pools",
     "wallet-admin",
     "agents",
@@ -83,11 +84,14 @@ describe("dashboard role boundaries", () => {
     expect(canUseAdminControlPlane({ userRole: "proxy_admin_viewer", isViewOnly: false })).toBe(false);
     expect(canAccessDashboardRoute("moyai", { ...customer, userRole: "Admin", isViewOnly: true })).toBe(false);
   });
-  it.each(["channels", "resource-pools", "wallet-admin"])("does not expose %s to a proxy viewer", (page) => {
-    expect(canAccessDashboardRoute(page, { ...customer, userRole: "proxy_admin_viewer" })).toBe(false);
-    expect(canAccessDashboardRoute(page, { ...customer, userRole: "Admin", isViewOnly: true })).toBe(false);
-    expect(canAccessDashboardRoute(page, { ...customer, userRole: "Admin" })).toBe(true);
-  });
+  it.each(["channels", "channel-details", "resource-pools", "wallet-admin"])(
+    "does not expose %s to a proxy viewer",
+    (page) => {
+      expect(canAccessDashboardRoute(page, { ...customer, userRole: "proxy_admin_viewer" })).toBe(false);
+      expect(canAccessDashboardRoute(page, { ...customer, userRole: "Admin", isViewOnly: true })).toBe(false);
+      expect(canAccessDashboardRoute(page, { ...customer, userRole: "Admin" })).toBe(true);
+    },
+  );
   it("fails closed for unresolved roles", () => {
     expect(canAccessDashboardRoute("home", { ...customer, userRole: "" })).toBe(false);
     expect(canAccessDashboardRoute("channels", { ...customer, userRole: "Unknown Role" })).toBe(false);

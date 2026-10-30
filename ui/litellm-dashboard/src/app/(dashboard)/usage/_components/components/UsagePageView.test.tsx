@@ -176,6 +176,10 @@ vi.mock("./UsageAIChatPanel", () => ({
   default: () => <div data-testid="usage-ai-chat-panel">Usage AI Chat Panel</div>,
 }));
 
+vi.mock("@/components/retail/channels/metrics/ChannelActivityPanel", () => ({
+  ChannelActivityPanel: () => <section aria-label="Channel traffic analytics">Channel metrics</section>,
+}));
+
 vi.mock("@/app/(dashboard)/hooks/customers/useCustomers", () => ({
   useCustomers: vi.fn(),
 }));
@@ -600,6 +604,22 @@ describe("UsagePage", () => {
     });
     expect(screen.queryByText("424,242")).not.toBeInTheDocument();
     expect(screen.queryByTestId("gateway-requests-by-endpoint")).not.toBeInTheDocument();
+  });
+
+  it("opens channel analytics from its URL and removes unrelated account and date filters", async () => {
+    renderWithProviders(<UsagePage {...defaultProps} />, { searchParams: "usage_tab=channels" });
+    expect(await screen.findByRole("region", { name: "Channel traffic analytics" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Channel Activity" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByTestId("user-dropdown")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("advanced-date-picker")).not.toBeInTheDocument();
+  });
+
+  it("does not expose channel analytics through a customer URL", async () => {
+    mockUseAuthorized.mockReturnValue(nonAdminSession);
+    renderWithProviders(<UsagePage {...defaultProps} />, { searchParams: "usage_tab=channels" });
+    expect(screen.getByRole("region", { name: "Your usage" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Channel Activity" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Channel traffic analytics" })).not.toBeInTheDocument();
   });
 
   it("should display usage metrics and charts", async () => {

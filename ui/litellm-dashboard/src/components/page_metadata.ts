@@ -11,6 +11,7 @@ export const pageDescriptions: Record<string, string> = {
   models: "Configure and manage LLM models and endpoints",
   "model-catalog": "View your available models, resource pools and account pricing",
   channels: "Manage named upstream channels and their deployments",
+  "channel-details": "Inspect channel traffic, model performance, spend and request failures",
   "resource-pools": "Configure resource pools, routing access and pool pricing",
   wallet: "View your available balance and wallet transactions",
   billing: "View your request charges and billing history",

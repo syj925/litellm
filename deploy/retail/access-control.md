@@ -10,6 +10,7 @@ The retail portal uses LiteLLM roles, account resource grants and per-key polici
 | Wallet and Billing | Own balance and actual charges | Own account | Customer wallets and pricing administration |
 | Teams / organizations | No administrative page | Explicit delegated scope | Global |
 | Channels, resource pools, credentials and routing configuration | Denied | Denied | Allowed |
+| Channel activity, performance and upstream error analytics | Denied | Denied | Writable proxy administrators only |
 | Agent / vector-store administration | Hidden | Only when explicitly enabled for team admins | Allowed |
 | MCP, guardrail, policy, tool and response-cache administration | Hidden | Hidden unless independently authorized by server policy | Allowed |
 | Plugins, worker controls and request transformation debugging | Denied | Denied | Writable proxy admins only |

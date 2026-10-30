@@ -96,6 +96,47 @@ def test_resource_pool_audit_survives_spend_log_payload_serialization(bucket: st
     assert payload["status"] == status
 
 
+@pytest.mark.parametrize("observed", (True, False, None))
+@pytest.mark.parametrize("has_metadata", (True, False))
+def test_spend_log_stream_observation_cannot_be_supplied_by_request_metadata(
+    observed: bool | None, has_metadata: bool,
+) -> None:
+    metadata: Final = {"observed_stream": True} if has_metadata else None
+    stored: Final = _get_spend_logs_metadata(metadata, observed_stream=observed)
+    assert stored["observed_stream"] is observed
+    if metadata is not None:
+        assert metadata == {"observed_stream": True}
+
+
+@pytest.mark.parametrize(
+    "request_stream,logged_stream,expected",
+    ((True, False, True), (False, True, False), (None, True, True), (None, False, False),
+     (None, None, None), ("true", None, None), (1, None, None), ("false", True, True)),
+)
+def test_spend_log_stream_observation_uses_only_boolean_runtime_facts_without_changing_usage_or_cost(
+    request_stream: object, logged_stream: bool | None, expected: bool | None,
+) -> None:
+    runtime_stream: Final = {"stream": request_stream} if request_stream is not None else {}
+    standard: Final = _make_standard_logging_payload_with_usage_object({}) if logged_stream is not None else None
+    runtime_logging: Final = {"standard_logging_object": {**standard, "stream": logged_stream}} if standard else {}
+    payload: Final = get_logging_payload(
+        kwargs={
+            **runtime_stream, **runtime_logging,
+            "model": "observed-stream-fixture", "response_cost": 0.125,
+            "litellm_params": {"metadata": {"observed_stream": True, "stream": True}},
+        },
+        response_obj={
+            "id": "observed-stream-request", "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
+        },
+        start_time=datetime.datetime(2026, 1, 1, tzinfo=timezone.utc),
+        end_time=datetime.datetime(2026, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
+    )
+    stored: Final = json.loads(payload["metadata"])
+    assert stored["observed_stream"] is expected
+    assert payload["spend"] == 0.125
+    assert (payload["prompt_tokens"], payload["completion_tokens"], payload["total_tokens"]) == (2, 3, 5)
+
+
 @pytest.mark.parametrize("store_prompts,redact", [(True, False), (False, False), (True, True)])
 def test_classifier_audit_spend_storage_obeys_privacy_and_truncation(monkeypatch, store_prompts, redact):
     from litellm.proxy import proxy_server

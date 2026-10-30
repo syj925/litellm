@@ -663,6 +663,14 @@ describe("Sidebar (leftnav)", () => {
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("data-active", "true");
   });
 
+  it("keeps channel details under Channels rather than selecting Home", () => {
+    mockUseAuthorized.mockReturnValue({ ...mockUseAuthorized(), userRole: "Admin" });
+    navState.pathname = "/ui/channel-details/";
+    renderWithProviders(<Sidebar {...defaultProps} />);
+    expect(screen.getByRole("link", { name: "Channels" })).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("link", { name: "Home" })).not.toHaveAttribute("data-active");
+  });
+
   it("expands the parent group of the current nested route and marks the child active", () => {
     navState.pathname = "/ui/search-tools";
     renderWithProviders(<Sidebar {...defaultProps} />);
@@ -731,6 +739,9 @@ describe("Sidebar (leftnav)", () => {
 });
 
 describe("getBreadcrumb", () => {
+  it("keeps channel details in the gateway section", () => {
+    expect(getBreadcrumb("/ui/channel-details/")).toEqual({ section: "AI Gateway", title: "Channel details" });
+  });
   it("resolves a top-level route to its section + title", () => {
     expect(getBreadcrumb("/ui/api-keys")).toEqual({ section: "AI Gateway", title: "Virtual Keys" });
     expect(getBreadcrumb("/ui/logs")).toEqual({ section: "Observability", title: "Logs" });

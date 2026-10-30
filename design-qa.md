@@ -1,3 +1,43 @@
+# Channel analytics design QA
+
+final result: passed
+
+## Current implementation and evidence
+
+The channel analytics extension follows the existing LiteLLM Usage page's typography, neutral borders, statistic cells, native chart colors, table controls and dashboard shell. It adds an operational channel view and independent channel details rather than reproducing the Overview's model ranking content
+
+All captures use a 1280 x 720 CSS viewport and 1280 x 720 screenshot pixels at density 1, without browser chrome. The source and final implementation captures were opened together in the same comparison input. These are different functional views, so the comparison evaluates the existing product language and hierarchy, rather than pixel identity
+
+| Evidence | Location |
+| --- | --- |
+| Existing Usage visual reference | C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/channel-usage-reference.png |
+| Final channel summary | C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/channel-activity-proof.png |
+| Final detail header and rolling rates | C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/channel-detail-proof.png |
+| Focused financial and performance cells | C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/channel-stats-proof.png |
+| Final sparse measurement charts | C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/channel-performance-proof.png |
+
+## Visual and interaction findings
+
+No actionable P0, P1 or P2 findings remain in the desktop states reviewed. Typography and hierarchy follow the existing UI. Statistic grids use the same muted labels, clear numeric values and rounded borders. The detail intentionally contains more cells and two chart columns to expose channel measurements. Tables retain horizontal scrolling and configurable columns for the larger metric set. Colors use existing blue, cyan, green and red chart tokens. Existing branding and library icons remain sharp; no replacement art was introduced. Copy distinguishes configuration status, gateway spend, missing samples and near-real-time persisted observations
+
+The full screenshots and the focused statistics/chart captures make the control labels and metric cells readable. Search by resource pool, clearing search, showing the p95 column, opening channel details, switching Models and Errors, pausing refresh, changing from 24 hours to 7 days and opening an actual request-log detail were exercised in the local browser. URL state retained the exact channel and selected window. The final fresh tab returned no console warnings or errors
+
+| Earlier finding | Fix and final evidence |
+| --- | --- |
+| P2: the new detail route highlighted Home | Added Channels selection and the proper gateway breadcrumb, covered by navigation regression tests and the final detail capture |
+| P2: sparse cost or timing observations could become invisible without a line segment | Enabled optional sample dots for sparse channel measurement charts, retaining null gaps. The final performance capture shows isolated cost observations. A chart regression proves one isolated sample remains visible without drawing a segment through missing data |
+| Hidden Overview charts emitted zero-size warnings when entering Channel Activity | Existing non-channel panels unmount while the channel tab is selected. Original Usage tab behavior remains unchanged, and the final fresh channel tab has no console warnings |
+
+## Data and permission validation
+
+Targeted backend tests and native spend-log projection tests pass. Independent PostgreSQL fixtures passed 17 cases, including percentiles, explicit streaming, retry helper accounting, model isolation and timezone boundaries. A real local API versus independent SQL reconciliation passed 48 checks over identical response windows. Anonymous and ordinary users cannot read channel analytics. The fixture database was removed, with no main-database business record changes or paid upstream calls
+
+The production TypeScript check and final webpack build pass. Targeted UI, Usage, navigation and chart tests pass. ESLint has no errors; existing legacy component and test warnings remain outside the new metrics module. The final local gateway is healthy
+
+Only the desktop light-theme viewport was visually checked. Mobile and dark-theme screenshots remain unverified. Historical logs without exact deployment IDs remain unattributed, and logs without a trusted stream flag cannot supply TTFT. The UI exposes those limitations rather than estimating measurements. Native spend is not supplier invoice cost or discounted wallet revenue
+
+## Previous model discovery QA
+
 # Model discovery design QA
 
 final result: passed

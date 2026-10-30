@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cable, Layers, Pencil, Plus, RefreshCw, ShieldCheck } from "lucide-react";
+import { Activity, Cable, Layers, Pencil, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
@@ -91,6 +91,10 @@ export default function ChannelsPanel() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" render={<Link href={`${uiHref("usage")}?usage_tab=channels`} />}>
+            <Activity />
+            Channel activity
+          </Button>
           <Button variant="outline" render={<Link href={uiHref("resource-pools")} />}>
             <Layers />
             Resource pools
@@ -166,7 +170,12 @@ export default function ChannelsPanel() {
               {matching.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">
-                    {item.name}
+                    <Link
+                      href={`${uiHref("channel-details")}?channel=${encodeURIComponent(item.id)}`}
+                      className="underline-offset-4 hover:underline"
+                    >
+                      {item.name}
+                    </Link>
                     <p className="mt-1 font-mono text-xs font-normal text-muted-foreground">{item.id.slice(0, 8)}</p>
                   </TableCell>
                   <TableCell>{item.pool_name}</TableCell>
@@ -190,6 +199,15 @@ export default function ChannelsPanel() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
+                    <Button
+                      className="mr-2"
+                      variant="outline"
+                      size="sm"
+                      render={<Link href={`${uiHref("channel-details")}?channel=${encodeURIComponent(item.id)}`} />}
+                    >
+                      <Activity />
+                      View activity
+                    </Button>
                     {item.status !== "active" && (
                       <Button
                         className="mr-2"

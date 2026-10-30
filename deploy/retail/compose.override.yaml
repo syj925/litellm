@@ -13,6 +13,7 @@ services:
       - ../litellm/litellm/proxy/_types.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/_types.py:ro
       - ../litellm/litellm/proxy/auth/route_checks.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/auth/route_checks.py:ro
       - ../litellm/litellm/proxy/spend_tracking/spend_management_endpoints.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/spend_tracking/spend_management_endpoints.py:ro
+      - ../litellm/litellm/proxy/spend_tracking/spend_tracking_utils.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/spend_tracking/spend_tracking_utils.py:ro
       - ../litellm/litellm/proxy/management_endpoints/daily_activity_routes.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/management_endpoints/daily_activity_routes.py:ro
       - ../litellm/litellm/proxy/management_endpoints/internal_user_endpoints.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/management_endpoints/internal_user_endpoints.py:ro
       - ../litellm/litellm/types/utils.py:/app/.venv/lib/python3.13/site-packages/litellm/types/utils.py:ro

@@ -10,11 +10,13 @@ from litellm.proxy._types import ModelInfoDelete, UserAPIKeyAuth
 from litellm.types.router import Deployment
 
 from .api import Admin, Store, _execute
+from .channel_metrics import router as channel_metrics_router
 from .channel_store import ChannelDetails, ChannelMember, ChannelStore, ChannelUpdate
 from .pool_store import deployment_catalog, router_deployments
 from .store import WalletStore
 
 router: Final = APIRouter(prefix="/admin/channels", tags=["Channels"])
+router.include_router(channel_metrics_router)
 
 
 class ChannelCreate(ChannelDetails):

@@ -157,6 +157,25 @@ it("does not load or expose upstream channels to ordinary users", () => {
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
+it("opens activity for the exact channel rather than its shared public model", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path: string) => {
+      if (path.endsWith("/admin/channels")) return new Response(JSON.stringify({ enabled: true, items: [channel] }));
+      if (path.endsWith("/admin/pools/deployments")) return new Response(JSON.stringify({ items: deployments }));
+      return new Response(JSON.stringify({ items: [pool] }));
+    }),
+  );
+  mount(<ChannelsPanel />);
+  const name = await screen.findByRole("link", { name: channel.name });
+  expect(name).toHaveAttribute("href", "/ui/channel-details?channel=channel-a");
+  expect(screen.getByRole("link", { name: "View activity" })).toHaveAttribute("href", name.getAttribute("href"));
+  expect(screen.getByRole("link", { name: "Channel activity" })).toHaveAttribute(
+    "href",
+    "/ui/usage?usage_tab=channels",
+  );
+});
+
 it("lets an operator remove a deleted deployment instead of trapping an unsavable channel", async () => {
   const writes: unknown[] = [];
   vi.stubGlobal(

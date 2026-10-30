@@ -4304,6 +4304,7 @@ class SpendLogsRouterMetadata(TypedDict):
 
 
 class SpendLogsMetadata(TypedDict):
+    observed_stream: ReadOnly[NotRequired[bool | None]]
     actor_agent_id: ReadOnly[NotRequired[str | None]]
     target_agent_id: ReadOnly[NotRequired[str | None]]
     billing_agent_id: ReadOnly[NotRequired[str | None]]

@@ -108,6 +108,19 @@ describe("LineChart", () => {
     expect(container.querySelectorAll("path.recharts-line-curve")).toHaveLength(0);
   });
 
+  it("can display an isolated measurement without connecting across missing samples", () => {
+    const samples = [
+      { time: "before", USD: null },
+      { time: "measured", USD: 0.02 },
+      { time: "after", USD: null },
+    ];
+    const { container, rerender } = render(<LineChart data={samples} index="time" categories={["USD"]} />);
+    expect(container.querySelectorAll("circle.recharts-line-dot")).toHaveLength(0);
+    rerender(<LineChart data={samples} index="time" categories={["USD"]} showDots />);
+    expect(container.querySelectorAll("circle.recharts-line-dot")).toHaveLength(1);
+    expect(container.querySelector("path.recharts-line-curve")?.getAttribute("d") ?? "").not.toContain("L");
+  });
+
   it("emits no per-chart style tag; colors flow through strokes, not CSS vars", () => {
     const { container } = render(
       <LineChart data={data} index="date" categories={["/chat/completions"]} colors={["blue"]} />,

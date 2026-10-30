@@ -515,6 +515,7 @@ const findParentKey = (route: string): string | null => {
 };
 
 const findMenuItemKey = (route: string): string => {
+  if (route === "channel-details") return "channels";
   for (const group of menuGroups) {
     for (const item of group.items) {
       if (routeOf(item) === route) return item.key;
@@ -546,6 +547,7 @@ export const labelText = (item: MenuItem): string => (typeof item.label === "str
 // Breadcrumb ("Section" / "Page") for the top bar, derived from the same nav config.
 export const getBreadcrumb = (pathname: string): { section: string | null; title: string } => {
   const route = routeForPathname(pathname);
+  if (route === "channel-details") return { section: "AI Gateway", title: "Channel details" };
   for (const group of menuGroups) {
     for (const item of group.items) {
       const section = sectionText(group.groupLabel);
