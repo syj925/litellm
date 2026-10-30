@@ -1,5 +1,5 @@
 import { parseAsArrayOf, parseAsFloat, parseAsInteger, parseAsString, parseAsStringLiteral } from "nuqs";
-import { getModelIdentity } from "./modelIdentity";
+import { catalogModelTitle, getModelIdentity } from "./modelIdentity";
 import { catalogDetailTabs, modelPrice, type CatalogModel, type CatalogPriceBasis } from "./types";
 
 export const capabilityOptions = [
@@ -54,6 +54,7 @@ export function filterCatalog(models: CatalogModel[], filters: CatalogFilters): 
       const price = modelPrice(model, filters.price, "input");
       const haystack = [
         model.id,
+        model.name,
         identity.displayName,
         identity.author,
         model.description,
@@ -81,24 +82,11 @@ export function filterCatalog(models: CatalogModel[], filters: CatalogFilters): 
         const b = modelPrice(right, filters.price, field) ?? Number.POSITIVE_INFINITY;
         if (a !== b) return a - b;
       }
-      return getModelIdentity(left.id, left.provider).displayName.localeCompare(
-        getModelIdentity(right.id, right.provider).displayName,
-      );
+      return catalogModelTitle(left).localeCompare(catalogModelTitle(right));
     });
 }
 
 export function catalogDescription(model: CatalogModel): string {
   if (model.description) return model.description;
-  const facts = [
-    model.input_modalities.length ? `${model.input_modalities.join(", ")} input` : null,
-    model.output_modalities.length ? `${model.output_modalities.join(", ")} output` : null,
-    ...capabilityOptions
-      .filter(({ id }) => model.capabilities[id] === true)
-      .slice(0, 3)
-      .map(({ label }) => label),
-  ].filter(Boolean);
-  const identity = getModelIdentity(model.id, model.provider);
-  return facts.length
-    ? `${identity.displayName} by ${identity.author}. ${facts.join(" · ")}. Explore resource options, pricing and API integration.`
-    : "Explore resource options, pricing and API integration. Additional model specifications have not been published.";
+  return "A model description has not been published.";
 }

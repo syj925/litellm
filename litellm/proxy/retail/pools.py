@@ -6,9 +6,11 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 from litellm.proxy._types import LitellmUserRoles
 
 from .api import Admin, Store, User, _execute, _model_price_view, _StoredModelPrice, _validated_discount
+from .catalog import router as catalog_router
+from .catalog_sources import catalog_sources_lifespan
+from .catalog_sources import router as catalog_sources_router
 from .channel_store import ChannelStore
 from .channels import router as channels_router
-from .catalog import router as catalog_router
 from .pool_pricing import pool_default_discount, set_pool_default_discount
 from .pool_store import (
     PoolAccess,
@@ -19,9 +21,10 @@ from .pool_store import (
     router_deployments,
 )
 
-router: Final = APIRouter(prefix="/retail", tags=["Resource pools"])
+router: Final = APIRouter(prefix="/retail", tags=["Resource pools"], lifespan=catalog_sources_lifespan)
 router.include_router(channels_router)
 router.include_router(catalog_router)
+router.include_router(catalog_sources_router)
 
 
 class PoolUpsert(PoolDefinition):

@@ -35,18 +35,29 @@ export interface CatalogCapabilities {
   pdf_input: boolean | null;
 }
 
+export interface CatalogMetadataSource {
+  source: "models_dev" | "openrouter" | "deployment" | "litellm";
+  url: string | null;
+  retrieved_at: string | null;
+  fields: string[];
+  model_id: string | null;
+}
+
 export interface CatalogModel {
   id: string;
   name: string;
   provider: string | null;
   description: string | null;
   context_length: number | null;
+  context_window?: number | null;
   max_output_tokens: number | null;
   mode: string | null;
   input_modalities: string[];
   output_modalities: string[];
   capabilities: CatalogCapabilities;
   metadata_source: "reference_catalog" | "deployment" | null;
+  metadata_sources?: CatalogMetadataSource[];
+  metadata_conflicts?: string[];
   available_to_me: boolean;
   offers: CatalogOffer[];
   reference_pricing?: CatalogTokenPrice | null;

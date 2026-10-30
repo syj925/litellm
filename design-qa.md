@@ -1,3 +1,29 @@
+# Dual-source model metadata QA
+
+final result: passed for the reviewed desktop states
+
+The public and personal catalogs retain the LiteLLM shell, provider icons, neutral card borders, typography and existing price controls. Cards now use a sourced description and display attribution with the retrieval date. Details show field-level sources, total context separately from maximum input, and differing source declarations. Missing descriptions use a short unpublished state
+
+| Evidence | Location |
+| --- | --- |
+| Previous public layout and issue supplied by the user | C:/Users/26933/AppData/Local/Temp/codex-clipboard-3c18b5ae-aaad-4718-9bbe-e22bb4683156.png |
+| Updated public list | C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/catalog-metadata-list-proof.png |
+| Updated detail header and limits | C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/catalog-metadata-detail-final.png |
+| Field attribution section | C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/catalog-metadata-detail-proof.png |
+| Actual administrator sync completed | C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/catalog-metadata-admin-proof.png |
+
+Implementation captures use a 1280 x 720 viewport at density 1. The user's issue capture includes browser chrome and a different viewport; this review evaluates the existing product style and the changed data behavior rather than pixel identity. Fonts, spacing, provider assets, readable muted copy, source attribution and narrow text wrapping were reviewed in the actual browser. The detail branch gained the same padding as the list after the first browser pass showed it flush to the viewport edge
+
+The administrator's Sync now button was exercised against both real public data APIs. Saved snapshots contain 607 models.dev and 456 OpenRouter records at verification time. The 44 configured public model IDs remain unchanged; 42 use models.dev and 39 also use OpenRouter via exact IDs or declared canonical mappings. Two unmatched aliases retain existing metadata. Source API descriptions may themselves be abbreviated, and the catalog does not invent missing text
+
+Before/after fingerprints of live channels, native model configurations, bindings, price configuration and wallets matched exactly. All 44 public model reference rates and resource offers also matched. Anonymous administrator endpoints returned 401. ASGI authorization regressions reject ordinary users and read-only administrators for both source operations. No paid inference calls were made
+
+Backend catalog, enrichment, normalization, failure retention and authorization tests passed: 42. An isolated PostgreSQL fixture passed 7 persistence, partial-failure, lock and retention checks and was removed. Targeted frontend metadata, source-admin, comparison, personal-catalog, identity and page-permission checks passed, including the HTTP 200 syncing-in-progress state. Production TypeScript, scoped lint and the final webpack build passed. Browser warning/error collections were empty
+
+Automatic refresh runs every six hours, serves saved snapshots during source failures and imports no external price or performance fields. Declared capabilities remain reference data, with channel support explained in the UI. Mobile and dark-theme visual acceptance were not performed. The existing horizontal model-management tab strip remains scrollable for the Catalog data tab
+
+---
+
 # Channel connection editor QA
 
 final result: passed for the desktop states reviewed

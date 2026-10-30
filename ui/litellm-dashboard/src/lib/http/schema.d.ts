@@ -14647,6 +14647,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/catalog-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Sources */
+        get: operations["get_sources_retail_admin_catalog_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/catalog-sources/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Sources */
+        post: operations["refresh_sources_retail_admin_catalog_sources_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/channels": {
         parameters: {
             query?: never;
@@ -29647,6 +29681,8 @@ export interface components {
             capabilities: components["schemas"]["CatalogCapabilities"];
             /** Context Length */
             context_length?: number | null;
+            /** Context Window */
+            context_window?: number | null;
             /** Description */
             description?: string | null;
             /** Id */
@@ -29658,8 +29694,18 @@ export interface components {
             input_modalities: string[];
             /** Max Output Tokens */
             max_output_tokens?: number | null;
+            /**
+             * Metadata Conflicts
+             * @default []
+             */
+            metadata_conflicts: string[];
             /** Metadata Source */
             metadata_source?: ("reference_catalog" | "deployment") | null;
+            /**
+             * Metadata Sources
+             * @default []
+             */
+            metadata_sources: components["schemas"]["MetadataSource"][];
             /** Mode */
             mode?: string | null;
             /** Name */
@@ -29693,7 +29739,7 @@ export interface components {
             items: components["schemas"]["CatalogModel"][];
             /**
              * Metadata Note
-             * @default Declared model capabilities come from the reference catalog or configured metadata, not live tests. Missing values are unknown, not evidence that a capability is unsupported. Base reference prices are listed in USD per million tokens. Context, cache duration, tools and other pricing variants can have separate rates.
+             * @default Model descriptions and specifications combine models.dev, OpenRouter, configured metadata and LiteLLM. Source declarations describe the model; channel support can vary and has not been tested by this catalog. Missing values are unknown, not evidence that a capability is unsupported. Base reference prices are listed in USD per million tokens. Context, cache duration, tools and other pricing variants can have separate rates.
              */
             metadata_note: string;
         };
@@ -29732,6 +29778,49 @@ export interface components {
             input?: string | null;
             /** Output */
             output?: string | null;
+        };
+        /** CatalogSourceStatus */
+        CatalogSourceStatus: {
+            /** Label */
+            label: string;
+            /** Last Attempt At */
+            last_attempt_at?: string | null;
+            /** Last Error */
+            last_error?: string | null;
+            /** Last Success At */
+            last_success_at?: string | null;
+            /**
+             * Record Count
+             * @default 0
+             */
+            record_count: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "models_dev" | "openrouter";
+            /**
+             * Stale
+             * @default true
+             */
+            stale: boolean;
+            /** Url */
+            url: string;
+        };
+        /** CatalogSourcesPage */
+        CatalogSourcesPage: {
+            /**
+             * Refresh Interval Seconds
+             * @default 21600
+             */
+            refresh_interval_seconds: number;
+            /** Sources */
+            sources: components["schemas"]["CatalogSourceStatus"][];
+            /**
+             * Syncing
+             * @default false
+             */
+            syncing: boolean;
         };
         /** ChangePasswordRequest */
         ChangePasswordRequest: {
@@ -40083,6 +40172,22 @@ export interface components {
             key: string;
             /** Value */
             value: string;
+        };
+        /** MetadataSource */
+        MetadataSource: {
+            /** Fields */
+            fields: string[];
+            /** Model Id */
+            model_id?: string | null;
+            /** Retrieved At */
+            retrieved_at?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "models_dev" | "openrouter" | "deployment" | "litellm";
+            /** Url */
+            url?: string | null;
         };
         /** MetricWithMetadata */
         MetricWithMetadata: {
@@ -73458,6 +73563,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sources_retail_admin_catalog_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogSourcesPage"];
+                };
+            };
+        };
+    };
+    refresh_sources_retail_admin_catalog_sources_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogSourcesPage"];
                 };
             };
         };

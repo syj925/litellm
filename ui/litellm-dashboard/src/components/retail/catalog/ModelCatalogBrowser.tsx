@@ -115,14 +115,16 @@ export default function ModelCatalogBrowser({
     );
   if (filters.model && current)
     return (
-      <CatalogModelDetail
-        model={current}
-        activeTab={filters.model_tab}
-        onTabChange={(tab) => void setFilters({ model_tab: tab })}
-        onBack={() => void setFilters({ model: null, model_tab: null })}
-        apiBaseUrl={apiBaseUrl}
-        publicView={publicView}
-      />
+      <div className={publicView ? "min-w-0 p-5 lg:p-6" : "min-w-0 p-5 lg:p-7"}>
+        <CatalogModelDetail
+          model={current}
+          activeTab={filters.model_tab}
+          onTabChange={(tab) => void setFilters({ model_tab: tab })}
+          onBack={() => void setFilters({ model: null, model_tab: null })}
+          apiBaseUrl={apiBaseUrl}
+          publicView={publicView}
+        />
+      </div>
     );
   if (filters.model && !current)
     return (

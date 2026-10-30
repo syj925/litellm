@@ -15,6 +15,7 @@ import { uiHref } from "@/utils/uiHref";
 import { sourceKindLabel } from "../pools/types";
 import { getModelIdentity, formatContext } from "./modelIdentity";
 import { catalogDescription } from "./catalogState";
+import { MetadataSourceDetails } from "./MetadataSources";
 import {
   catalogDetailTabs,
   discountLabel,
@@ -83,12 +84,6 @@ function capabilitySupport(value: boolean | null): string {
   return value === false ? "Not supported" : "Not specified";
 }
 
-function metadataDescription(source: CatalogModel["metadata_source"]): string {
-  if (source === "reference_catalog") return "Specifications come from the site's reference catalog.";
-  if (source === "deployment") return "Specifications come from the model configuration.";
-  return "Model specifications are not available yet.";
-}
-
 function Availability({ available }: { available: boolean }) {
   return (
     <Badge variant="outline" className={available ? "gap-1 text-success" : "gap-1 text-muted-foreground"}>
@@ -143,9 +138,9 @@ function CatalogOverview({ model, publicView }: ModelSectionProps) {
           </dl>
         </section>
         <p className="text-xs leading-6 text-muted-foreground">
-          {metadataDescription(model.metadata_source)} Not specified means this information has not been published,
-          rather than that the feature is unsupported.
+          Not specified means this information has not been published, rather than that the feature is unsupported.
         </p>
+        <MetadataSourceDetails model={model} />
       </div>
       <aside className="space-y-5">
         <section className="rounded-lg border" aria-labelledby="catalog-specifications-title">
@@ -153,6 +148,9 @@ function CatalogOverview({ model, publicView }: ModelSectionProps) {
             Specifications
           </h2>
           <dl className="divide-y">
+            {model.context_window != null && (
+              <Metric label="Total context window" value={formatContext(model.context_window)} />
+            )}
             <Metric label="Input context length" value={formatContext(model.context_length)} />
             <Metric label="Maximum output" value={formatContext(model.max_output_tokens)} />
             <Metric label="Input modalities" value={model.input_modalities.join(", ") || "Not specified"} />

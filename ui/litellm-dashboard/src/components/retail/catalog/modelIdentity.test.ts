@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { formatContext, getModelIdentity } from "./modelIdentity";
+import { catalogModelTitle, formatContext, getModelIdentity } from "./modelIdentity";
+
+describe("catalogModelTitle", () => {
+  it("uses a supplied catalog name while retaining the request identifier and inferred author", () => {
+    const model = { id: "claude-fixture-1-2-20260101", name: "Published model name", provider: "anthropic" };
+    expect(catalogModelTitle(model)).toBe(model.name);
+    expect(model.id).toBe("claude-fixture-1-2-20260101");
+    expect(getModelIdentity(model.id, model.provider).author).toBe("Anthropic");
+    expect(catalogModelTitle({ ...model, name: model.id })).toBe(
+      getModelIdentity(model.id, model.provider).displayName,
+    );
+    expect(catalogModelTitle({ ...model, name: " " })).toBe(getModelIdentity(model.id, model.provider).displayName);
+  });
+});
 
 describe("getModelIdentity", () => {
   it.each([

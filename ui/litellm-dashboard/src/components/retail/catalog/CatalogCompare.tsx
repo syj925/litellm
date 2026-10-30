@@ -45,6 +45,7 @@ const rows: CompareRow[] = [
     value: (model) => <Badge variant="outline">{model.available_to_me ? "Available" : "Access required"}</Badge>,
   },
   { label: "Input context window", value: (model) => formatContext(model.context_length) },
+  { label: "Total context window", value: (model) => formatContext(model.context_window) },
   { label: "Maximum output", value: (model) => formatContext(model.max_output_tokens) },
   { label: "Input modalities", value: (model) => modalityLabel(model.input_modalities) },
   { label: "Output modalities", value: (model) => modalityLabel(model.output_modalities) },

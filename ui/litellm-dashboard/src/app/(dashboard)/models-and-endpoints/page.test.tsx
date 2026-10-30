@@ -16,6 +16,9 @@ vi.mock("./panels/ModelRetrySettingsPanel", () => ({ default: () => <div data-te
 vi.mock("./panels/ModelGroupAliasPanel", () => ({ default: () => <div data-testid="panel-alias" /> }));
 vi.mock("./panels/PriceDataPanel", () => ({ default: () => <div data-testid="panel-price" /> }));
 vi.mock("./panels/AccessGroupBudgetsPanel", () => ({ default: () => <div data-testid="panel-budgets" /> }));
+vi.mock("@/components/retail/catalog/CatalogSourcesPanel", () => ({
+  default: () => <div data-testid="panel-catalog-data" />,
+}));
 
 const detailState = { modelId: null as string | null, teamId: null as string | null };
 vi.mock("./detailNavigation", () => ({
@@ -150,6 +153,7 @@ describe("ModelsAndEndpointsPage", () => {
     renderPage();
     expect(screen.queryByRole("tab", { name: "LLM Credentials" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Health Status" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Catalog data" })).not.toBeInTheDocument();
   });
 
   it("keeps the full admin tab order for a real admin", () => {
@@ -165,6 +169,7 @@ describe("ModelsAndEndpointsPage", () => {
       "Model Group Alias",
       "Model Access Group Budgets Beta",
       "Price Data Reload",
+      "Catalog data",
     ]);
   });
 
@@ -179,6 +184,7 @@ describe("ModelsAndEndpointsPage", () => {
     expect(screen.queryByRole("tab", { name: "Model Group Alias" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /Model Access Group Budgets/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Price Data Reload" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Catalog data" })).not.toBeInTheDocument();
   });
 
   // POST /model/new 403s a proxy_admin_viewer, so the form's tab must not render for one.

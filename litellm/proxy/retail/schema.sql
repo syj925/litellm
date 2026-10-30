@@ -204,3 +204,12 @@ CREATE TABLE IF NOT EXISTS retail_channel_deployments (
     deployment_id TEXT PRIMARY KEY,
     model TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS retail_catalog_sources (
+    source TEXT PRIMARY KEY CHECK (source IN ('models_dev','openrouter')),
+    records JSONB NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(records)='array'),
+    last_attempt_at TIMESTAMPTZ,
+    last_success_at TIMESTAMPTZ,
+    last_error TEXT,
+    content_sha256 TEXT NOT NULL DEFAULT ''
+);

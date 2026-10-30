@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict
 from litellm.litellm_core_utils.get_model_cost_map import GetModelCostMap
 
 from .api import Store, User
+from .catalog_enrichment import MetadataSource, resolve_metadata
+from .catalog_sources import ExternalMetadataRecord, read_records
 from .pool_pricing import _PoolFactors, pool_discount_view
 from .pool_store import (
     PoolAccess,
@@ -81,11 +83,14 @@ class CatalogModel(BaseModel):
     description: str | None = None
     context_length: int | None = None
     max_output_tokens: int | None = None
+    context_window: int | None = None
     mode: str | None = None
     input_modalities: tuple[str, ...] = ()
     output_modalities: tuple[str, ...] = ()
     capabilities: CatalogCapabilities
     metadata_source: Literal["reference_catalog", "deployment"] | None = None
+    metadata_sources: tuple[MetadataSource, ...] = ()
+    metadata_conflicts: tuple[str, ...] = ()
     reference_pricing: CatalogRates | None = None
     available_to_me: bool
     offers: tuple[CatalogOffer, ...]
@@ -96,7 +101,8 @@ class CatalogPage(BaseModel):
 
     items: tuple[CatalogModel, ...]
     metadata_note: str = (
-        "Declared model capabilities come from the reference catalog or configured metadata, not live tests. "
+        "Model descriptions and specifications combine models.dev, OpenRouter, configured metadata and LiteLLM. "
+        "Source declarations describe the model; channel support can vary and has not been tested by this catalog. "
         "Missing values are unknown, not evidence that a capability is unsupported. "
         "Base reference prices are listed in USD per million tokens. "
         "Context, cache duration, tools and other pricing variants can have separate rates."
@@ -328,6 +334,7 @@ def _model_entry(
     discounts: Mapping[tuple[str, str], _DiscountRow],
     catalog: Mapping[str, Mapping[str, object]],
     public_sources: Sequence[Mapping[str, object]] | None = None,
+    external_index: Mapping[tuple[str, str], ExternalMetadataRecord] | None = None,
 ) -> CatalogModel:
     identifiers: Final = tuple(dict.fromkeys(binding.deployment_id for binding in bindings))
     sources: Final = (
@@ -336,6 +343,8 @@ def _model_entry(
         else tuple(deployments[(identifier, model)] for identifier in identifiers)
     )
     metadata: Final = _metadata_consensus(tuple(_deployment_metadata(model, item, catalog) for item in sources))
+    resolution: Final = resolve_metadata(model, sources, metadata.model_dump(mode="json"), external_index or {})
+    enriched: Final = _Metadata.model_validate({**metadata.model_dump(), **resolution.values})
     card: Final = _reference_card(model, sources, prices, catalog)
     reference_rates: Final = _rates(card) or _reference_rates(model, sources, prices, catalog)
     pool_ids: Final = frozenset(binding.pool_id for binding in bindings)
@@ -344,16 +353,19 @@ def _model_entry(
     )
     return CatalogModel(
         id=model,
-        name=model,
-        provider=metadata.provider,
-        description=metadata.description,
-        context_length=metadata.context_length,
-        max_output_tokens=metadata.max_output_tokens,
-        mode=metadata.mode,
-        input_modalities=metadata.input_modalities,
-        output_modalities=metadata.output_modalities,
-        capabilities=metadata.capabilities,
+        name=resolution.name or model,
+        provider=enriched.provider,
+        description=enriched.description,
+        context_length=enriched.context_length,
+        max_output_tokens=enriched.max_output_tokens,
+        context_window=resolution.context_window,
+        mode=enriched.mode,
+        input_modalities=enriched.input_modalities,
+        output_modalities=enriched.output_modalities,
+        capabilities=enriched.capabilities,
         metadata_source=metadata.source,
+        metadata_sources=resolution.sources,
+        metadata_conflicts=resolution.conflicts,
         reference_pricing=reference_rates,
         available_to_me=any(offer.available_to_me for offer in offers),
         offers=offers,
@@ -370,6 +382,7 @@ def build_model_catalog(
     catalog: Mapping[str, Mapping[str, object]],
     *,
     mode: Literal["personal", "public"] = "personal",
+    external_records: Sequence[ExternalMetadataRecord] = (),
 ) -> CatalogPage:
     live: Final = _live_bindings(bindings, deployments)
     grants: Final = (
@@ -401,6 +414,7 @@ def build_model_catalog(
     }
     price_map: Final = {str(item["model"]): item for item in prices}
     discount_map: Final = {(item.pool_id, item.model): item for item in discounts} if mode == "personal" else {}
+    external_index: Final = {(item.source, item.id): item for item in external_records}
     return CatalogPage(
         items=tuple(
             _model_entry(
@@ -413,6 +427,7 @@ def build_model_catalog(
                 discount_map,
                 catalog,
                 public_groups.get(model) if mode == "public" else None,
+                external_index,
             )
             for model in model_names
         )
@@ -476,6 +491,7 @@ async def model_catalog(user_id: str, store: WalletStore) -> CatalogPage:
         tuple(item.model_dump(mode="json") for item in prices),
         discounts,
         GetModelCostMap.loaded_model_cost_map(),
+        external_records=await read_records(store),
     )
 
 
@@ -494,6 +510,7 @@ async def public_model_catalog(store: WalletStore) -> CatalogPage:
         (),
         GetModelCostMap.loaded_model_cost_map(),
         mode="public",
+        external_records=await read_records(store),
     )
 
 

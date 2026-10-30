@@ -4,6 +4,12 @@ export interface ModelIdentity {
   providerSlug: string;
 }
 
+export function catalogModelTitle(model: { id: string; name: string; provider: string | null }): string {
+  return model.name.trim() && model.name !== model.id
+    ? model.name.trim()
+    : getModelIdentity(model.id, model.provider).displayName;
+}
+
 const authors: Readonly<Record<string, { author: string; providerSlug: string }>> = {
   anthropic: { author: "Anthropic", providerSlug: "anthropic" },
   openai: { author: "OpenAI", providerSlug: "openai" },

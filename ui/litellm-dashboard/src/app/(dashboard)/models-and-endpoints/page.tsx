@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { useTeams } from "@/app/(dashboard)/hooks/teams/useTeams";
 import { useUISettings } from "@/app/(dashboard)/hooks/uiSettings/useUISettings";
-import { all_admin_roles, internalUserRoles } from "@/utils/roles";
+import { all_admin_roles, internalUserRoles, isProxyAdminRole } from "@/utils/roles";
 import { autoRouterCreationScope, canCreateModels } from "@/utils/modelPermissions";
 import BetaBadge from "@/components/BetaBadge";
 import DecisionModelsBanner from "@/components/molecules/DecisionModelsBanner";
@@ -24,6 +24,7 @@ import ModelRetrySettingsPanel from "@/app/(dashboard)/models-and-endpoints/pane
 import ModelGroupAliasPanel from "@/app/(dashboard)/models-and-endpoints/panels/ModelGroupAliasPanel";
 import AccessGroupBudgetsPanel from "@/app/(dashboard)/models-and-endpoints/panels/AccessGroupBudgetsPanel";
 import PriceDataPanel from "@/app/(dashboard)/models-and-endpoints/panels/PriceDataPanel";
+import CatalogSourcesPanel from "@/components/retail/catalog/CatalogSourcesPanel";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUrlTab } from "@/hooks/useUrlTab";
@@ -37,7 +38,8 @@ type ModelTabSlug =
   | "retry-settings"
   | "model-group-alias"
   | "access-group-budgets"
-  | "price-data";
+  | "price-data"
+  | "catalog-data";
 
 const BASE_TAB_KEY = "all-models";
 
@@ -51,6 +53,7 @@ const TAB_LABELS: Record<ModelTabSlug, string> = {
   "model-group-alias": "Model Group Alias",
   "access-group-budgets": "Model Access Group Budgets",
   "price-data": "Price Data Reload",
+  "catalog-data": "Catalog data",
 };
 
 const renderPanel = (key: string) => {
@@ -75,6 +78,8 @@ const renderPanel = (key: string) => {
       return <AccessGroupBudgetsPanel />;
     case "price-data":
       return <PriceDataPanel />;
+    case "catalog-data":
+      return <CatalogSourcesPanel />;
     default:
       return null;
   }
@@ -119,8 +124,9 @@ export default function ModelsAndEndpointsPage() {
       ...(isAdmin && !isViewOnly
         ? (["retry-settings", "model-group-alias", "access-group-budgets", "price-data"] as const)
         : []),
+      ...(isProxyAdminRole(userRole) && !isViewOnly ? (["catalog-data"] as const) : []),
     ],
-    [canCreate, canViewAutoRouters, isAdmin, isViewOnly],
+    [canCreate, canViewAutoRouters, isAdmin, isViewOnly, userRole],
   );
 
   const allModelsLabel = isAdmin ? "Deployed Models" : "Your Models";

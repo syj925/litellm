@@ -5,8 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { catalogDescription, capabilityOptions } from "./catalogState";
-import { getModelIdentity, formatContext } from "./modelIdentity";
+import { getModelIdentity, formatContext, catalogModelTitle } from "./modelIdentity";
 import { formatCatalogPrice, modelPrice, type CatalogModel, type CatalogPriceBasis } from "./types";
+import { MetadataSourceSummary } from "./MetadataSources";
 
 interface Props {
   models: CatalogModel[];
@@ -85,12 +86,11 @@ export default function CatalogModelList({
                   >
                     <ModelLogo model={model} />
                     <span>
-                      <span className="block font-medium">
-                        {getModelIdentity(model.id, model.provider).displayName}
-                      </span>
+                      <span className="block font-medium">{catalogModelTitle(model)}</span>
                       <span className="block font-mono text-xs text-muted-foreground">{model.id}</span>
                     </span>
                   </button>
+                  <MetadataSourceSummary model={model} />
                 </TableCell>
                 <TableCell>{formatContext(model.context_length)}</TableCell>
                 <TableCell>{priceLabel(model, basis, "input")}</TableCell>
@@ -119,7 +119,7 @@ export default function CatalogModelList({
                     onClick={() => onOpen(model.id)}
                     className="group flex items-center gap-1.5 text-left text-base font-semibold hover:underline"
                   >
-                    {identity.displayName}
+                    {catalogModelTitle(model)}
                     <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100" />
                   </button>
                   <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
@@ -145,6 +145,7 @@ export default function CatalogModelList({
                 by <span className="font-medium text-foreground">{identity.author}</span>
               </span>
               <span>{formatContext(model.context_length)} input context</span>
+              {model.context_window != null && <span>{formatContext(model.context_window)} total context</span>}
               <span>
                 <span className="font-medium text-foreground">{priceLabel(model, basis, "input")}</span> / M input
               </span>
@@ -172,6 +173,7 @@ export default function CatalogModelList({
                 </Badge>
               ))}
             </div>
+            <MetadataSourceSummary model={model} />
           </article>
         );
       })}
