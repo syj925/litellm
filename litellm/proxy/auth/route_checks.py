@@ -6,6 +6,7 @@ from typing import Final, cast
 from fastapi import HTTPException, Request, status
 
 from litellm._logging import verbose_proxy_logger
+from litellm.constants import UI_SESSION_TOKEN_TEAM_ID
 from litellm.proxy._types import (
     CommonProxyErrors,
     KeyManagementRoutes,
@@ -103,6 +104,32 @@ class RouteChecks:
         """
         Raises Exception if Virtual Key is not allowed to call the route
         """
+        from litellm.proxy.retail.customer_access import is_customer_personal_key, is_retail_customer
+
+        customer: Final = is_retail_customer(valid_token)
+        operational_route: Final = route in {
+            "/health", "/health/services", "/health/test_connection", "/model/health",
+        }
+        personal_configuration_route: Final = route in {
+            "/utils/transform_request", "/guardrails/list", "/v2/guardrails/list",
+            "/search_tools/list", "/search_tools/ui/available_providers", "/tag/list",
+        } or route.startswith("/tag/daily/activity")
+        if customer and (
+            operational_route
+            or (is_customer_personal_key(valid_token, valid_token.team_id) and personal_configuration_route)
+        ):
+            raise HTTPException(403, "This operation is available to gateway administrators only")
+        if (
+            is_customer_personal_key(valid_token, valid_token.team_id)
+            and valid_token.team_id != UI_SESSION_TOKEN_TEAM_ID
+            and valid_token.allowed_routes != ["llm_api_routes"]
+        ):
+            RouteChecks.is_virtual_key_allowed_to_call_route(
+                route=route, valid_token=valid_token.model_copy(update={"allowed_routes": ["llm_api_routes"]}),
+                request=request,
+            )
+            if not valid_token.allowed_routes:
+                return True
 
         # Only check if valid_token.allowed_routes is set and is a list with at least one item
         if valid_token.allowed_routes is None:
@@ -277,6 +304,19 @@ class RouteChecks:
         RouteChecks.custom_admin_only_route_check(
             route=route,
         )
+
+        if _user_role == LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY:
+            RouteChecks._check_proxy_admin_viewer_access(
+                route=route, _user_role=_user_role, request_data=request_data, request=request,
+            )
+            return
+        if (
+            _user_role == LitellmUserRoles.INTERNAL_USER_VIEW_ONLY
+            and RouteChecks.get_request_method(request) not in {None, "GET", "HEAD", "OPTIONS"}
+            and not RouteChecks.is_llm_api_route(route)
+            and route not in {"/user/password/change", "/session/logout", *LiteLLMRoutes.compliance_check_routes.value}
+        ):
+            raise HTTPException(403, "This account has read-only access")
 
         if RouteChecks.is_auth_enforced_pass_through_route(
             route=route,
@@ -936,7 +976,9 @@ class RouteChecks:
                global_spend_tracking_routes (legacy explicit-allow set).
              - Else 403.
         """
-        if RouteChecks.is_llm_api_route(route=route):
+        if (RouteChecks.is_llm_api_route(route=route) and route != "/claude-code/plugins") or route in {
+            "/health", "/health/services", "/health/test_connection", "/model/health",
+        }:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"user not allowed to access this OpenAI routes, role= {_user_role}",

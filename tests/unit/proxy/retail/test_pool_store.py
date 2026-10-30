@@ -14,6 +14,7 @@ from litellm.proxy.retail.pool_store import (
     _PoolRow,
     _Settings,
     _StoredBinding,
+    allowed_deployment_ids,
     allowed_model_names,
     choose_route,
     deployment_catalog,
@@ -43,6 +44,16 @@ def _binding(pool: str, deployment: str, model: str) -> _StoredBinding:
 
 def _deployment(deployment: str, model: str) -> dict[str, object]:
     return {"model_name": model, "model_info": {"id": deployment}, "litellm_params": {"model": "provider/example"}}
+
+
+def test_model_metadata_discovery_keeps_deployments_paired_with_their_authorized_resource_pool() -> None:
+    access: Final = PoolAccess(mode="custom", grants=(PoolGrant(pool_id="first", models=("shared",)),))
+    pools: Final = (_pool("first"), _pool("second"))
+    bindings: Final = (_binding("first", "allowed", "shared"), _binding("second", "foreign", "shared"))
+    deployments: Final = (_deployment("allowed", "shared"), _deployment("foreign", "shared"))
+    assert allowed_model_names(access, pools, bindings, {"mode": "auto"}, deployments) == frozenset({"shared"})
+    assert allowed_deployment_ids(access, pools, bindings, {"mode": "auto"}, deployments) == frozenset({"allowed"})
+    assert allowed_deployment_ids(access, pools, bindings, {"mode": "fixed", "pool_id": "second"}, deployments) == frozenset()
 
 
 def test_new_pools_are_disabled_and_restricted_until_explicitly_published_and_granted() -> None:

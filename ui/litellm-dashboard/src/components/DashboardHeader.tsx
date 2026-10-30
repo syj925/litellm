@@ -19,7 +19,10 @@ import ThemeToggle from "@/components/ThemeToggle/ThemeToggle";
 import WorkerDropdown from "@/components/Navbar/WorkerDropdown/WorkerDropdown";
 import { useWorker } from "@/hooks/useWorker";
 import { useDisableShowPrompts } from "@/app/(dashboard)/hooks/useDisableShowPrompts";
-import { clearTokenCookies } from "@/utils/cookieUtils";
+import { clearTokenCookies, getCookie } from "@/utils/cookieUtils";
+import { decodeToken } from "@/utils/jwtUtils";
+import { isViewOnlySessionRole } from "@/utils/roles";
+import { canUseAdminControlPlane } from "@/utils/dashboardAccess";
 import { clearStoredReturnUrl, getLoginUrl } from "@/utils/returnUrlUtils";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
@@ -37,7 +40,10 @@ export function DashboardHeader({ navigationTrigger }: { navigationTrigger?: Rea
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   if (isDesktop && mobileToolsOpen) setMobileToolsOpen(false);
   const { isControlPlane, selectedWorker } = useWorker();
-  const showWorkerSwitch = isControlPlane && selectedWorker !== null;
+  const claims = decodeToken(typeof document === "undefined" ? null : getCookie("token"));
+  const userRole = typeof claims?.user_role === "string" ? claims.user_role : "";
+  const adminControls = canUseAdminControlPlane({ userRole, isViewOnly: isViewOnlySessionRole(userRole) });
+  const showWorkerSwitch = adminControls && isControlPlane && selectedWorker !== null;
   const hideCommunityLinks = useDisableShowPrompts();
 
   const handleWorkerSwitch = (workerId: string) => {

@@ -16,11 +16,12 @@ import { cardProvider, cardSummary, cardTitle, formatPublishedOn, latestLaunches
 import { Logo } from "@/components/molecules/logo/Logo";
 import UpdatesFeed from "./UpdatesFeed";
 import { HOME_USAGE_DAYS, useHomeUsage } from "./useHomeUsage";
+import { isProxyDashboardRole } from "@/utils/dashboardAccess";
 
 const LEADERBOARD = { metric: "tokens", dimension: "model_groups" } as const;
 
 export default function HomePage() {
-  const { isViewOnly } = useAuthorized();
+  const { isViewOnly, userRole } = useAuthorized();
   const usage = useHomeUsage();
   const blog = useBlogPosts();
   const launches = latestLaunches(blog.data?.posts ?? []);
@@ -55,6 +56,7 @@ export default function HomePage() {
             loading={usage.loading}
             requestCountsPending={usage.requestCountsPending}
             budget={usage.budget}
+            showCosts={isProxyDashboardRole(userRole)}
           />
         )}
       </section>

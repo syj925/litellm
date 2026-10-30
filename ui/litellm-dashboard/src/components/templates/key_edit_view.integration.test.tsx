@@ -450,6 +450,42 @@ describe("KeyEditView", () => {
   });
 
   describe("policy and prompt fields", () => {
+    it("offers a customer-only editor and sends only changed allowed fields", async () => {
+      vi.mocked(retailRequest).mockResolvedValue({
+        routing_enabled: false,
+        items: [{ id: "aws", name: "AWS Claude", enabled: true, models: ["gpt-4"], allowed_models: ["gpt-4"] }],
+      });
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+      renderWithProviders(
+        <KeyEditView
+          keyData={{
+            ...MOCK_KEY_DATA,
+            user_id: "customer",
+            models: ["gpt-4"],
+            metadata: { retail_resource_policy: { mode: "auto" }, disable_spend_logs: true },
+          }}
+          onCancel={vi.fn()}
+          onSubmit={onSubmit}
+          accessToken="test-token"
+          userID="customer"
+          userRole="Internal User"
+          premiumUser={false}
+        />,
+      );
+      expect(screen.queryByLabelText("Metadata")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Organization")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Key Type")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("router-settings-accordion")).not.toBeInTheDocument();
+      const alias = screen.getByLabelText("Key Alias");
+      await userEvent.clear(alias);
+      await userEvent.type(alias, "renamed-customer-key");
+      await waitFor(() => expect(screen.getByRole("button", { name: "Save Changes" })).toBeEnabled());
+      await userEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+      expect(onSubmit.mock.calls[0][0]).toEqual({ key: MOCK_KEY_DATA.token, key_alias: "renamed-customer-key" });
+      expect(getPromptsList).not.toHaveBeenCalled();
+    });
+
     const renderAs = (userRole: string) =>
       renderWithProviders(
         <KeyEditView
@@ -1503,7 +1539,7 @@ describe("KeyEditView", () => {
       });
     });
 
-    it("should disable the organization dropdown for non-admin users", async () => {
+    it("hides the organization selector for ordinary customers", async () => {
       renderWithProviders(
         <KeyEditView
           keyData={MOCK_KEY_DATA}
@@ -1516,12 +1552,7 @@ describe("KeyEditView", () => {
         />,
       );
 
-      await waitFor(() => {
-        expect(screen.getByText("Organization")).toBeInTheDocument();
-      });
-
-      await userEvent.click(screen.getByLabelText("Organization"));
-
+      expect(screen.queryByLabelText("Organization")).not.toBeInTheDocument();
       expect(screen.queryByText("Engineering")).not.toBeInTheDocument();
     });
 
@@ -1955,12 +1986,9 @@ describe("KeyEditView", () => {
       });
     });
 
-    it("keeps the stored budget visible but read-only for a non-admin", async () => {
+    it("hides service-account customer budgets from ordinary customers", async () => {
       renderEditView(serviceAccountKey("svc-a-budget"), "Internal User");
-
-      const field = await budgetField();
-      expect(field).toHaveValue("svc-a-budget");
-      expect(field).toBeDisabled();
+      expect(screen.queryByRole("combobox", { name: "Default Customer Budget" })).not.toBeInTheDocument();
     });
 
     it("does not render the control on a plain key that has no budget to show", async () => {
@@ -2100,7 +2128,7 @@ describe("KeyEditView", () => {
       expect(callArgs).not.toHaveProperty("default_estimated_output_tokens_per_model");
     });
 
-    it.each(["Internal User", "Admin Viewer", "org_admin"])(
+    it.each(["Admin Viewer", "org_admin"])(
       "leaves both controls read-only for %s and still resubmits the stored values",
       async (userRole) => {
         const onSubmitMock = vi.fn().mockResolvedValue(undefined);
@@ -2214,6 +2242,10 @@ describe("KeyEditView", () => {
     });
 
     it("drops the policy and prompt keys entirely for a role that cannot see those fields", async () => {
+      vi.mocked(retailRequest).mockResolvedValue({
+        routing_enabled: false,
+        items: [{ id: "aws", name: "AWS Claude", enabled: true, models: ["gpt-4"], allowed_models: ["gpt-4"] }],
+      });
       const onSubmitMock = vi.fn().mockResolvedValue(undefined);
       renderWithProviders(
         <KeyEditView
@@ -2236,7 +2268,8 @@ describe("KeyEditView", () => {
       const payload = onSubmitMock.mock.calls[0][0];
       expect(payload).not.toHaveProperty("policies");
       expect(payload).not.toHaveProperty("prompts");
-      expect(payload).toHaveProperty("guardrails");
+      expect(payload).not.toHaveProperty("guardrails");
+      expect(payload).not.toHaveProperty("allowed_routes");
     });
 
     it("routes the shared lifecycle and rate-limit-type controls into their own payload keys", async () => {

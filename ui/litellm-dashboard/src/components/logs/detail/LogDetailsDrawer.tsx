@@ -18,6 +18,8 @@ import { normalizeGuardrailEntries, sortSessionLogs, SessionLogSortMode } from "
 import { DRAWER_WIDTH } from "./constants";
 import { useLogDetails } from "@/app/(dashboard)/hooks/logDetails/useLogDetails";
 import { useUserLookup } from "@/app/(dashboard)/hooks/users/useUsers";
+import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
+import { isProxyDashboardRole } from "@/utils/dashboardAccess";
 
 export interface LogDetailsDrawerProps {
   open: boolean;
@@ -49,6 +51,7 @@ interface TraceEventRowProps {
   row: LogEntry;
   isSelected: boolean;
   onClick: () => void;
+  showCosts: boolean;
 }
 
 const TRACE_EVENT_ICON_CLASS = "text-muted-foreground shrink-0";
@@ -60,7 +63,7 @@ function TraceEventIcon({ callType, isAutoRouted }: { callType: string; isAutoRo
   return <Sparkles size={12} className={TRACE_EVENT_ICON_CLASS} />;
 }
 
-function TraceEventRow({ row, isSelected, onClick }: TraceEventRowProps) {
+function TraceEventRow({ row, isSelected, onClick, showCosts }: TraceEventRowProps) {
   const isAutoRouted = useIsAutoRoutedModelGroup(row.model_group);
   const durationValue =
     row.request_duration_ms != null
@@ -84,7 +87,7 @@ function TraceEventRow({ row, isSelected, onClick }: TraceEventRowProps) {
       </div>
       <div className="text-[10px] text-muted-foreground mt-0 flex items-center gap-1.5 font-mono">
         <span>{durationValue}s</span>
-        {row.spend ? (
+        {showCosts && row.spend ? (
           <>
             <span>·</span>
             <span>{getSpendString(row.spend)}</span>
@@ -122,6 +125,8 @@ export function LogDetailsDrawer({
   startTime,
   backTo,
 }: LogDetailsDrawerProps) {
+  const { userRole } = useAuthorized();
+  const showCosts = isProxyDashboardRole(userRole);
   const isSessionMode = Boolean(sessionId);
   const [selectedSessionRequestId, setSelectedSessionRequestId] = useState<string | null>(null);
   const [sessionSortMode, setSessionSortMode] = useState<SessionLogSortMode>("duration");
@@ -369,8 +374,12 @@ export function LogDetailsDrawer({
                       </span>
                     ) : null;
                   })}
-                  <span className="mx-1.5">·</span>
-                  {isSessionMode ? getSpendString(totalSessionCost) : getSpendString(currentLog.spend || 0)}
+                  {showCosts && (
+                    <>
+                      <span className="mx-1.5">·</span>
+                      {isSessionMode ? getSpendString(totalSessionCost) : getSpendString(currentLog.spend || 0)}
+                    </>
+                  )}
                   {isSessionMode && (
                     <>
                       <span className="mx-1.5">·</span>
@@ -425,6 +434,7 @@ export function LogDetailsDrawer({
                             {isLast && <div className="absolute left-4 top-3 bottom-0 w-px bg-muted" />}
                             <TraceEventRow
                               row={row}
+                              showCosts={showCosts}
                               isSelected={row.request_id === currentLog.request_id}
                               onClick={() => {
                                 setSelectedSessionRequestId(row.request_id);
@@ -442,6 +452,7 @@ export function LogDetailsDrawer({
                       <TraceEventRow
                         key={row.request_id}
                         row={row}
+                        showCosts={showCosts}
                         isSelected={row.request_id === currentLog.request_id}
                         onClick={() => onSelectLog?.(row)}
                       />

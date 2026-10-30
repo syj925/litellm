@@ -34,6 +34,7 @@ interface UsageOverviewProps {
   gatewayByEndpoint: ReactNode;
   topAgents: ReactNode;
   providerBreakdown: ReactNode;
+  showCosts?: boolean;
 }
 
 const METRIC_NOUN: Record<UsageMetric, string> = { spend: "spend", tokens: "tokens", requests: "requests" };
@@ -56,14 +57,17 @@ export default function UsageOverview({
   topAgents,
   providerBreakdown,
   budget,
+  showCosts = true,
 }: UsageOverviewProps) {
   const [state, setState] = useState<BreakdownState>({ metric: "spend", dimension: "model_groups" });
+  const effectiveState: BreakdownState =
+    !showCosts && state.metric === "spend" ? { ...state, metric: "tokens" } : state;
   const [granularity, setGranularity] = useState<Granularity>("day");
   const [scale, setScale] = useState<StackedUsageScale>("linear");
-  const { series: dailySeries, ranking } = useBreakdown(results, state, 8);
+  const { series: dailySeries, ranking } = useBreakdown(results, effectiveState, 8);
   const series = useMemo(() => bucketSeries(dailySeries, granularity), [dailySeries, granularity]);
   const totalsByBucket = useMemo(() => bucketTotals(series), [series]);
-  const format = (value: number) => formatMetricValue(value, state.metric);
+  const format = (value: number) => formatMetricValue(value, effectiveState.metric);
 
   return (
     <div className="grid gap-3">
@@ -73,14 +77,15 @@ export default function UsageOverview({
         loading={loading}
         requestCountsPending={requestCountsPending}
         budget={budget}
+        showCosts={showCosts}
       />
 
       <Panel
         title="Top models"
-        subtitle={`${granularity === "day" ? "Daily" : "Weekly"} ${METRIC_NOUN[state.metric]}, top 8 stacked`}
+        subtitle={`${granularity === "day" ? "Daily" : "Weekly"} ${METRIC_NOUN[effectiveState.metric]}, top 8 stacked`}
         action={
           <>
-            <BreakdownControls state={state} onChange={setState} showDimension={false} />
+            <BreakdownControls state={effectiveState} onChange={setState} showDimension={false} showCosts={showCosts} />
             <Segmented
               label="Bucket size"
               value={granularity}
@@ -113,8 +118,8 @@ export default function UsageOverview({
           <Leaderboard
             ranking={ranking}
             series={dailySeries}
-            metric={state.metric}
-            dimension={state.dimension}
+            metric={effectiveState.metric}
+            dimension={effectiveState.dimension}
             columns={2}
             limit={10}
           />
@@ -124,9 +129,11 @@ export default function UsageOverview({
       {topAgents}
       {providerBreakdown}
 
-      <Panel icon={KeyRound} title="Top Virtual Keys">
-        {topKeys}
-      </Panel>
+      {topKeys && (
+        <Panel icon={KeyRound} title="Top Virtual Keys">
+          {topKeys}
+        </Panel>
+      )}
       {gatewayByEndpoint}
     </div>
   );

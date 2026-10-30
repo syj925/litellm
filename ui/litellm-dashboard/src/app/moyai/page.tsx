@@ -6,6 +6,7 @@ import { useUISettings } from "@/app/(dashboard)/hooks/uiSettings/useUISettings"
 import Navbar from "@/components/navbar";
 import MoyaiConnected from "@/components/moyai/MoyaiConnected";
 import MoyaiLanding from "@/components/moyai/MoyaiLanding";
+import DashboardAccessBoundary from "@/components/DashboardAccessBoundary";
 import { startMoyaiQuickConnect } from "@/components/networking";
 import { PluginModeProvider } from "@/contexts/PluginModeContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -93,7 +94,9 @@ function MoyaiPageContent() {
 export default function MoyaiPage() {
   return (
     <Suspense>
-      <MoyaiPageContent />
+      <DashboardAccessBoundary>
+        <MoyaiPageContent />
+      </DashboardAccessBoundary>
     </Suspense>
   );
 }

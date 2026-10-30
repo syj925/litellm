@@ -54,6 +54,10 @@ import { isTeamAdminEditingMemberKey, teamAdminMemberKeyPayload } from "./teamAd
 import { retailKeys, retailRequest, type RetailConfig } from "../retail/api";
 import RotateKeyModal, { type RotatedKey } from "../retail/RotateKeyModal";
 import KeyResourceAccess from "./KeyResourceAccess";
+import { isSelfServiceKeyContext, selfServiceKeyUpdate } from "../organisms/keyFormAccess";
+import Link from "next/link";
+import { isProxyDashboardRole } from "@/utils/dashboardAccess";
+import { uiHref } from "@/utils/uiHref";
 
 export function needsLifetimeSpendBackfill(spend: number, totalSpend: number | null | undefined): boolean {
   return (totalSpend ?? 0) < spend;
@@ -98,7 +102,8 @@ export default function KeyInfoView({
   onDelete,
   backButtonText = "Back to Keys",
 }: KeyInfoViewProps) {
-  const { accessToken, userId: userID, userRole, premiumUser } = useAuthorized();
+  const { accessToken, userId: userID, userRole, premiumUser, isViewOnly } = useAuthorized();
+  const showNativeCosts = isProxyDashboardRole(userRole);
   const accessGroupNames = useModelAccessGroupNames();
   const activityDateRange = useActivityDateRange();
   const queryClient = useQueryClient();
@@ -112,12 +117,13 @@ export default function KeyInfoView({
   const retailRotationEnabled = retailConfig.data?.key_rotation_enabled === true;
   const canEditGuardrails = premiumUser || (userRole != null && rolesWithWriteAccess.includes(userRole));
   const { teams: teamsData } = useTeams();
+  const selfService = isSelfServiceKeyContext(userRole, userID, teamsData, keyData?.team_id);
   const { data: organizations } = useOrganizations();
   const { data: projects } = useProjects();
   const { data: uiSettingsData } = useUISettings();
   const applyUserBudgetToTeamKeys = useApplyUserBudgetToTeamKeys();
-  const { data: allMcpServers } = useMCPServers();
-  const { data: allMcpToolsets } = useMCPToolsets();
+  const { data: allMcpServers } = useMCPServers(undefined, !selfService);
+  const { data: allMcpToolsets } = useMCPToolsets(!selfService);
   const enableProjectsUI = Boolean(uiSettingsData?.values?.enable_projects_ui);
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -148,7 +154,7 @@ export default function KeyInfoView({
   useEffect(() => {
     const fetchPolicyGuardrails = async () => {
       const policies = currentKeyData?.metadata?.policies;
-      if (!accessToken || !policies || !Array.isArray(policies) || policies.length === 0) {
+      if (selfService || !accessToken || !policies || !Array.isArray(policies) || policies.length === 0) {
         return;
       }
 
@@ -176,7 +182,7 @@ export default function KeyInfoView({
     };
 
     fetchPolicyGuardrails();
-  }, [accessToken, currentKeyData?.metadata?.policies]);
+  }, [accessToken, currentKeyData?.metadata?.policies, selfService]);
 
   // Reset recent regeneration indicator after 5 seconds
   useEffect(() => {
@@ -205,7 +211,7 @@ export default function KeyInfoView({
     try {
       if (!accessToken) return;
 
-      const currentKey = formValues.token;
+      const currentKey = formValues.key ?? formValues.token ?? currentKeyData.token ?? currentKeyData.token_id;
       formValues.key = currentKey;
 
       // Guard premium features
@@ -392,7 +398,10 @@ export default function KeyInfoView({
         formValues = trimmed.payload;
       }
 
-      const newKeyValues = await keyUpdateCall(accessToken, formValues);
+      const newKeyValues = await keyUpdateCall(
+        accessToken,
+        selfService ? selfServiceKeyUpdate(formValues, dirtyFields) : formValues,
+      );
 
       setCurrentKeyData((prevData) => (prevData ? { ...prevData, ...newKeyValues } : undefined));
       void queryClient.invalidateQueries({ queryKey: keyKeys.all });
@@ -492,13 +501,14 @@ export default function KeyInfoView({
   };
 
   const canModifyKey =
-    isProxyAdminRole(userRole || "") ||
-    (teamsData &&
-      isUserTeamAdminForSingleTeam(
-        teamsData?.filter((team) => team.team_id === currentKeyData.team_id)[0]?.members_with_roles,
-        userID || "",
-      )) ||
-    (userID === currentKeyData.user_id && userRole !== "Internal Viewer");
+    !isViewOnly &&
+    (isProxyAdminRole(userRole || "") ||
+      (teamsData &&
+        isUserTeamAdminForSingleTeam(
+          teamsData?.filter((team) => team.team_id === currentKeyData.team_id)[0]?.members_with_roles,
+          userID || "",
+        )) ||
+      (userID === currentKeyData.user_id && userRole !== "Internal Viewer"));
 
   const isKeyAdmin =
     isProxyAdminRole(userRole || "") ||
@@ -510,8 +520,8 @@ export default function KeyInfoView({
         ),
     );
 
-  const canResetSpend = isKeyAdmin;
-  const canBlockKey = isKeyAdmin;
+  const canResetSpend = isKeyAdmin && !isViewOnly;
+  const canBlockKey = isKeyAdmin && !isViewOnly;
 
   const handleResetSpend = () => {
     resetKeySpend(currentKeyData.token || currentKeyData.token_id, {
@@ -595,6 +605,7 @@ export default function KeyInfoView({
         onToggleBlocked={canBlockKey ? () => setIsBlockModalOpen(true) : undefined}
         isBlocked={isBlocked}
         canModifyKey={canModifyKey}
+        showManagementLinks={!selfService}
         backButtonText={backButtonText}
         regenerateDisabled={!premiumUser && !retailRotationEnabled}
         regenerateLabel={retailRotationEnabled ? "Rotate Key" : "Regenerate Key"}
@@ -646,10 +657,14 @@ export default function KeyInfoView({
             value: currentKeyData?.team_id || "-",
             code: true,
           },
-          {
-            label: "Spend",
-            value: currentKeyData?.spend ? `$${formatNumberWithCommas(currentKeyData.spend, 4)}` : "$0.0000",
-          },
+          ...(showNativeCosts
+            ? [
+                {
+                  label: "Spend",
+                  value: currentKeyData?.spend ? `$${formatNumberWithCommas(currentKeyData.spend, 4)}` : "$0.0000",
+                },
+              ]
+            : []),
         ]}
         onCancel={() => {
           setIsDeleteModalOpen(false);
@@ -718,9 +733,11 @@ export default function KeyInfoView({
           <TabsTrigger value="overview" className="flex-none rounded-none px-4 py-2">
             Overview
           </TabsTrigger>
-          <TabsTrigger value="savings" className="flex-none rounded-none px-4 py-2">
-            Savings
-          </TabsTrigger>
+          {showNativeCosts && (
+            <TabsTrigger value="savings" className="flex-none rounded-none px-4 py-2">
+              Savings
+            </TabsTrigger>
+          )}
           {hasProxyWideSpendView(userRole) && (
             <TabsTrigger value="auto-router-usage" className="flex-none rounded-none px-4 py-2">
               Auto-router usage
@@ -736,6 +753,7 @@ export default function KeyInfoView({
           <TabsContent value="overview" keepMounted>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               <KeyResourceAccess
+                accountScoped={selfService}
                 accessToken={accessToken}
                 userId={currentKeyData.user_id || null}
                 admin={isProxyAdminRole(userRole)}
@@ -743,42 +761,55 @@ export default function KeyInfoView({
                 models={currentKeyData.models}
                 className="rounded-xl bg-card p-6 text-card-foreground shadow-xs ring-1 ring-foreground/10 sm:col-span-2 lg:col-span-3"
               />
-              <Card className="block p-6">
-                <p className="text-sm">Spend</p>
-                <div className="mt-2">
-                  <h3 className="text-lg font-medium">${formatNumberWithCommas(currentKeyData.spend, 4)}</h3>
-                  <p className="text-sm">
-                    of {budgetDisplay}
+              {showNativeCosts ? (
+                <Card className="block p-6">
+                  <p className="text-sm">Spend</p>
+                  <div className="mt-2">
+                    <h3 className="text-lg font-medium">${formatNumberWithCommas(currentKeyData.spend, 4)}</h3>
+                    <p className="text-sm">
+                      of {budgetDisplay}
+                      <InheritedBudgetHint gates={inheritedGates} />
+                    </p>
+                    {currentKeyData.budget_reset_at && (
+                      <p className="text-sm">Resets {formatTimestamp(currentKeyData.budget_reset_at)}</p>
+                    )}
+                    <p className="text-sm mt-2" data-testid="key-lifetime-spend">
+                      Lifetime spend: ${formatNumberWithCommas(currentKeyData.total_spend ?? 0, 4)}
+                      {needsLifetimeSpendBackfill(currentKeyData.spend, currentKeyData.total_spend) && (
+                        <HoverCard>
+                          <HoverCardTrigger
+                            render={
+                              <button
+                                type="button"
+                                aria-label="Why lifetime spend is below current spend"
+                                className="inline-flex align-middle ml-1 cursor-help"
+                                data-testid="key-lifetime-spend-backfill-hint"
+                              />
+                            }
+                          >
+                            <Info className="size-3 text-muted-foreground" />
+                          </HoverCardTrigger>
+                          <HoverCardContent className="w-80">
+                            Lifetime tracking started with LiteLLM v1.103.0 on September 19, 2026 and was not
+                            backfilled, so this key&apos;s lifetime spend only counts usage since that upgrade.
+                          </HoverCardContent>
+                        </HoverCard>
+                      )}
+                    </p>
+                  </div>
+                </Card>
+              ) : (
+                <Card className="block p-6">
+                  <p className="text-sm font-medium">Budget</p>
+                  <p className="mt-2">
+                    {budgetDisplay}
                     <InheritedBudgetHint gates={inheritedGates} />
                   </p>
-                  {currentKeyData.budget_reset_at && (
-                    <p className="text-sm">Resets {formatTimestamp(currentKeyData.budget_reset_at)}</p>
-                  )}
-                  <p className="text-sm mt-2" data-testid="key-lifetime-spend">
-                    Lifetime spend: ${formatNumberWithCommas(currentKeyData.total_spend ?? 0, 4)}
-                    {needsLifetimeSpendBackfill(currentKeyData.spend, currentKeyData.total_spend) && (
-                      <HoverCard>
-                        <HoverCardTrigger
-                          render={
-                            <button
-                              type="button"
-                              aria-label="Why lifetime spend is below current spend"
-                              className="inline-flex align-middle ml-1 cursor-help"
-                              data-testid="key-lifetime-spend-backfill-hint"
-                            />
-                          }
-                        >
-                          <Info className="size-3 text-muted-foreground" />
-                        </HoverCardTrigger>
-                        <HoverCardContent className="w-80">
-                          Lifetime tracking started with LiteLLM v1.103.0 on September 19, 2026 and was not backfilled,
-                          so this key&apos;s lifetime spend only counts usage since that upgrade.
-                        </HoverCardContent>
-                      </HoverCard>
-                    )}
-                  </p>
-                </div>
-              </Card>
+                  <Link href={uiHref("billing")} className="mt-3 inline-block text-sm font-medium underline">
+                    View actual charges in Billing
+                  </Link>
+                </Card>
+              )}
 
               <Card className="block p-6">
                 <p className="text-sm">Rate Limits</p>
@@ -800,114 +831,129 @@ export default function KeyInfoView({
                 <p className="text-sm">Key model restriction</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {currentKeyData.models && currentKeyData.models.length > 0 ? (
-                    currentKeyData.models.map((model, index) => (
-                      <BadgeLink
-                        key={index}
-                        href={modelOrAccessGroupHref(model, accessGroupNames)}
-                        className="min-w-0 break-words"
-                      >
-                        {model}
-                      </BadgeLink>
-                    ))
+                    currentKeyData.models.map((model, index) =>
+                      selfService ? (
+                        <Badge key={index} variant="secondary">
+                          {model}
+                        </Badge>
+                      ) : (
+                        <BadgeLink
+                          key={index}
+                          href={modelOrAccessGroupHref(model, accessGroupNames)}
+                          className="min-w-0 break-words"
+                        >
+                          {model}
+                        </BadgeLink>
+                      ),
+                    )
                   ) : (
                     <p className="text-sm">All models allowed by resource routing and account permissions</p>
                   )}
                 </div>
               </Card>
 
-              <Card className="block p-6">
-                <ObjectPermissionsView
-                  objectPermission={currentKeyData.object_permission}
-                  variant="inline"
-                  accessToken={accessToken}
-                />
-              </Card>
+              {!selfService && (
+                <>
+                  <Card className="block p-6">
+                    <ObjectPermissionsView
+                      objectPermission={currentKeyData.object_permission}
+                      variant="inline"
+                      accessToken={accessToken}
+                    />
+                  </Card>
 
-              <Card className="block p-6">
-                <p className="text-sm font-medium mb-3">Guardrails</p>
-                {Array.isArray(currentKeyData.metadata?.guardrails) && currentKeyData.metadata.guardrails.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {currentKeyData.metadata.guardrails.map((guardrail: string, index: number) => (
-                      <Badge key={index} variant="secondary" className="min-w-0 break-words">
-                        {guardrail}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No guardrails configured</p>
-                )}
-                {typeof currentKeyData.metadata?.disable_global_guardrails === "boolean" &&
-                  currentKeyData.metadata.disable_global_guardrails === true && (
-                    <div className="mt-3 pt-3 border-t border-border">
-                      <Badge variant="destructive">Global Guardrails Disabled</Badge>
-                    </div>
-                  )}
-              </Card>
-
-              <Card className="block p-6">
-                <p className="text-sm font-medium mb-3">Policies</p>
-                {Array.isArray(currentKeyData.metadata?.policies) && currentKeyData.metadata.policies.length > 0 ? (
-                  <div className="space-y-4">
-                    {currentKeyData.metadata.policies.map((policy: string, index: number) => (
-                      <div key={index} className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary" className="min-w-0 break-words">
-                            {policy}
+                  <Card className="block p-6">
+                    <p className="text-sm font-medium mb-3">Guardrails</p>
+                    {Array.isArray(currentKeyData.metadata?.guardrails) &&
+                    currentKeyData.metadata.guardrails.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {currentKeyData.metadata.guardrails.map((guardrail: string, index: number) => (
+                          <Badge key={index} variant="secondary" className="min-w-0 break-words">
+                            {guardrail}
                           </Badge>
-                          {loadingPolicies && <p className="text-xs text-muted-foreground">Loading guardrails...</p>}
-                        </div>
-                        {!loadingPolicies && policyGuardrails[policy] && policyGuardrails[policy].length > 0 && (
-                          <div className="ml-4 pl-3 border-l-2 border-border">
-                            <p className="text-xs text-muted-foreground mb-1">Resolved Guardrails:</p>
-                            <div className="flex flex-wrap gap-1">
-                              {policyGuardrails[policy].map((guardrail: string, gIndex: number) => (
-                                <Badge key={gIndex} variant="secondary" className="min-w-0 break-words">
-                                  {guardrail}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No policies configured</p>
-                )}
-              </Card>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No guardrails configured</p>
+                    )}
+                    {typeof currentKeyData.metadata?.disable_global_guardrails === "boolean" &&
+                      currentKeyData.metadata.disable_global_guardrails === true && (
+                        <div className="mt-3 pt-3 border-t border-border">
+                          <Badge variant="destructive">Global Guardrails Disabled</Badge>
+                        </div>
+                      )}
+                  </Card>
 
-              <LoggingSettingsView
-                loggingConfigs={extractLoggingSettings(currentKeyData.metadata)}
-                disabledCallbacks={
-                  Array.isArray(currentKeyData.metadata?.litellm_disabled_callbacks)
-                    ? mapInternalToDisplayNames(currentKeyData.metadata.litellm_disabled_callbacks)
-                    : []
-                }
-                variant="card"
-              />
+                  <Card className="block p-6">
+                    <p className="text-sm font-medium mb-3">Policies</p>
+                    {Array.isArray(currentKeyData.metadata?.policies) && currentKeyData.metadata.policies.length > 0 ? (
+                      <div className="space-y-4">
+                        {currentKeyData.metadata.policies.map((policy: string, index: number) => (
+                          <div key={index} className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="secondary" className="min-w-0 break-words">
+                                {policy}
+                              </Badge>
+                              {loadingPolicies && (
+                                <p className="text-xs text-muted-foreground">Loading guardrails...</p>
+                              )}
+                            </div>
+                            {!loadingPolicies && policyGuardrails[policy] && policyGuardrails[policy].length > 0 && (
+                              <div className="ml-4 pl-3 border-l-2 border-border">
+                                <p className="text-xs text-muted-foreground mb-1">Resolved Guardrails:</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {policyGuardrails[policy].map((guardrail: string, gIndex: number) => (
+                                    <Badge key={gIndex} variant="secondary" className="min-w-0 break-words">
+                                      {guardrail}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No policies configured</p>
+                    )}
+                  </Card>
 
-              <AutoRotationView
-                autoRotate={currentKeyData.auto_rotate}
-                rotationInterval={currentKeyData.rotation_interval}
-                lastRotationAt={currentKeyData.last_rotation_at}
-                keyRotationAt={currentKeyData.key_rotation_at}
-                nextRotationAt={currentKeyData.next_rotation_at}
-                variant="card"
-              />
+                  <LoggingSettingsView
+                    loggingConfigs={extractLoggingSettings(currentKeyData.metadata)}
+                    disabledCallbacks={
+                      Array.isArray(currentKeyData.metadata?.litellm_disabled_callbacks)
+                        ? mapInternalToDisplayNames(currentKeyData.metadata.litellm_disabled_callbacks)
+                        : []
+                    }
+                    variant="card"
+                  />
+
+                  <AutoRotationView
+                    autoRotate={currentKeyData.auto_rotate}
+                    rotationInterval={currentKeyData.rotation_interval}
+                    lastRotationAt={currentKeyData.last_rotation_at}
+                    keyRotationAt={currentKeyData.key_rotation_at}
+                    nextRotationAt={currentKeyData.next_rotation_at}
+                    variant="card"
+                  />
+                </>
+              )}
             </div>
           </TabsContent>
 
           {/* Savings Panel. No keepMounted: this tab sweeps the daily rollup, and staying mounted
               would fire that request on every key page open for people who never look at it. */}
-          <TabsContent value="savings">
-            <KeySavingsTab
-              accessToken={accessToken}
-              keyToken={currentKeyData.token}
-              userId={userID}
-              userRole={userRole}
-              activity={activityDateRange}
-            />
-          </TabsContent>
+          {showNativeCosts && (
+            <TabsContent value="savings">
+              <KeySavingsTab
+                accessToken={accessToken}
+                keyToken={currentKeyData.token}
+                userId={userID}
+                userRole={userRole}
+                activity={activityDateRange}
+              />
+            </TabsContent>
+          )}
 
           {hasProxyWideSpendView(userRole) && (
             <TabsContent value="auto-router-usage">
@@ -931,7 +977,7 @@ export default function KeyInfoView({
                 )}
               </div>
 
-              {isEditing ? (
+              {isEditing && (
                 <KeyEditView
                   keyData={currentKeyData}
                   onCancel={() => setIsEditing(false)}
@@ -942,7 +988,34 @@ export default function KeyInfoView({
                   userRole={userRole}
                   premiumUser={premiumUser}
                 />
-              ) : (
+              )}
+              {!isEditing && selfService && (
+                <div className="space-y-4">
+                  <KeyResourceAccess
+                    accountScoped
+                    accessToken={accessToken}
+                    userId={currentKeyData.user_id || null}
+                    admin={false}
+                    metadata={currentKeyData.metadata}
+                    models={currentKeyData.models}
+                  />
+                  {[
+                    ["Key Alias", currentKeyData.key_alias || "Not set"],
+                    ["Secret Key", currentKeyData.key_name],
+                    ["Expires", currentKeyData.expires ? formatTimestamp(currentKeyData.expires) : "Never"],
+                    ["Max Budget (USD)", currentKeyData.max_budget ?? "Unlimited"],
+                    ["TPM Limit", currentKeyData.tpm_limit ?? "Unlimited"],
+                    ["RPM Limit", currentKeyData.rpm_limit ?? "Unlimited"],
+                    ["Max Parallel Requests", currentKeyData.max_parallel_requests ?? "Unlimited"],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <p className="text-sm font-medium">{label}</p>
+                      <p className="text-sm">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!isEditing && !selfService && (
                 <div className="space-y-4">
                   <KeyResourceAccess
                     accessToken={accessToken}
@@ -1041,15 +1114,19 @@ export default function KeyInfoView({
                     className="pt-4 border-t border-border"
                   />
 
-                  <div>
-                    <p className="text-sm font-medium">Spend</p>
-                    <p className="text-sm">${formatNumberWithCommas(currentKeyData.spend, 4)} USD</p>
-                  </div>
+                  {showNativeCosts && (
+                    <>
+                      <div>
+                        <p className="text-sm font-medium">Spend</p>
+                        <p className="text-sm">${formatNumberWithCommas(currentKeyData.spend, 4)} USD</p>
+                      </div>
 
-                  <div>
-                    <p className="text-sm font-medium">Lifetime Spend</p>
-                    <p className="text-sm">${formatNumberWithCommas(currentKeyData.total_spend ?? 0, 4)} USD</p>
-                  </div>
+                      <div>
+                        <p className="text-sm font-medium">Lifetime Spend</p>
+                        <p className="text-sm">${formatNumberWithCommas(currentKeyData.total_spend ?? 0, 4)} USD</p>
+                      </div>
+                    </>
+                  )}
 
                   <div>
                     <p className="text-sm font-medium">Budget</p>

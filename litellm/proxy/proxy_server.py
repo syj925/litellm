@@ -11933,6 +11933,9 @@ async def model_list(
         get_available_models_for_user,
     )
     from litellm.types.proxy.model_listing import ModelInfoResponse
+    from litellm.proxy.retail.customer_access import is_retail_customer
+
+    list_metadata: Final = bool(include_metadata) and not is_retail_customer(user_api_key_dict)
 
     http_request: Final = cast(Request | None, request)  # cast-ok: in-process callers pass no request
     wants_anthropic_format: Final = (
@@ -12035,7 +12038,7 @@ async def model_list(
             model_info = create_model_info_response(
                 model_id=lookup_id,
                 provider="openai",
-                include_metadata=include_metadata or False,
+                include_metadata=list_metadata,
                 fallback_type=fallback_type,
                 llm_router=llm_router,
             )
@@ -12103,7 +12106,7 @@ async def model_list(
         model_info = create_model_info_response(
             model_id=lookup_id,
             provider="openai",
-            include_metadata=include_metadata or False,
+            include_metadata=list_metadata,
             fallback_type=fallback_type,
             llm_router=llm_router,
         )
@@ -16227,11 +16230,16 @@ async def model_info_v2(
     # Translate `model_name` to the public name for team-scoped rows.
     all_models = [_translate_model_name_for_response(m) for m in all_models]
 
+    listing_auth: Final = (
+        user_api_key_dict.model_copy(update={"team_id": teamId.strip()})
+        if isinstance(teamId, str) and teamId.strip() else user_api_key_dict
+    )
+    customer_visible_models: Final = await _customer_visible_model_info(all_models, listing_auth)
     return _paginate_models_response(
-        all_models=all_models,
+        all_models=customer_visible_models,
         page=page,
         size=size,
-        total_count=search_total_count,
+        total_count=len(customer_visible_models),
         search=search,
     )
 
@@ -16748,9 +16756,35 @@ def _get_proxy_model_info(model: dict) -> dict:
     return _translate_model_name_for_response(_enrich_model_info_with_litellm_data(model=model, llm_router=llm_router))
 
 
-def _model_info_json_response(data: Sequence[Mapping[str, object]] | Mapping[str, object]) -> Response:
+async def _customer_visible_model_info(
+    rows: Sequence[Mapping[str, object]], auth: UserAPIKeyAuth,
+) -> Sequence[Mapping[str, object]]:
+    from litellm.proxy.retail.customer_access import (
+        customer_model_deployment_ids, is_retail_customer, safe_customer_model_info,
+    )
+    from litellm.proxy.retail.pricing import as_mapping
+
+    if not is_retail_customer(auth):
+        return rows
+    names: Final = tuple(name for row in rows if isinstance(name := row.get("model_name"), str))
+    hidden: Final = await _names_hidden_by_listing_callbacks(auth, names)
+    allowed_ids: Final = await customer_model_deployment_ids(auth)
+    allowed_rows: Final = (
+        rows if allowed_ids is None
+        else tuple(row for row in rows if as_mapping(row.get("model_info")).get("id") in allowed_ids)
+    )
+    return safe_customer_model_info(tuple(row for row in allowed_rows if row.get("model_name") not in hidden))
+
+
+async def _model_info_json_response(
+    data: Sequence[Mapping[str, object]] | Mapping[str, object], auth: UserAPIKeyAuth,
+) -> Response:
+    visible: Final = await _customer_visible_model_info((data,) if isinstance(data, Mapping) else data, auth)
     return Response(
-        content=orjson.dumps({"data": data}, default=jsonable_encoder, option=orjson.OPT_NON_STR_KEYS),
+        content=orjson.dumps(
+            {"data": visible[0] if isinstance(data, Mapping) and visible else visible},
+            default=jsonable_encoder, option=orjson.OPT_NON_STR_KEYS,
+        ),
         media_type="application/json",
     )
 
@@ -16850,7 +16884,7 @@ async def model_info_v1(
             deployment_dict=_deployment_info_dict,
             excluded_keys={"litellm_credential_name"},
         )
-        return _model_info_json_response(_deployment_info_dict)
+        return await _model_info_json_response(_deployment_info_dict, user_api_key_dict)
 
     if llm_model_list is None:
         raise HTTPException(
@@ -16877,7 +16911,9 @@ async def model_info_v1(
     if litellm_model_id is not None:
         # user is trying to get specific model from litellm router
         deployment_info: Final = llm_router.get_deployment(model_id=litellm_model_id)
-        if deployment_info is None or await _deployment_hidden_by_listing_callbacks(deployment_info, user_api_key_dict):
+        if deployment_info is None or (
+            not teamId and await _deployment_hidden_by_listing_callbacks(deployment_info, user_api_key_dict)
+        ):
             raise HTTPException(
                 status_code=400,
                 detail={"error": f"Model id = {litellm_model_id} not found on litellm proxy"},
@@ -16901,7 +16937,11 @@ async def model_info_v1(
                     llm_router=llm_router,
                     user_api_key_dict=user_api_key_dict,
                 )
-        return _model_info_json_response(single_model_list)
+        single_listing_auth: Final = (
+            user_api_key_dict.model_copy(update={"team_id": teamId.strip()})
+            if teamId is not None and teamId.strip() else user_api_key_dict
+        )
+        return await _model_info_json_response(single_model_list, single_listing_auth)
 
     # Return router deployments (same source as /v2/model/info), not wildcard-
     # expanded model names from get_complete_model_list(). Team-scoped rows
@@ -16973,13 +17013,17 @@ async def model_info_v1(
     listed_names: Final = tuple(
         dict.fromkeys(name for model in servable_rows if isinstance(name := model.get("model_name"), str))
     )
-    callback_hidden_names: Final = await _names_hidden_by_listing_callbacks(user_api_key_dict, listed_names)
+    listing_auth: Final = (
+        user_api_key_dict.model_copy(update={"team_id": teamId.strip()})
+        if teamId is not None and teamId.strip() else user_api_key_dict
+    )
+    callback_hidden_names: Final = await _names_hidden_by_listing_callbacks(listing_auth, listed_names)
     visible_models: Final = tuple(
         model for model in servable_rows if model.get("model_name") not in callback_hidden_names
     )
 
     verbose_proxy_logger.debug("all_models: %s", visible_models)
-    return _model_info_json_response(visible_models)
+    return await _model_info_json_response(visible_models, listing_auth)
 
 
 @router.get(
@@ -17282,6 +17326,16 @@ async def model_group_info(
         user_api_key_dict, tuple(dict.fromkeys(public_group_names))
     )
 
+    from litellm.proxy.retail.customer_access import is_retail_customer, safe_customer_model_group
+
+    if is_retail_customer(user_api_key_dict):
+        return {
+            "data": [
+                safe_customer_model_group({**group.model_dump(), "model_group": public_name})
+                for group, public_name in zip(model_groups, public_group_names, strict=True)
+                if public_name not in callback_hidden_names
+            ]
+        }
     return {
         "data": [
             group

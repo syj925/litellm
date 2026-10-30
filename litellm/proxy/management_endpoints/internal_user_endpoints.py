@@ -22,6 +22,7 @@ from typing import Any, Final, Literal, Protocol, cast, overload
 
 import fastapi
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import TypeAdapter, ValidationError
 from typing_extensions import ReadOnly, TypedDict
 
@@ -1014,7 +1015,9 @@ async def user_info(
             ),
         )
 
-        return response_data
+        from litellm.proxy.retail.customer_logs import customer_user_info_response
+
+        return customer_user_info_response(response_data, user_api_key_dict)
     except Exception as e:
         verbose_proxy_logger.exception("litellm.proxy.proxy_server.user_info(): Exception occured - %s", e)
         raise handle_exception_on_proxy(e)
@@ -1156,7 +1159,7 @@ async def user_info_v2(
 
         user_data: Final = user_row.model_dump()
 
-        return UserInfoV2Response(
+        response: Final = UserInfoV2Response(
             user_id=user_data.get("user_id", user_id),
             user_email=user_data.get("user_email"),
             user_alias=user_data.get("user_alias"),
@@ -1182,6 +1185,9 @@ async def user_info_v2(
                 cache=model_max_budget_limiter.dual_cache,
             ),
         )
+        from litellm.proxy.retail.customer_logs import customer_user_info_response
+
+        return customer_user_info_response(response, user_api_key_dict)
     except Exception as e:
         verbose_proxy_logger.exception("litellm.proxy.proxy_server.user_info_v2(): Exception occured - %s", e)
         raise handle_exception_on_proxy(e)
@@ -2946,7 +2952,7 @@ async def get_user_daily_activity(
         "never extended.",
     ),
     user_api_key_dict: UserAPIKeyAuth = Depends(user_api_key_auth),
-) -> SpendAnalyticsPaginatedResponse:
+) -> SpendAnalyticsPaginatedResponse | JSONResponse:
     """
     [BETA] This is a beta endpoint. It will change.
 
@@ -2991,7 +2997,7 @@ async def get_user_daily_activity(
             raise_public(resolved_entity_ids)
         entity_id: Final[str | None] = resolved_entity_ids[0] if resolved_entity_ids is not None else None
 
-        return await get_daily_activity(
+        response: Final = await get_daily_activity(
             prisma_client=prisma_client,
             table_name="litellm_dailyuserspend",
             entity_id_field="user_id",
@@ -3007,6 +3013,9 @@ async def get_user_daily_activity(
             include_current_utc_day=include_current_utc_day,
             resolve_entity_metadata=lambda records: _resolve_user_email_metadata(prisma_client, records),
         )
+        from litellm.proxy.retail.customer_logs import customer_activity_response
+
+        return customer_activity_response(response, user_api_key_dict)
 
     except HTTPException:
         raise

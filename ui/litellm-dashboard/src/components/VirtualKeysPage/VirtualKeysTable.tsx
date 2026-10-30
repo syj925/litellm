@@ -29,6 +29,10 @@ import React, { useCallback, useMemo, useState } from "react";
 import { KeyResponse, Team } from "../key_team_helpers/key_list";
 import KeyInfoView from "../templates/key_info_view";
 import { getKeyTableColumns, KEY_TABLE_HIDDEN_COLUMNS, KEY_TABLE_SORT_FIELDS } from "./keyTableColumns";
+import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
+import { isProxyDashboardRole } from "@/utils/dashboardAccess";
+import Link from "next/link";
+import { uiHref } from "@/utils/uiHref";
 
 interface VirtualKeysTableProps {
   headerActions?: React.ReactNode;
@@ -88,6 +92,8 @@ const appliedFilter = (filters: ColumnFiltersState, column: FilterColumn): strin
 };
 
 export function VirtualKeysTable({ headerActions }: VirtualKeysTableProps) {
+  const { userRole } = useAuthorized();
+  const showNativeCosts = isProxyDashboardRole(userRole);
   const { data: fetchedOrganizations } = useOrganizations();
   const organizations = useMemo(() => fetchedOrganizations ?? [], [fetchedOrganizations]);
   const { data: fetchedTeams } = useAllTeams();
@@ -152,7 +158,25 @@ export function VirtualKeysTable({ headerActions }: VirtualKeysTableProps) {
     }),
     [allTeams, organizations, setSelectedKeyId, applyUserBudgetToTeamKeys],
   );
-  const columns = useMemo(() => getKeyTableColumns(columnDeps), [columnDeps]);
+  const columns = useMemo(() => {
+    const definitions = getKeyTableColumns(columnDeps);
+    if (showNativeCosts) return definitions;
+    return definitions
+      .filter((column) => column.id !== "total_spend")
+      .map((column) =>
+        column.id === "spend"
+          ? {
+              ...column,
+              id: "max_budget",
+              accessorKey: "max_budget",
+              meta: { title: "Budget", numeric: true },
+              header: "Budget",
+              cell: ({ row }: { row: { original: KeyResponse } }) =>
+                row.original.max_budget == null ? "Unlimited" : `$${row.original.max_budget}`,
+            }
+          : column,
+      );
+  }, [columnDeps, showNativeCosts]);
 
   const selectedKeyFromList = useMemo(
     () => keyList.find((key) => key.token === selectedKeyId),
@@ -239,6 +263,11 @@ export function VirtualKeysTable({ headerActions }: VirtualKeysTableProps) {
         <PageHeaderDescription>Every key that authenticates requests to the gateway.</PageHeaderDescription>
         {headerActions != null && <PageHeaderControls>{headerActions}</PageHeaderControls>}
       </PageHeader>
+      {!showNativeCosts && (
+        <Link href={uiHref("billing")} className="text-sm font-medium underline">
+          View actual charges in Billing
+        </Link>
+      )}
       <DataTable
         data={keyList}
         columns={columns}

@@ -543,6 +543,41 @@ def _entity_params(query_name: str, entity_id: str) -> dict[str, str]:
     return {**_DATE_PARAMS, query_name: entity_id}
 
 
+def test_customer_daily_analytics_http_response_does_not_restore_removed_cost_defaults(
+    daily_activity_client: tuple[TestClient, _FakeRepository], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    client, _ = daily_activity_client
+    params: Final = _entity_params("user_id", "user-a")
+    admin: Final = client.get("/user/daily/activity/aggregated", params=params)
+    customer: Final = client.get(
+        "/user/daily/activity/aggregated", params=params,
+        headers={"x-user-role": "internal_user", "x-user-id": "user-a"},
+    )
+    assert customer.status_code == admin.status_code == 200
+    assert customer.json()["metadata"]["total_tokens"] == admin.json()["metadata"]["total_tokens"]
+    assert customer.json()["metadata"]["total_api_requests"] == admin.json()["metadata"]["total_api_requests"]
+    assert "spend" not in customer.text
+    assert "flat_cost" not in customer.text
+    assert "total_spend" in admin.text
+
+
+@pytest.mark.parametrize("file_format", ("csv", "json"))
+def test_customer_activity_exports_cannot_recover_hidden_native_costs(
+    daily_activity_client: tuple[TestClient, _FakeRepository], monkeypatch: pytest.MonkeyPatch, file_format: str,
+) -> None:
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    client, _ = daily_activity_client
+    response: Final = client.get(
+        "/user/daily/activity/export", params={**_entity_params("user_id", "user-a"), "format": file_format},
+        headers={"x-user-role": "internal_user", "x-user-id": "user-a"},
+    )
+    assert response.status_code == 200
+    assert "spend" not in response.text
+    assert "flat_cost" not in response.text
+    assert "prompt_tokens" in response.text
+
+
 @pytest.mark.parametrize(("prefix", "query_name", "entity_id"), _ENTITY_CASES)
 def test_aggregated_routes_return_scoped_results(
     daily_activity_client: tuple[TestClient, _FakeRepository],

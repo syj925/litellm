@@ -10,6 +10,7 @@ import { useKeyInfo } from "@/app/(dashboard)/hooks/keys/useKeyInfo";
 import { KeysResponse, useKeys } from "@/app/(dashboard)/hooks/keys/useKeys";
 import useTeams from "@/app/(dashboard)/hooks/useTeams";
 import { regenerateKeyCall } from "../networking";
+import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 
 // Resolve debounced values synchronously so an applied filter lands in the useKeys query within the test tick.
 vi.mock("@tanstack/react-pacer/debouncer", async () => {
@@ -205,6 +206,22 @@ beforeEach(() => {
 it("should render VirtualKeysTable component", () => {
   renderWithProviders(<VirtualKeysTable />);
   expect(screen.getByText("Test Key Alias")).toBeInTheDocument();
+});
+
+it("shows customer budget caps without displaying native supplier spend", () => {
+  const original = vi.mocked(useAuthorized).getMockImplementation();
+  vi.mocked(useAuthorized).mockReturnValue({ userRole: "Internal User", userId: "user-1" } as ReturnType<
+    typeof useAuthorized
+  >);
+  try {
+    renderWithProviders(<VirtualKeysTable />);
+    expect(screen.getByRole("columnheader", { name: "Budget" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: /Spend/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("$42.25")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View actual charges in Billing" })).toBeInTheDocument();
+  } finally {
+    vi.mocked(useAuthorized).mockImplementation(original!);
+  }
 });
 
 it("shows a fixed resource policy without claiming that an empty model list allows every proxy model", () => {

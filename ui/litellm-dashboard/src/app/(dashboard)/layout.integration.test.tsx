@@ -13,15 +13,17 @@ import {
 import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import Layout from "./layout";
 
+const navigation = vi.hoisted(() => ({ pathname: "/ui/guardrails" }));
 vi.unmock("@/app/(dashboard)/hooks/useAuthorized");
 vi.unmock("@/lib/toast");
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
-  usePathname: () => "/ui/guardrails",
+  usePathname: () => navigation.pathname,
 }));
 
 beforeEach(() => {
+  navigation.pathname = "/ui/guardrails";
   testQueryClient.clear();
   localStorage.clear();
   const claims = {
@@ -96,6 +98,41 @@ afterEach(() => {
 });
 
 describe("dashboard overlay boundaries", () => {
+  it("keeps a customer in the gateway despite a persisted plugin mode without operational requests", async () => {
+    const claims = {
+      key: "test-customer-session",
+      user_id: "layout-customer",
+      user_role: "internal_user",
+      exp: Date.now() / 1000 + 3600,
+    };
+    document.cookie = `token=${btoa("{}")}.${btoa(JSON.stringify(claims))}.test; Path=/`;
+    localStorage.setItem("litellm_plugin_mode", "metrics");
+    navigation.pathname = "/ui/wallet";
+    renderWithProviders(
+      <AuthProvider>
+        <Layout>
+          <h1>Customer wallet</h1>
+        </Layout>
+      </AuthProvider>,
+    );
+    expect(await screen.findByRole("heading", { name: "Customer wallet" })).toBeVisible();
+    const paths = vi.mocked(fetch).mock.calls.map(([input]) => {
+      const url = input instanceof Request ? input.url : String(input);
+      return new URL(url, "http://localhost").pathname;
+    });
+    for (const path of [
+      "/api/plugins",
+      "/api/plugins/auth-token",
+      "/health/readiness/details",
+      "/health/license",
+      "/user/available_users",
+    ]) {
+      expect(paths).not.toContain(path);
+    }
+    expect(screen.queryByTitle("Metrics")).not.toBeInTheDocument();
+    expect(screen.queryByText("Models + Endpoints")).not.toBeInTheDocument();
+  });
+
   it("should render the page with mobile navigation closed", async () => {
     renderWithProviders(
       <AuthProvider>

@@ -51,6 +51,8 @@ from litellm.proxy.auth.authorization_dependencies import (
 )
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup
+from litellm.proxy.retail.customer_access import is_retail_customer
+from litellm.proxy.retail.customer_logs import customer_log_detail, customer_log_response
 from litellm.proxy.spend_tracking.spend_capture_rate import (
     ProviderBillingCredentialMissing,
     ProviderBillingRequestFailed,
@@ -2948,7 +2950,7 @@ async def ui_view_spend_logs(
             and not is_search_lookup
             and sort_by == "startTime"
         ):
-            return await _ui_session_grouped_spend_logs(
+            grouped_response: Final = await _ui_session_grouped_spend_logs(
                 prisma_client=prisma_client,
                 sql_conditions=sql_conditions,
                 sql_params=sql_params,
@@ -2958,6 +2960,7 @@ async def ui_view_spend_logs(
                 sort_desc=order_direction != "asc",
                 session_cursor=session_cursor,
             )
+            return customer_log_response(grouped_response, user_api_key_dict)
 
         # Build the ORDER BY expression. ttft_ms is computed from
         # completionStartTime - startTime; non-streaming rows (where
@@ -3041,7 +3044,7 @@ async def ui_view_spend_logs(
 
         verbose_proxy_logger.debug("data= %s", json.dumps(data, indent=4, default=str))
 
-        return await _build_ui_spend_logs_response(
+        logs_response: Final = await _build_ui_spend_logs_response(
             prisma_client,
             data,
             total_records,
@@ -3051,6 +3054,7 @@ async def ui_view_spend_logs(
             enrich_session_counts=not is_v2,
             total_is_capped=total_is_capped,
         )
+        return customer_log_response(logs_response, user_api_key_dict)
     except Exception as e:
         verbose_proxy_logger.exception("Error in ui_view_spend_logs: %s", e)
         raise handle_exception_on_proxy(e)
@@ -3443,7 +3447,7 @@ async def ui_view_request_response_for_request_id(
                     payload=cast(Mapping[str, object], payload),  # cast-ok: custom-logger payload is untyped
                     request_id=request_id,
                 )
-            return payload
+            return customer_log_detail(payload, user_api_key_dict)
 
     if spend_log_row is None:
         return None
@@ -3455,7 +3459,7 @@ async def ui_view_request_response_for_request_id(
     from litellm.proxy.spend_tracking.cold_storage_handler import ColdStorageHandler
 
     resolved: Final = await _resolve_request_response_payload(spend_log_row, cold_storage_handler=ColdStorageHandler())
-    return resolved._asdict()
+    return customer_log_detail(resolved._asdict(), user_api_key_dict)
 
 
 @router.get(
@@ -3538,7 +3542,7 @@ async def view_spend_logs(
     """
     from litellm.proxy.proxy_server import prisma_client
 
-    if (
+    if is_retail_customer(user_api_key_dict) or (
         user_api_key_dict.user_role == LitellmUserRoles.INTERNAL_USER
         or user_api_key_dict.user_role == LitellmUserRoles.INTERNAL_USER_VIEW_ONLY
     ):
@@ -3593,7 +3597,7 @@ async def view_spend_logs(
                     take=SPEND_LOGS_PAGINATION_COUNT_CAP,
                     http_response=fastapi_response,
                 )
-                return data
+                return customer_log_response(data, user_api_key_dict)
 
             # Legacy behavior: return summarized data (when summarize=true)
             summary_sql_and_params: Final = _spend_logs_daily_summary_sql(
@@ -3624,7 +3628,7 @@ async def view_spend_logs(
                     for offset in range(1, (end_date_date - final_date).days + 1)
                 )
             )
-            return [*summary_items, *padding]
+            return customer_log_response([*summary_items, *padding], user_api_key_dict)
 
         else:
             scoped_filter: Final[dict[str, object]] = {}
@@ -3646,7 +3650,7 @@ async def view_spend_logs(
                 take=SPEND_LOGS_PAGINATION_COUNT_CAP,
                 http_response=fastapi_response,
             )
-            return data
+            return customer_log_response(data, user_api_key_dict)
 
         return None
 
@@ -4572,13 +4576,13 @@ async def ui_view_session_spend_logs(
 
         total_pages: Final = (total_records + page_size - 1) // page_size
 
-        return {
+        return customer_log_response({
             "data": result,
             "total": total_records,
             "page": page,
             "page_size": page_size,
             "total_pages": total_pages,
-        }
+        }, user_api_key_dict)
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e

@@ -49,6 +49,14 @@ describe("KeyInfoHeader", () => {
   });
 
   describe("entity links", () => {
+    it("retains customer context without linking to administrative entity pages", () => {
+      render(<KeyInfoHeader data={MOCK_DATA} showManagementLinks={false} />);
+      expect(screen.getByText("test@example.com")).toBeInTheDocument();
+      expect(screen.getByText("Platform Team")).toBeInTheDocument();
+      expect(screen.getByText("Acme Org")).toBeInTheDocument();
+      expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    });
+
     it("links the user to the users page", () => {
       render(<KeyInfoHeader data={MOCK_DATA} />);
       expect(screen.getByRole("link", { name: "test@example.com" })).toHaveAttribute(

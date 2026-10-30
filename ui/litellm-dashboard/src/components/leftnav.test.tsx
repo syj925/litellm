@@ -398,17 +398,14 @@ describe("Sidebar (leftnav)", () => {
       mockUseAuthorized.mockReset();
     });
 
-    it("should hide Tool Policies from internal users while keeping other Tools children", async () => {
+    it("hides gateway tool configuration from ordinary internal users", () => {
       mockUseAuthorized.mockReturnValue(internalAuth);
       renderWithProviders(<Sidebar {...defaultProps} />);
 
-      act(() => {
-        fireEvent.click(screen.getByText("Tools"));
-      });
-      await waitFor(() => {
-        expect(screen.getByText("Search Tools")).toBeInTheDocument();
-      });
+      expect(screen.queryByText("Tools")).not.toBeInTheDocument();
+      expect(screen.queryByText("Search Tools")).not.toBeInTheDocument();
       expect(screen.queryByText("Tool Policies")).not.toBeInTheDocument();
+      expect(screen.getByText("Virtual Keys")).toBeInTheDocument();
     });
 
     it("should show Tool Policies to admins", async () => {
@@ -422,37 +419,29 @@ describe("Sidebar (leftnav)", () => {
       });
     });
 
-    it("should hide the Policies entry from internal users while keeping Guardrails", () => {
+    it("hides Policies and Guardrails configuration from ordinary internal users", () => {
       mockUseAuthorized.mockReturnValue(internalAuth);
       renderWithProviders(<Sidebar {...defaultProps} />);
 
-      expect(screen.getByText("Guardrails")).toBeInTheDocument();
+      expect(screen.queryByText("Guardrails")).not.toBeInTheDocument();
       expect(screen.queryByText("Policies")).not.toBeInTheDocument();
     });
 
-    it("should hide the Prompts entry from internal users while keeping other Experimental children", async () => {
+    it("hides Experimental administration and API transformation from ordinary internal users", () => {
       mockUseAuthorized.mockReturnValue(internalAuth);
       renderWithProviders(<Sidebar {...defaultProps} />);
 
-      act(() => {
-        fireEvent.click(screen.getByText("Experimental"));
-      });
-      await waitFor(() => {
-        expect(screen.getByText("API Playground")).toBeInTheDocument();
-      });
+      expect(screen.queryByText("Experimental")).not.toBeInTheDocument();
+      expect(screen.queryByText("API Playground")).not.toBeInTheDocument();
       expect(screen.queryByText("Prompts")).not.toBeInTheDocument();
     });
 
-    it("should hide Old Usage from internal users while keeping other Experimental children", async () => {
+    it("keeps personal Usage while hiding the old administrative usage dashboard", () => {
       mockUseAuthorized.mockReturnValue(internalAuth);
       renderWithProviders(<Sidebar {...defaultProps} />);
 
-      act(() => {
-        fireEvent.click(screen.getByText("Experimental"));
-      });
-      await waitFor(() => {
-        expect(screen.getByText("API Playground")).toBeInTheDocument();
-      });
+      expect(screen.getByText("Usage")).toBeInTheDocument();
+      expect(screen.queryByText("Experimental")).not.toBeInTheDocument();
       expect(screen.queryByText("Old Usage")).not.toBeInTheDocument();
     });
 
@@ -468,11 +457,6 @@ describe("Sidebar (leftnav)", () => {
     });
   });
 
-  // Workflow Runs, Memory and Guardrails Monitor render a shell and then 401
-  // for every non-proxy-admin role, because their page-load routes sit outside
-  // internal_user_routes / self_managed_routes. Cost Optimization does not:
-  // its primary call is /user/daily/activity, which every role may make, so
-  // the entry stays and only its proxy-wide tabs are gated inside the page.
   describe("capability-gated pages whose data is proxy-admin-only", () => {
     const authFor = (userRole: string) => ({
       userId: "some-user-id",
@@ -490,18 +474,13 @@ describe("Sidebar (leftnav)", () => {
       mockUseAuthorized.mockReset();
     });
 
-    it("hides Workflow Runs and Memory from an internal user under Agentic", async () => {
+    it("hides Agentic operations from ordinary internal users", () => {
       mockUseAuthorized.mockReturnValue(authFor("internal"));
       renderWithProviders(<Sidebar {...defaultProps} />);
 
-      act(() => {
-        fireEvent.click(screen.getByText("Agentic"));
-      });
-      // Liveness gate: the sibling Agents child stays visible to this role, so
-      // the absences below mean the gate fired, not that the group never opened.
-      await waitFor(() => {
-        expect(screen.getByText("Agents")).toBeInTheDocument();
-      });
+      expect(screen.getByText("Models")).toBeInTheDocument();
+      expect(screen.queryByText("Agentic")).not.toBeInTheDocument();
+      expect(screen.queryByText("Agents")).not.toBeInTheDocument();
       expect(screen.queryByText("Workflow Runs")).not.toBeInTheDocument();
       expect(screen.queryByText("Memory")).not.toBeInTheDocument();
     });
@@ -523,11 +502,12 @@ describe("Sidebar (leftnav)", () => {
       expect(screen.queryByText("Memory")).not.toBeInTheDocument();
     });
 
-    it("keeps the Agentic group for an internal user, who can still see Agents", () => {
+    it("shows the safe customer model catalog instead of model deployment management", () => {
       mockUseAuthorized.mockReturnValue(authFor("internal"));
       renderWithProviders(<Sidebar {...defaultProps} />);
 
-      expect(screen.getByText("Agentic")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Models" })).toHaveAttribute("href", "/ui/model-catalog");
+      expect(screen.queryByText("Models + Endpoints")).not.toBeInTheDocument();
     });
 
     it("shows Workflow Runs and Memory to admins", async () => {
@@ -542,14 +522,15 @@ describe("Sidebar (leftnav)", () => {
       expect(screen.getByText("Memory")).toBeInTheDocument();
     });
 
-    it("hides Guardrails Monitor from an internal user while keeping Usage and Cost Optimization", () => {
+    it("keeps personal observability while hiding gateway cost and investigation tools", () => {
       mockUseAuthorized.mockReturnValue(authFor("internal"));
       renderWithProviders(<Sidebar {...defaultProps} />);
 
       expect(screen.queryByText("Guardrails Monitor")).not.toBeInTheDocument();
       expect(screen.getByText("Usage")).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Lens Beta" })).toHaveAttribute("href", "/ui/lens");
-      expect(screen.getByText("Cost Optimization")).toBeInTheDocument();
+      expect(screen.getByText("Logs")).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Lens Beta" })).not.toBeInTheDocument();
+      expect(screen.queryByText("Cost Optimization")).not.toBeInTheDocument();
     });
 
     it("shows Guardrails Monitor to admins", () => {

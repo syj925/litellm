@@ -5,24 +5,25 @@
 
 import { describe, it, expect } from "vitest";
 import { getAvailablePages } from "./page_utils";
-import { menuGroups } from "./leftnav";
+import { menuGroups, routeOf } from "./leftnav";
 import { pageDescriptions } from "./page_metadata";
-import { internalUserRoles } from "@/utils/roles";
+import { canAccessDashboardRoute } from "@/utils/dashboardAccess";
 
 /**
  * Check if a page is accessible to internal users
- * A page is accessible if:
- * 1. It has no role restrictions, OR
- * 2. Its roles include at least one internal user role
+ * Include delegated pages while keeping gateway configuration admin-only.
  */
-const isPageAccessibleToInternalUsers = (pageRoles?: string[]): boolean => {
-  if (!pageRoles || pageRoles.length === 0) {
-    return true; // No role restrictions
-  }
-
-  // Check if any of the page's roles match internal user roles
-  return pageRoles.some((role) => internalUserRoles.includes(role));
+const delegatedUserContext = {
+  userRole: "Internal User",
+  isViewOnly: false,
+  isTeamAdmin: true,
+  isOrgAdmin: true,
+  enableProjectsUI: true,
+  allowAgentsForTeamAdmins: true,
+  allowVectorStoresForTeamAdmins: true,
 };
+const isPageAccessibleToInternalUsers = (route: string): boolean =>
+  canAccessDashboardRoute(route, delegatedUserContext);
 
 describe("Page Utils - LeftNav Sync", () => {
   it("should return all pages from leftnav configuration", () => {
@@ -54,14 +55,14 @@ describe("Page Utils - LeftNav Sync", () => {
 
     menuGroups.forEach((group) => {
       group.items.forEach((item) => {
-        if (item.page && !excludedParents.includes(item.page) && isPageAccessibleToInternalUsers(item.roles)) {
+        if (item.page && !excludedParents.includes(item.page) && isPageAccessibleToInternalUsers(routeOf(item))) {
           menuPageKeys.push(item.page);
         }
 
         // Add children (only if accessible to internal users)
         if (item.children) {
           item.children.forEach((child) => {
-            if (isPageAccessibleToInternalUsers(child.roles)) {
+            if (isPageAccessibleToInternalUsers(routeOf(child))) {
               menuPageKeys.push(child.page);
             }
           });
@@ -200,6 +201,14 @@ describe("Page Utils - LeftNav Sync", () => {
       label: "Projects",
       group: "ACCESS CONTROL",
     });
+  });
+
+  it("offers the customer model catalog without allowing admin surfaces to be enabled", () => {
+    const keys = getAvailablePages().map((page) => page.page);
+    expect(keys).toContain("model-catalog");
+    for (const page of ["models", "channels", "resource-pools", "wallet-admin", "transform-request", "lens"]) {
+      expect(keys).not.toContain(page);
+    }
   });
 
   it("should match the structure expected by PageVisibilitySettings component", () => {

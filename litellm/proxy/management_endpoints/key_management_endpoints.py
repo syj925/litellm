@@ -25,7 +25,9 @@ from typing import TYPE_CHECKING, Any, Final, Literal, Optional, Protocol, TypeV
 
 import fastapi
 import yaml
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from pydantic import TypeAdapter
 from typing_extensions import ReadOnly, TypedDict
 
@@ -894,6 +896,25 @@ def handle_key_type(data: GenerateKeyRequest, data_json: dict) -> dict:
     return data_json
 
 
+async def _key_info_for_caller(
+    row: Mapping[str, object], auth: UserAPIKeyAuth, prisma_client: PrismaClient,
+) -> Mapping[str, object]:
+    from litellm.proxy.proxy_server import user_api_key_cache
+    from litellm.proxy.retail.customer_access import is_retail_customer, safe_customer_key_info
+
+    if not is_retail_customer(auth):
+        return row
+    team_id: Final = row.get("team_id")
+    if isinstance(team_id, str) and team_id != UI_SESSION_TOKEN_TEAM_ID:
+        team: Final = await get_team_object(
+            team_id=team_id, prisma_client=prisma_client, user_api_key_cache=user_api_key_cache,
+            parent_otel_span=auth.parent_otel_span,
+        )
+        if team is not None and is_team_admin(user_api_key_dict=auth, team_obj=team):
+            return row
+    return safe_customer_key_info(row)
+
+
 _NON_ADMIN_SAFE_ALLOWED_ROUTES_PRESETS: Final = frozenset({"llm_api_routes", "info_routes"})
 
 
@@ -1572,7 +1593,12 @@ async def _common_key_generation_helper(
                 prisma_client=prisma_client,
             )
 
-    response = await generate_key_helper_fn(request_type="key", **data_json, table_name="key", llm_router=llm_router)
+    from litellm.proxy.retail.customer_access import customer_key_generate_payload
+
+    response = await generate_key_helper_fn(
+        request_type="key", **customer_key_generate_payload(data_json, user_api_key_dict, data.team_id),
+        table_name="key", llm_router=llm_router,
+    )
 
     response["soft_budget"] = data.soft_budget  # include the user-input soft budget in the response
 
@@ -2080,6 +2106,10 @@ async def generate_key_fn(
 
         verbose_proxy_logger.debug("entered /key/generate")
 
+        from litellm.proxy.retail.customer_access import validate_customer_key_request
+
+        validate_customer_key_request(data, user_api_key_dict)
+
         await check_org_admin_can_generate_keys(user_api_key_dict=user_api_key_dict)
 
         # Validate budget values are not negative and are finite numbers
@@ -2169,12 +2199,19 @@ async def generate_key_fn(
                 user_api_key_cache=user_api_key_cache,
             )
 
-        return await _common_key_generation_helper(
+        generated: Final = await _common_key_generation_helper(
             data=data,
             user_api_key_dict=user_api_key_dict,
             litellm_changed_by=litellm_changed_by,
             team_table=team_table,
         )
+        from litellm.proxy.retail.customer_access import is_retail_customer
+
+        if is_retail_customer(user_api_key_dict):
+            return JSONResponse(content=jsonable_encoder(
+                await _key_info_for_caller(generated.model_dump(), user_api_key_dict, prisma_client),
+            ))
+        return generated
 
     except Exception as e:
         verbose_proxy_logger.exception("litellm.proxy.proxy_server.generate_key_fn(): Exception occured - %s", e)
@@ -2494,13 +2531,21 @@ async def prepare_key_update_data(
     *,
     prisma_client: PrismaClient | None = None,
     llm_router: Router | None = None,
+    user_api_key_dict: UserAPIKeyAuth | None = None,
 ):
+    from litellm.proxy.retail.customer_access import customer_key_metadata, is_customer_personal_key
     from litellm.proxy.retail.key_policy import validate_native_key_resource_metadata
 
+    customer_personal: Final = user_api_key_dict is not None and is_customer_personal_key(
+        user_api_key_dict, existing_key_row.team_id,
+    )
+    metadata_input: Final = (
+        customer_key_metadata(data.metadata, existing_key_row.metadata) if customer_personal else data.metadata
+    )
     resource_owner: Final = data.user_id if "user_id" in data.model_fields_set else existing_key_row.user_id
     resource_metadata: Final = await validate_native_key_resource_metadata(
-        data.metadata, resource_owner, existing_key_row.metadata,
-        provided="metadata" in data.model_fields_set,
+        metadata_input, resource_owner, existing_key_row.metadata,
+        provided=customer_personal or "metadata" in data.model_fields_set,
         owner_changed=resource_owner != existing_key_row.user_id,
     )
     if resource_metadata is not None:
@@ -2601,6 +2646,8 @@ async def prepare_key_update_data(
         data=data, non_default_values=non_default_values, existing_metadata=_metadata
     )
 
+    if customer_personal and not existing_key_row.allowed_routes:
+        return {**non_default_values, "allowed_routes": ["llm_api_routes"], "key_type": "llm_api"}
     return non_default_values
 
 
@@ -2877,7 +2924,8 @@ async def _process_single_key_update(
 
     # Prepare update data
     non_default_values = await prepare_key_update_data(
-        data=key_request, existing_key_row=existing_key_row, prisma_client=prisma_client, llm_router=llm_router
+        data=key_request, existing_key_row=existing_key_row, prisma_client=prisma_client, llm_router=llm_router,
+        user_api_key_dict=user_api_key_dict,
     )
 
     await _enforce_custom_key_policy(
@@ -2954,7 +3002,7 @@ async def _process_single_key_update(
 
     updated_key_info.pop("token", None)
 
-    return updated_key_info
+    return await _key_info_for_caller(updated_key_info, user_api_key_dict, prisma_client)
 
 
 async def _with_validated_object_permission(
@@ -3118,6 +3166,13 @@ async def _validate_update_key_data(
 ) -> None:
     """Validate permissions and constraints for key update."""
     checked_prisma_client: Final = _require_prisma_client(prisma_client)
+
+    from litellm.proxy.retail.customer_access import validate_customer_key_request
+
+    validate_customer_key_request(
+        data, user_api_key_dict, existing_team_id=existing_key_row.team_id,
+        existing_user_id=existing_key_row.user_id, updating=True,
+    )
 
     # Reject NaN/±inf spend before it can reach the DB / spend counter.
     validate_finite_spend(data.spend)
@@ -3538,7 +3593,8 @@ async def update_key_fn(
         # Enforce upperbound key params on update (don't fill defaults)
         _enforce_upperbound_key_params(data, fill_defaults=False)
         non_default_values: Final = await prepare_key_update_data(
-            data=data, existing_key_row=existing_key_row, prisma_client=prisma_client, llm_router=llm_router
+            data=data, existing_key_row=existing_key_row, prisma_client=prisma_client, llm_router=llm_router,
+            user_api_key_dict=user_api_key_dict,
         )
 
         # Only validate key_alias format if it's actually being changed
@@ -3646,7 +3702,7 @@ async def update_key_fn(
         if response is None:
             raise ValueError("Failed to update key got response = None")
 
-        return {"key": key, **response["data"]}
+        return {"key": key, **await _key_info_for_caller(response["data"], user_api_key_dict, prisma_client)}
         # update based on remaining passed in values
     except Exception as e:
         verbose_proxy_logger.exception("litellm.proxy.proxy_server.update_key_fn(): Exception occured - %s", e)
@@ -4386,7 +4442,7 @@ async def info_key_fn_v2(
                 if budget_limits_usage is not None:
                     k_dict["budget_limits_usage"] = budget_limits_usage
 
-            filtered_key_info.append(k_dict)
+            filtered_key_info.append(await _key_info_for_caller(k_dict, user_api_key_dict, prisma_client))
         return {"key": data.keys, "info": filtered_key_info}
 
     except Exception as e:
@@ -4524,7 +4580,8 @@ async def info_key_fn(
         if budget_limits_usage is not None:
             key_info_dict["budget_limits_usage"] = budget_limits_usage
 
-        return {"key": key, "info": await attach_object_permission_to_dict(key_info_dict, prisma_client)}
+        attached: Final = await attach_object_permission_to_dict(key_info_dict, prisma_client)
+        return {"key": key, "info": await _key_info_for_caller(attached, user_api_key_dict, prisma_client)}
     except Exception as e:
         raise handle_exception_on_proxy(e)
 
@@ -5619,6 +5676,13 @@ async def _execute_virtual_key_regeneration(
     from litellm.proxy import proxy_server
     from litellm.proxy.proxy_server import hash_token
 
+    from litellm.proxy.retail.customer_access import validate_customer_key_request
+
+    validate_customer_key_request(
+        data if data is not None else RegenerateKeyRequest(), user_api_key_dict,
+        existing_team_id=key_in_db.team_id, existing_user_id=key_in_db.user_id, updating=True,
+    )
+
     # Mirror the /key/update ownership rebind guard. See helper docstring.
     _validate_caller_can_change_key_ownership(
         data=data,
@@ -5678,7 +5742,8 @@ async def _execute_virtual_key_regeneration(
         # Enforce upperbound key params on regenerate (don't fill defaults)
         _enforce_upperbound_key_params(data, fill_defaults=False)
         non_default_values = await prepare_key_update_data(
-            data=data, existing_key_row=key_in_db, prisma_client=prisma_client, llm_router=llm_router
+            data=data, existing_key_row=key_in_db, prisma_client=prisma_client, llm_router=llm_router,
+            user_api_key_dict=user_api_key_dict,
         )
         # Only validate key_alias format if it's actually being changed
         new_key_alias: Final = non_default_values.get("key_alias")
@@ -5791,11 +5856,13 @@ def _check_regenerate_guardrail_opt_out(
     "/key/{key:path}/regenerate",
     tags=["key management"],
     dependencies=[Depends(user_api_key_auth)],
+    response_model=GenerateKeyResponse | None,
 )
 @router.post(
     "/key/regenerate",
     tags=["key management"],
     dependencies=[Depends(user_api_key_auth)],
+    response_model=GenerateKeyResponse | None,
 )
 @management_endpoint_wrapper
 async def regenerate_key_fn(
@@ -5806,7 +5873,7 @@ async def regenerate_key_fn(
         None,
         description="The litellm-changed-by header enables tracking of actions performed by authorized users on behalf of other users, providing an audit trail for accountability",
     ),
-) -> GenerateKeyResponse | None:
+) -> GenerateKeyResponse | Response | None:
     """
     Regenerate an existing API key while optionally updating its parameters.
 
@@ -6045,7 +6112,7 @@ async def regenerate_key_fn(
         if litellm_changed_by is not None and not isinstance(litellm_changed_by, str):
             litellm_changed_by = None
 
-        return await _execute_virtual_key_regeneration(
+        rotated: Final = await _execute_virtual_key_regeneration(
             prisma_client=prisma_client,
             llm_router=llm_router,
             key_in_db=_key_in_db,
@@ -6057,6 +6124,13 @@ async def regenerate_key_fn(
             user_api_key_cache=user_api_key_cache,
             proxy_logging_obj=proxy_logging_obj,
         )
+        from litellm.proxy.retail.customer_access import is_retail_customer
+
+        if is_retail_customer(user_api_key_dict):
+            return JSONResponse(content=jsonable_encoder(
+                await _key_info_for_caller(rotated.model_dump(), user_api_key_dict, prisma_client),
+            ))
+        return rotated
     except Exception as e:
         verbose_proxy_logger.exception("Error regenerating key: %s", e)
         raise handle_exception_on_proxy(e)
@@ -6564,6 +6638,7 @@ def _derive_key_status(row: Mapping[str, object], now: datetime) -> KeyStatus:
     "/key/list",
     tags=["key management"],
     dependencies=[Depends(user_api_key_auth)],
+    response_model=KeyListResponseObject,
 )
 @management_endpoint_wrapper
 async def list_keys(
@@ -6610,7 +6685,7 @@ async def list_keys(
         None,
         description="Filter keys by expiration. 'expired' returns keys whose expires is in the past; 'active' returns keys that never expire or expire in the future. Omit to return keys regardless of expiration.",
     ),
-) -> KeyListResponseObject:
+) -> KeyListResponseObject | Response:
     """
     List all keys for a given user / team / organization.
 
@@ -6740,6 +6815,15 @@ async def list_keys(
 
         verbose_proxy_logger.debug("Successfully prepared response")
 
+        from litellm.proxy.retail.customer_access import is_retail_customer
+
+        if is_retail_customer(user_api_key_dict):
+            visible_keys: Final = [
+                item if isinstance(item, str)
+                else await _key_info_for_caller(item.model_dump(), user_api_key_dict, prisma_client)
+                for item in response["keys"]
+            ]
+            return JSONResponse(content=jsonable_encoder({**response, "keys": visible_keys}))
         return response
 
     except Exception as e:

@@ -1,10 +1,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LogDetailsDrawer } from "./LogDetailsDrawer";
 import { sessionSpendLogsCall } from "../../networking";
 import { LogEntry } from "../types";
 import { AutoRouterModelGroupsProvider } from "@/components/shared/table_cells";
+
+const session = vi.hoisted(() => ({ role: "Admin" }));
+vi.mock("@/app/(dashboard)/hooks/useAuthorized", () => ({ default: () => ({ userRole: session.role }) }));
+beforeEach(() => {
+  session.role = "Admin";
+});
 
 vi.mock("../../networking", () => ({
   sessionSpendLogsCall: vi.fn(),
@@ -96,6 +102,21 @@ const sidebarEventNames = () =>
   screen.queryAllByText(/^(llm-early|llm-late|tool-early|tool-late)$/).map((el) => el.textContent);
 
 describe("LogDetailsDrawer session sidebar sorting", () => {
+  it.each(["Internal User", "Org Admin"])(
+    "does not display native costs in %s drawer summaries or trace rows",
+    (role) => {
+      session.role = role;
+      const row = makeLog({ request_id: "customer-trace", spend: 7.89, total_tokens: 42 });
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={client}>
+          <LogDetailsDrawer open onClose={vi.fn()} logEntry={row} allLogs={[row]} />
+        </QueryClientProvider>,
+      );
+      expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
+      expect(screen.getByText("42 tok")).toBeInTheDocument();
+    },
+  );
   it("defaults to duration order, longest call first across LLM and MCP calls", async () => {
     renderSessionDrawer();
     await waitFor(() => expect(sidebarEventNames()).toHaveLength(4));

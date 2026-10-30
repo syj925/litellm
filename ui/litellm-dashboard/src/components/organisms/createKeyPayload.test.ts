@@ -28,6 +28,53 @@ const payloadOf = (result: KeyPayloadResult): Record<string, unknown> => {
   return result.payload;
 };
 
+describe("customer key creation", () => {
+  it("forces self-owned AI-only keys and removes stale administrative form state", () => {
+    const result = build(
+      {
+        key_alias: "customer-key",
+        models: ["claude"],
+        duration: "30d",
+        max_budget: 100,
+        rpm_limit: 20,
+        user_id: "other-user",
+        team_id: "other-team",
+        organization_id: "other-org",
+        key_type: "default",
+        allowed_routes: [],
+        guardrails: [],
+        disable_global_guardrails: true,
+        metadata: '{"disable_spend_logs":true}',
+        config: { api_key: "upstream-secret" },
+        allowed_vector_store_ids: ["all"],
+      },
+      {
+        selfService: true,
+        keyOwner: "service_account",
+        selectedAgentId: "other-agent",
+        autoRotationEnabled: true,
+        loggingSettings: [{ callback_name: "custom" }],
+        disabledCallbacks: ["langfuse"],
+        modelAliases: { claude: "expensive" },
+        modelMaxBudget: { claude: { max_budget: 1000 } },
+        budgetFallbacks: { claude: ["other"] },
+        resourcePolicy: null,
+      },
+    );
+    expect(result.kind === "ok" && result.endpoint).toBe("standard");
+    expect(payloadOf(result)).toEqual({
+      key_alias: "customer-key",
+      models: ["claude"],
+      duration: "30d",
+      max_budget: 100,
+      rpm_limit: 20,
+      key_type: "llm_api",
+      user_id: "test-user",
+      metadata: JSON.stringify({ retail_resource_policy: { mode: "auto" } }),
+    });
+  });
+});
+
 describe("resource routing on initial key creation", () => {
   it("stores the exact custom pool-model matrix atomically in native key metadata", () => {
     const resourcePolicy = {

@@ -9,6 +9,7 @@ import { DashboardHeader } from "./DashboardHeader";
 vi.mock("next/navigation", () => ({ usePathname: () => "/ui/logs" }));
 
 beforeEach(() => {
+  document.cookie = `token=${btoa("{}")}.${btoa(JSON.stringify({ user_role: "proxy_admin" }))}.test; Path=/`;
   localStorage.clear();
   vi.stubGlobal(
     "fetch",
@@ -48,6 +49,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  document.cookie = "token=; Max-Age=0; Path=/";
   vi.unstubAllGlobals();
   localStorage.clear();
 });
@@ -108,5 +110,12 @@ describe("mobile header nested controls", () => {
     await user.click(await screen.findByRole("option", { name: "Backup worker" }));
     expect(localStorage.getItem("litellm_selected_worker_id")).toBeNull();
     expect(screen.getByRole("dialog", { name: "Gateway tools" })).toBeVisible();
+  });
+
+  it("hides control-plane worker switching from an ordinary user", async () => {
+    document.cookie = `token=${btoa("{}")}.${btoa(JSON.stringify({ user_role: "internal_user" }))}.test; Path=/`;
+    localStorage.setItem("litellm_selected_worker_id", "primary");
+    const { tools } = await openTools();
+    expect(within(tools).queryByRole("combobox", { name: "Worker" })).not.toBeInTheDocument();
   });
 });

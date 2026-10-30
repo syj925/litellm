@@ -41,10 +41,12 @@ const renderDashboardHeader = () =>
 
 describe("DashboardHeader breadcrumb", () => {
   beforeEach(() => {
+    document.cookie = `token=${btoa("{}")}.${btoa(JSON.stringify({ user_role: "proxy_admin" }))}.test; Path=/`;
     localStorage.clear();
   });
 
   afterEach(() => {
+    document.cookie = "token=; Max-Age=0; Path=/";
     state.plugins = [];
     state.enableChatUI = false;
     state.pathname = "/ui/logs";

@@ -130,6 +130,27 @@ describe("HomePage", () => {
     expect(screen.queryByRole("link", { name: /create new virtual key/i })).not.toBeInTheDocument();
   });
 
+  it.each(["Internal User", "Org Admin"])(
+    "shows personal activity without native cost or budget amounts for %s",
+    async (role) => {
+      auth.userRole = role;
+      network.aggregated.mockResolvedValue({ ...activity, metadata: { ...activity.metadata, total_spend: null } });
+      network.userInfo.mockResolvedValue({ user_info: { max_budget: 999 } });
+      renderHome();
+      expect(await screen.findByText("5,118")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "View Billing" })).toHaveAttribute(
+        "href",
+        expect.stringContaining("/billing"),
+      );
+      const summary = within(screen.getByRole("region", { name: "Usage, last 7 days" }));
+      expect(summary.queryByText("Spend")).not.toBeInTheDocument();
+      expect(summary.queryByText("Avg cost / request")).not.toBeInTheDocument();
+      expect(summary.queryByText(/\$/)).not.toBeInTheDocument();
+      expect(network.aggregated).toHaveBeenCalledWith("user", expect.objectContaining({ entityIds: ["u1"] }));
+      expect(network.gateway).not.toHaveBeenCalled();
+    },
+  );
+
   it("shows an error with a retry instead of zero totals when the usage request fails", async () => {
     network.aggregated.mockRejectedValueOnce(new Error("boom"));
     renderHome();

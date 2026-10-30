@@ -126,6 +126,7 @@ vi.mock("@/utils/localStorageUtils", () => ({
 
 vi.mock("@/utils/cookieUtils", () => ({
   clearTokenCookies: vi.fn(),
+  getCookie: () => `${btoa("{}")}.${btoa(JSON.stringify({ user_role: "proxy_admin" }))}.test`,
 }));
 
 // Mock window.location.href for logout testing

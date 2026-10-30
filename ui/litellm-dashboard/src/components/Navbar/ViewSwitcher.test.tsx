@@ -37,6 +37,7 @@ describe("ViewSwitcher", () => {
   let assignSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    document.cookie = `token=${btoa("{}")}.${btoa(JSON.stringify({ user_role: "proxy_admin" }))}.test; Path=/`;
     assignSpy = vi.fn();
     Object.defineProperty(window, "location", {
       configurable: true,
@@ -45,12 +46,24 @@ describe("ViewSwitcher", () => {
   });
 
   afterEach(() => {
+    document.cookie = "token=; Max-Age=0; Path=/";
     state.mode = "ai-gateway";
     state.plugins = [];
     state.enableChatUI = false;
     state.moyaiUrl = undefined;
     state.pathname = "/ui/";
     state.setMode.mockClear();
+  });
+
+  it("keeps customer chat while hiding management plugins and cloud control planes", async () => {
+    document.cookie = `token=${btoa("{}")}.${btoa(JSON.stringify({ user_role: "internal_user" }))}.test; Path=/`;
+    state.plugins = [{ name: "operations-plugin", display_name: "Operations console", url: "https://example.com" }];
+    state.enableChatUI = true;
+    render(<ViewSwitcher />);
+    fireEvent.click(screen.getByRole("button"));
+    expect(await screen.findByText("Chat")).toBeInTheDocument();
+    expect(screen.queryByText("Operations console")).not.toBeInTheDocument();
+    expect(screen.queryByText("Moyai")).not.toBeInTheDocument();
   });
 
   it("still renders the selector with a disabled Chat hint when there are no plugins and chat is off", async () => {

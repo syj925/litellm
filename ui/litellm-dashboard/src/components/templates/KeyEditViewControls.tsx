@@ -33,10 +33,12 @@ export const KeyTypeSelect = ({
   id,
   value,
   onChange,
+  admin = true,
 }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
+  admin?: boolean;
 }) => (
   <Select
     items={Object.fromEntries(KEY_TYPE_OPTIONS.map((option) => [option.value, option.label]))}
@@ -47,7 +49,7 @@ export const KeyTypeSelect = ({
       <SelectValue placeholder="Select key type" />
     </SelectTrigger>
     <SelectContent>
-      {KEY_TYPE_OPTIONS.map((option) => (
+      {KEY_TYPE_OPTIONS.filter((option) => admin || option.value === "llm_api").map((option) => (
         <SelectItem key={option.value} value={option.value}>
           <div className="py-1">
             <div className="font-medium">{option.label}</div>

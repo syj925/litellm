@@ -85,6 +85,7 @@ import {
   resourceModelHelp,
 } from "../organisms/resourceRoutingPolicy";
 import { useKeyResourceCatalog } from "../organisms/useKeyResourceCatalog";
+import { isSelfServiceKeyContext, selfServiceKeyFields, selfServiceKeyUpdate } from "../organisms/keyFormAccess";
 
 interface KeyEditViewProps {
   keyData: KeyResponse;
@@ -118,6 +119,7 @@ export function KeyEditView({
   const [promptsList, setPromptsList] = useState<string[]>([]);
   const [tagsList, setTagsList] = useState<Record<string, Tag>>({});
   const team = teams?.find((team) => team.team_id === keyData.team_id);
+  const selfService = isSelfServiceKeyContext(userRole, userID, teams, keyData.team_id);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [disabledCallbacks, setDisabledCallbacks] = useState<string[]>(
     Array.isArray(keyData.metadata?.litellm_disabled_callbacks)
@@ -131,6 +133,10 @@ export function KeyEditView({
   const [isKeySaving, setIsKeySaving] = useState(false);
   const [resourcePolicy, setResourcePolicy] = useState<ResourceRoutingPolicy | null>(() =>
     readResourcePolicy(keyData.metadata),
+  );
+  const activeResourcePolicy = useMemo<ResourceRoutingPolicy | null>(
+    () => (selfService ? resourcePolicy ?? { mode: "auto" } : resourcePolicy),
+    [selfService, resourcePolicy],
   );
   const [resourceRoutingValid, setResourceRoutingValid] = useState(true);
   const originalResourcePolicy = JSON.stringify(readResourcePolicy(keyData.metadata));
@@ -159,7 +165,8 @@ export function KeyEditView({
   const allowedRoutesValue = form.watch("allowed_routes");
   const selectedModels = (form.watch("models") as string[] | undefined) ?? [];
   const allowedRoutes = parseAllowedRoutes(allowedRoutesValue);
-  const isModelsDisabled = allowedRoutes.includes("management_routes") || allowedRoutes.includes("info_routes");
+  const isModelsDisabled =
+    !selfService && (allowedRoutes.includes("management_routes") || allowedRoutes.includes("info_routes"));
   const nativeModelsScope = useMemo(
     () => Symbol(),
     [userID, userRole, accessToken, team, keyData.team_id, canViewPrompts],
@@ -172,7 +179,7 @@ export function KeyEditView({
     targetUserId: keyData.user_id ?? null,
     admin: isProxyAdminRole(userRole ?? ""),
   });
-  const usesPoolModels = resourcePolicy !== null || resourceCatalog.data?.routing_enabled === true;
+  const usesPoolModels = activeResourcePolicy !== null || resourceCatalog.data?.routing_enabled === true;
   const modelScopeReady =
     !keyData.user_id ||
     Boolean(
@@ -181,9 +188,12 @@ export function KeyEditView({
   const selectableModels = useMemo(() => {
     if (!modelScopeReady) return [];
     if (!usesPoolModels) return availableModels;
-    const poolModels = resourcePolicyModels(resourcePolicy ?? { mode: "auto" }, resourceCatalog.data?.items ?? []);
+    const poolModels = resourcePolicyModels(
+      activeResourcePolicy ?? { mode: "auto" },
+      resourceCatalog.data?.items ?? [],
+    );
     return poolModels.filter((model) => availableModels.includes(model));
-  }, [modelScopeReady, usesPoolModels, resourcePolicy, resourceCatalog.data, availableModels]);
+  }, [modelScopeReady, usesPoolModels, activeResourcePolicy, resourceCatalog.data, availableModels]);
   const resourceModelsValid = isModelsDisabled || !usesPoolModels || selectableModels.length > 0;
   useEffect(() => {
     if (!usesPoolModels || !modelScopeReady) return;
@@ -230,12 +240,12 @@ export function KeyEditView({
       }
     };
 
-    if (canViewPrompts) fetchPrompts();
+    if (!selfService && canViewPrompts) fetchPrompts();
     fetchModels();
     return () => {
       current = false;
     };
-  }, [userID, userRole, accessToken, team, keyData.team_id, canViewPrompts, nativeModelsScope]);
+  }, [userID, userRole, accessToken, team, keyData.team_id, canViewPrompts, nativeModelsScope, selfService]);
 
   // Sync disabled callbacks with form when component mounts
   useEffect(() => {
@@ -260,7 +270,7 @@ export function KeyEditView({
   // Fetch tags for selector
   useEffect(() => {
     const fetchTags = async () => {
-      if (!accessToken) return;
+      if (!accessToken || selfService) return;
       try {
         const response = await tagListCall(accessToken);
         setTagsList(response);
@@ -269,7 +279,7 @@ export function KeyEditView({
       }
     };
     fetchTags();
-  }, [accessToken]);
+  }, [accessToken, selfService]);
 
   const handleSubmit = async (values: any) => {
     try {
@@ -278,7 +288,18 @@ export function KeyEditView({
         return;
       }
       setIsKeySaving(true);
-      const resourcePolicyChanged = JSON.stringify(resourcePolicy) !== originalResourcePolicy;
+      const resourcePolicyChanged = JSON.stringify(activeResourcePolicy) !== originalResourcePolicy;
+      if (selfService) {
+        const dirtyFields = [
+          ...Object.keys(form.formState.dirtyFields),
+          ...(resourcePolicyChanged ? ["metadata"] : []),
+        ];
+        await onSubmit(
+          selfServiceKeyUpdate({ ...values, metadata: withResourcePolicy({}, activeResourcePolicy) }, dirtyFields),
+          dirtyFields,
+        );
+        return;
+      }
       if (resourcePolicy !== null || resourcePolicyChanged)
         values.metadata = JSON.stringify(withResourcePolicy(values.metadata, resourcePolicy));
 
@@ -423,6 +444,77 @@ export function KeyEditView({
     ? teams?.filter((t) => t.organization_id === selectedOrganizationId)
     : teams;
 
+  if (selfService) {
+    return (
+      <form onSubmit={form.handleSubmit((values) => handleSubmit(values))}>
+        <FieldGroup>
+          <KeyResourceRouting
+            accessToken={accessToken}
+            targetUserId={keyData.user_id ?? null}
+            allowLegacy={false}
+            value={activeResourcePolicy}
+            onChange={setResourcePolicy}
+            onValidityChange={setResourceRoutingValid}
+          />
+          <FormField control={form.control} name="key_alias" label="Key Alias">
+            {(field) => <Input {...field} value={field.value ?? ""} />}
+          </FormField>
+          <FormField
+            control={form.control}
+            name="models"
+            label="Models"
+            description={resourceModelHelp(
+              true,
+              modelScopeReady,
+              Boolean(resourceCatalog.error || nativeModelsError),
+              selectableModels.length,
+            )}
+          >
+            {({ value, onChange, id }) => (
+              <MultiSelect
+                id={id}
+                options={modelOptions}
+                value={value ?? []}
+                onValueChange={onChange}
+                disabled={!modelScopeReady}
+                placeholder="Select models"
+              />
+            )}
+          </FormField>
+          {selfServiceKeyFields.map(({ name, label, step }) => (
+            <FormField key={name} control={form.control} name={name} label={label}>
+              {({ value, ref: _ref, ...field }) => (
+                <NumericalInput {...field} value={value ?? ""} min={0} step={step} />
+              )}
+            </FormField>
+          ))}
+          <FormField control={form.control} name="budget_duration" label="Reset Budget">
+            {({ value, onChange, id }) => <BudgetDurationDropdown id={id} value={value} onChange={onChange} />}
+          </FormField>
+          <FormField
+            control={form.control}
+            name="duration"
+            label="Expires after"
+            description="For example, 30d. Leave empty to keep the current expiry."
+          >
+            {(field) => <Input {...field} value={field.value ?? ""} placeholder="30d" />}
+          </FormField>
+        </FieldGroup>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={isKeySaving}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={isKeySaving || !resourceRoutingValid || !modelScopeReady || !resourceModelsValid}
+          >
+            Save Changes
+          </Button>
+        </div>
+      </form>
+    );
+  }
+
   return (
     <TooltipProvider>
       <form
@@ -489,6 +581,7 @@ export function KeyEditView({
             <FieldLabel htmlFor={keyTypeFieldId}>Key Type</FieldLabel>
             <KeyTypeSelect
               id={keyTypeFieldId}
+              admin={isProxyAdminRole(userRole ?? "")}
               value={keyTypeFromRoutes(allowedRoutes)}
               onChange={(value) => {
                 switch (value) {

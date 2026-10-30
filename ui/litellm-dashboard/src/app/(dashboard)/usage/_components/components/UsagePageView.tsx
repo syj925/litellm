@@ -22,7 +22,8 @@ import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import useIsOrgAdmin from "@/app/(dashboard)/hooks/useIsOrgAdmin";
 import { useCurrentUser } from "@/app/(dashboard)/hooks/users/useCurrentUser";
 import { hasCapability } from "@/utils/capabilities";
-import { all_admin_roles, internalUserRoles } from "@/utils/roles";
+import { internalUserRoles } from "@/utils/roles";
+import { isProxyDashboardRole } from "@/utils/dashboardAccess";
 import { ActivityMetrics, processActivityData } from "@/components/activity_metrics";
 import CloudZeroExportModal from "@/components/cloudzero_export_modal";
 import UserDropdown from "@/components/common_components/UserDropdown";
@@ -91,7 +92,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
   const { data: customers } = useCustomers();
   const { data: agentsResponse } = useAgents();
   const { data: currentUser } = useCurrentUser();
-  const isAdmin = all_admin_roles.includes(userRole || "");
+  const isAdmin = isProxyDashboardRole(userRole || "");
   const canViewTagUsage = isAdmin || internalUserRoles.includes(userRole || "");
   const isOrgAdmin = useIsOrgAdmin();
   const canViewOrganizationUsage = hasCapability(userRole, "viewOrganizationUsage", isOrgAdmin);
@@ -313,6 +314,34 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
             .then((response) => keyDetailFromResponse(response, apiKey, teams)),
     [dailyActivityRequest, teams],
   );
+
+  if (!isAdmin) {
+    return (
+      <section aria-label="Your usage" className="relative w-full px-4 pt-3 pb-8 sm:px-6">
+        <header className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+          <h1 className="text-lg font-semibold">Your usage</h1>
+          <AdvancedDatePicker value={dateValue} onValueChange={handleDateChange} />
+        </header>
+        {aggregatedFailed && (
+          <Alert variant="error" className="mb-3">
+            <AlertDescription>Usage could not be loaded. Reload to try again.</AlertDescription>
+          </Alert>
+        )}
+        <UsageOverview
+          results={sortedDailyResults}
+          totals={totals}
+          loading={loading}
+          requestCountsPending={requestCountsPending}
+          budget={null}
+          showCosts={false}
+          topKeys={null}
+          gatewayByEndpoint={null}
+          topAgents={null}
+          providerBreakdown={null}
+        />
+      </section>
+    );
+  }
 
   return (
     <div className="relative w-full px-4 pt-3 pb-8 sm:px-6">

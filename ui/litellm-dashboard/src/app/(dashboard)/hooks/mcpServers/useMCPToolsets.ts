@@ -6,11 +6,11 @@ import useAuthorized from "../useAuthorized";
 
 const mcpToolsetKeys = createQueryKeys("mcpToolsets");
 
-export const useMCPToolsets = () => {
+export const useMCPToolsets = (enabled = true) => {
   const { accessToken } = useAuthorized();
   return useQuery<MCPToolset[]>({
     queryKey: mcpToolsetKeys.list(),
     queryFn: async () => await fetchMCPToolsets(accessToken!),
-    enabled: !!accessToken,
+    enabled: !!accessToken && enabled,
   });
 };

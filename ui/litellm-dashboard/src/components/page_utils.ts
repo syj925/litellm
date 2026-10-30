@@ -2,24 +2,32 @@
  * Utility functions for working with navigation pages
  */
 
-import { labelText, menuGroups } from "./leftnav";
+import { labelText, menuGroups, routeOf, type MenuItem } from "./leftnav";
 import { pageDescriptions, PageMetadata } from "./page_metadata";
-import { internalUserRoles } from "@/utils/roles";
+import { canAccessDashboardRoute } from "@/utils/dashboardAccess";
 
 /**
  * Check if a page is accessible to internal users
- * A page is accessible if:
- * 1. It has no role restrictions, OR
- * 2. Its roles include at least one internal user role
+ * Include delegated team and organization pages that settings may enable.
  */
-const isPageAccessibleToInternalUsers = (pageRoles?: string[]): boolean => {
-  if (!pageRoles || pageRoles.length === 0) {
-    return true; // No role restrictions
-  }
-
-  // Check if any of the page's roles match internal user roles
-  return pageRoles.some((role) => internalUserRoles.includes(role));
+const delegatedUserContext = {
+  userRole: "Internal User",
+  isViewOnly: false,
+  isTeamAdmin: true,
+  isOrgAdmin: true,
+  enableProjectsUI: true,
+  allowAgentsForTeamAdmins: true,
+  allowVectorStoresForTeamAdmins: true,
 };
+const isPageAccessibleToInternalUsers = (route: string): boolean =>
+  canAccessDashboardRoute(route, delegatedUserContext);
+
+const metadataFor = (item: MenuItem, group: string): PageMetadata => ({
+  page: item.page,
+  label: labelText(item),
+  group,
+  description: pageDescriptions[item.page] || "No description available",
+});
 
 /**
  * Get all available pages from the navigation menu configuration
@@ -36,19 +44,8 @@ export const getAvailablePages = (): PageMetadata[] => {
     group.items.forEach((item) => {
       // Add top-level items (skip parent containers like 'tools', 'experimental', 'settings')
       // Also skip items that internal users cannot access
-      if (
-        item.page &&
-        item.page !== "tools" &&
-        item.page !== "experimental" &&
-        item.page !== "settings" &&
-        isPageAccessibleToInternalUsers(item.roles)
-      ) {
-        pages.push({
-          page: item.page,
-          label: labelText(item),
-          group: group.groupLabel,
-          description: pageDescriptions[item.page] || "No description available",
-        });
+      if (!item.children && isPageAccessibleToInternalUsers(routeOf(item))) {
+        pages.push(metadataFor(item, group.groupLabel));
       }
 
       // Add children items (also skip those internal users cannot access)
@@ -56,13 +53,8 @@ export const getAvailablePages = (): PageMetadata[] => {
         const parentLabel = labelText(item);
         item.children.forEach((child) => {
           // Include if internal users can access
-          if (isPageAccessibleToInternalUsers(child.roles)) {
-            pages.push({
-              page: child.page,
-              label: labelText(child),
-              group: `${group.groupLabel} > ${parentLabel}`,
-              description: pageDescriptions[child.page] || "No description available",
-            });
+          if (isPageAccessibleToInternalUsers(routeOf(child))) {
+            pages.push(metadataFor(child, `${group.groupLabel} > ${parentLabel}`));
           }
         });
       }

@@ -1,4 +1,8 @@
 import { useHealthReadinessDetails } from "@/app/(dashboard)/hooks/healthReadiness/useHealthReadinessDetails";
+import { getCookie } from "@/utils/cookieUtils";
+import { decodeToken } from "@/utils/jwtUtils";
+import { isViewOnlySessionRole } from "@/utils/roles";
+import { canUseAdminControlPlane, isProxyDashboardRole } from "@/utils/dashboardAccess";
 import { useDisableBouncingIcon } from "@/app/(dashboard)/hooks/useDisableBouncingIcon";
 import { useDisableShowPrompts } from "@/app/(dashboard)/hooks/useDisableShowPrompts";
 import { useWorker } from "@/hooks/useWorker";
@@ -38,12 +42,15 @@ const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const baseUrl = getProxyBaseUrl();
   const { logoUrl } = useTheme();
-  const { data: healthData } = useHealthReadinessDetails(accessToken);
+  const claims = decodeToken(typeof document === "undefined" ? null : getCookie("token"));
+  const userRole = typeof claims?.user_role === "string" ? claims.user_role : "";
+  const adminControls = canUseAdminControlPlane({ userRole, isViewOnly: isViewOnlySessionRole(userRole) });
+  const { data: healthData } = useHealthReadinessDetails(isProxyDashboardRole(userRole) ? accessToken : null);
   const version = healthData?.litellm_version;
   const disableBouncingIcon = useDisableBouncingIcon();
   const hideCommunityLinks = useDisableShowPrompts();
   const { isControlPlane, selectedWorker } = useWorker();
-  const showWorkerSwitch = isControlPlane && selectedWorker !== null;
+  const showWorkerSwitch = adminControls && isControlPlane && selectedWorker !== null;
 
   const imageUrl = logoUrl || `${baseUrl}/get_image`;
   const darkImageUrl = logoUrl || `${baseUrl}/get_image?theme=dark`;

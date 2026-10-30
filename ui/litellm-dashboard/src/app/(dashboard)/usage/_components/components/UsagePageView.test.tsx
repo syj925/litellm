@@ -18,7 +18,8 @@ import UsagePage from "./UsagePageView";
 
 // The Overview tab. The Key Activity tab stays mounted and carries its own spend-derived totals,
 // so assertions about the overview's request tiles are scoped here rather than to the whole page.
-const overview = () => within(screen.getByRole("tabpanel", { name: "Overview" }));
+const overview = () =>
+  within(screen.queryByRole("tabpanel", { name: "Overview" }) ?? screen.getByRole("region", { name: "Your usage" }));
 
 // The Total Requests stat cell: its label, the count, and the "N ok / N failed" line beneath it.
 const totalRequestsCell = (): HTMLElement => {
@@ -746,7 +747,11 @@ describe("UsagePage", () => {
     expect(screen.getByTestId("entity-usage")).toHaveAttribute("data-entity-list", "[]");
   });
 
-  it("should show tag usage selector option for internal users", async () => {
+  it("keeps internal users on personal activity with a link to actual charges", async () => {
+    mockUserDailyActivityAggregatedCall.mockResolvedValue({
+      ...mockSpendData,
+      metadata: { ...mockSpendData.metadata, total_spend: null },
+    });
     mockUseAuthorized.mockReturnValue({
       isLoading: false,
       isAuthorized: true,
@@ -766,7 +771,14 @@ describe("UsagePage", () => {
       expect(mockUserDailyActivityAggregatedCall).toHaveBeenCalled();
     });
 
-    expect(screen.getByRole("option", { name: "Tag Usage" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Tag Usage" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View Billing" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/billing"),
+    );
+    expect(screen.queryByRole("radio", { name: "Spend" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Avg cost / request")).not.toBeInTheDocument();
+    expect(screen.queryByText("Spend By Provider")).not.toBeInTheDocument();
   });
 
   it("should show organization usage banner and view for admins", async () => {
@@ -793,7 +805,7 @@ describe("UsagePage", () => {
   // leaving the user on a blank trigger over a blank panel with nothing to
   // click. An internal user is used because that is the session role an org
   // admin actually carries.
-  it("should leave the organization view when org-admin membership is revoked mid-session", async () => {
+  it("keeps delegated organization administrators on personal activity before and after membership revocation", async () => {
     const mockUseIsOrgAdmin = vi.mocked(useIsOrgAdmin);
     mockUseIsOrgAdmin.mockReturnValue(true);
     mockUseAuthorized.mockReturnValue({
@@ -811,23 +823,21 @@ describe("UsagePage", () => {
 
     const { rerender } = renderWithProviders(<UsagePage {...defaultProps} organizations={mockOrganizations} />);
 
-    const usageSelect = screen.getByTestId("usage-view-select");
-    act(() => {
-      fireEvent.change(usageSelect, { target: { value: "organization" } });
-    });
     await waitFor(() => {
-      expect(screen.getAllByText("Entity Usage").length).toBeGreaterThan(0);
+      expect(mockUserDailyActivityAggregatedCall).toHaveBeenCalledWith(
+        expect.objectContaining({ entityIds: ["user-123"] }),
+      );
     });
-    expect((usageSelect as HTMLSelectElement).value).toBe("organization");
+    expect(screen.queryByTestId("usage-view-select")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your usage" })).toBeInTheDocument();
 
     mockUseIsOrgAdmin.mockReturnValue(false);
     act(() => {
       rerender(<UsagePage {...defaultProps} organizations={mockOrganizations} />);
     });
 
-    await waitFor(() => {
-      expect((screen.getByTestId("usage-view-select") as HTMLSelectElement).value).toBe("global");
-    });
+    expect(screen.queryByTestId("usage-view-select")).not.toBeInTheDocument();
+    expect(screen.queryByText("Entity Usage")).not.toBeInTheDocument();
   });
 
   it("should show customer usage view for admins", async () => {
@@ -900,15 +910,8 @@ describe("UsagePage", () => {
       expect(mockUserDailyActivityAggregatedCall).toHaveBeenCalled();
     });
 
-    const usageSelect = screen.getByTestId("usage-view-select");
-    act(() => {
-      fireEvent.change(usageSelect, { target: { value: "team" } });
-    });
-    expect(screen.getAllByText("Entity Usage").length).toBeGreaterThan(0);
-
-    act(() => {
-      fireEvent.change(usageSelect, { target: { value: usageView } });
-    });
+    expect(screen.queryByTestId("usage-view-select")).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: usageView })).not.toBeInTheDocument();
     expect(screen.queryByText("Entity Usage")).not.toBeInTheDocument();
   });
 

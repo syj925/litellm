@@ -46,6 +46,29 @@ describe("visibleMenuGroups", () => {
     expect(flattenNavItems(visible).map(({ route }) => route)).toEqual(["api-keys"]);
   });
 
+  it("offers customer navigation without leaking gateway administration into search", () => {
+    const routes = flattenNavItems(visibleMenuGroups(menuGroups, context)).map(({ route }) => route);
+    expect(routes).toEqual(expect.arrayContaining(["api-keys", "model-catalog", "usage", "logs", "wallet", "billing"]));
+    for (const route of [
+      "models-and-endpoints",
+      "channels",
+      "resource-pools",
+      "wallet-admin",
+      "transform-request",
+      "agents",
+      "lens",
+    ]) {
+      expect(routes).not.toContain(route);
+    }
+  });
+
+  it("honors the legacy model page setting for the safe customer catalog", () => {
+    const routes = flattenNavItems(
+      visibleMenuGroups(menuGroups, { ...context, enabledPagesInternalUsers: ["models"] }),
+    ).map(({ route }) => route);
+    expect(routes).toEqual(["model-catalog"]);
+  });
+
   it("hides Projects when its UI setting is disabled", () => {
     const projectAdminContext = { ...context, userRole: "Admin", isTeamAdmin: true };
     const visibleWithFlag = visibleMenuGroups(menuGroups, { ...projectAdminContext, enableProjectsUI: true });

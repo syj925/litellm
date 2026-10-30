@@ -261,6 +261,29 @@ describe("KeyInfoView", () => {
     renderWithProviders(<KeyInfoView keyData={MOCK_KEY_DATA} onClose={() => {}} keyId="test-key-id" teams={[]} />);
 
     expect(screen.queryByRole("tab", { name: "Auto-router usage" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Savings" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("key-lifetime-spend")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View actual charges in Billing" })).toBeInTheDocument();
+  });
+
+  it("shows customers their caps and resource access without administrative settings", async () => {
+    vi.mocked(useAuthorized).mockReturnValue({
+      ...baseUseAuthorizedMock,
+      userRole: "Internal User",
+      userId: MOCK_KEY_DATA.user_id,
+    });
+    renderWithProviders(<KeyInfoView keyData={MOCK_KEY_DATA} onClose={vi.fn()} keyId="test-key-id" teams={[]} />);
+    expect(screen.queryByRole("tab", { name: "Savings" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Object Permissions")).not.toBeInTheDocument();
+    expect(screen.queryByText("Logging Settings")).not.toBeInTheDocument();
+    expect(useMCPServers).toHaveBeenLastCalledWith(undefined, false);
+    expect(useMCPToolsets).toHaveBeenLastCalledWith(false);
+    await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    expect(screen.getByText("Max Parallel Requests")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit Settings" })).toBeInTheDocument();
+    expect(screen.queryByText("Metadata")).not.toBeInTheDocument();
+    expect(screen.queryByText("Allowed Routes")).not.toBeInTheDocument();
+    expect(screen.queryByText("Router Settings")).not.toBeInTheDocument();
   });
 
   describe("last updated", () => {

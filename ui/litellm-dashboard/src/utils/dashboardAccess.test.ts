@@ -1,0 +1,95 @@
+import { describe, expect, it } from "vitest";
+import { canAccessDashboardRoute, canUseAdminControlPlane, type DashboardAccessContext } from "./dashboardAccess";
+
+const customer: DashboardAccessContext = {
+  userRole: "Internal User",
+  isViewOnly: false,
+  isTeamAdmin: false,
+  isOrgAdmin: false,
+};
+
+describe("dashboard role boundaries", () => {
+  it.each([
+    "",
+    "home",
+    "api-keys",
+    "model-catalog",
+    "playground",
+    "usage",
+    "logs",
+    "wallet",
+    "billing",
+    "api-reference",
+    "change-password",
+  ])("allows a customer's personal %s page", (page) => expect(canAccessDashboardRoute(page, customer)).toBe(true));
+  it.each([
+    "models-and-endpoints",
+    "moyai",
+    "channels",
+    "resource-pools",
+    "wallet-admin",
+    "agents",
+    "workflows",
+    "memory",
+    "mcp-servers",
+    "guardrails",
+    "policies",
+    "search-tools",
+    "vector-stores",
+    "cost-optimization",
+    "lens",
+    "teams",
+    "users",
+    "organizations",
+    "budgets",
+    "access-groups",
+    "transform-request",
+    "router-settings",
+    "logging-and-alerts",
+    "admin-panel",
+    "ui-theme",
+    "caching",
+    "model-hub-table",
+    "future-admin-page",
+  ])("does not grant a customer the %s page through UI configuration", (page) => {
+    expect(canAccessDashboardRoute(page, { ...customer, enabledPagesInternalUsers: [page] })).toBe(false);
+  });
+  it("keeps configured page limits and the existing setting names", () => {
+    expect(canAccessDashboardRoute("usage", { ...customer, enabledPagesInternalUsers: ["new_usage"] })).toBe(true);
+    expect(canAccessDashboardRoute("model-catalog", { ...customer, enabledPagesInternalUsers: ["models"] })).toBe(true);
+    expect(canAccessDashboardRoute("logs", { ...customer, enabledPagesInternalUsers: ["new_usage"] })).toBe(false);
+    expect(canAccessDashboardRoute("change-password", { ...customer, enabledPagesInternalUsers: [] })).toBe(true);
+  });
+  it("preserves delegated team pages without granting gateway configuration", () => {
+    const teamAdmin = { ...customer, isTeamAdmin: true, enableProjectsUI: true };
+    expect(canAccessDashboardRoute("teams", teamAdmin)).toBe(true);
+    expect(canAccessDashboardRoute("projects", teamAdmin)).toBe(true);
+    expect(canAccessDashboardRoute("agents", teamAdmin)).toBe(false);
+    expect(canAccessDashboardRoute("agents", { ...teamAdmin, allowAgentsForTeamAdmins: true })).toBe(true);
+    expect(canAccessDashboardRoute("resource-pools", teamAdmin)).toBe(false);
+  });
+  it("keeps organization management scoped away from proxy management", () => {
+    const organizationAdmin = { ...customer, userRole: "Org Admin", isOrgAdmin: true };
+    expect(canAccessDashboardRoute("organizations", organizationAdmin)).toBe(true);
+    expect(canAccessDashboardRoute("users", organizationAdmin)).toBe(true);
+    expect(canAccessDashboardRoute("admin-panel", organizationAdmin)).toBe(false);
+    expect(canAccessDashboardRoute("wallet-admin", organizationAdmin)).toBe(false);
+  });
+  it("preserves proxy management and viewer cost restrictions", () => {
+    expect(canAccessDashboardRoute("models-and-endpoints", { ...customer, userRole: "Admin" })).toBe(true);
+    expect(canAccessDashboardRoute("playground", { ...customer, userRole: "Admin", isViewOnly: true })).toBe(false);
+    expect(canUseAdminControlPlane(customer)).toBe(false);
+    expect(canUseAdminControlPlane({ userRole: "Admin", isViewOnly: false })).toBe(true);
+    expect(canUseAdminControlPlane({ userRole: "proxy_admin_viewer", isViewOnly: false })).toBe(false);
+    expect(canAccessDashboardRoute("moyai", { ...customer, userRole: "Admin", isViewOnly: true })).toBe(false);
+  });
+  it.each(["channels", "resource-pools", "wallet-admin"])("does not expose %s to a proxy viewer", (page) => {
+    expect(canAccessDashboardRoute(page, { ...customer, userRole: "proxy_admin_viewer" })).toBe(false);
+    expect(canAccessDashboardRoute(page, { ...customer, userRole: "Admin", isViewOnly: true })).toBe(false);
+    expect(canAccessDashboardRoute(page, { ...customer, userRole: "Admin" })).toBe(true);
+  });
+  it("fails closed for unresolved roles", () => {
+    expect(canAccessDashboardRoute("home", { ...customer, userRole: "" })).toBe(false);
+    expect(canAccessDashboardRoute("channels", { ...customer, userRole: "Unknown Role" })).toBe(false);
+  });
+});

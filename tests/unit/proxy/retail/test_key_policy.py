@@ -2,8 +2,11 @@ from typing import Final
 
 import pytest
 from fastapi import HTTPException
+from pydantic import JsonValue
 
-from litellm.proxy._types import LiteLLM_VerificationToken, RegenerateKeyRequest, UpdateKeyRequest
+from litellm.proxy._types import (
+    LiteLLM_VerificationToken, LitellmUserRoles, RegenerateKeyRequest, UpdateKeyRequest, UserAPIKeyAuth,
+)
 from litellm.proxy.management_endpoints.key_management_endpoints import prepare_key_update_data
 from litellm.proxy.retail.key_policy import resource_policy_metadata, validate_native_key_resource_metadata
 
@@ -63,3 +66,33 @@ async def test_native_update_and_regenerate_preparation_cannot_remove_pool_polic
     with pytest.raises(HTTPException, match="retail portal is disabled") as error:
         await prepare_key_update_data(request, existing)
     assert error.value.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("routes", ([], ["info_routes"], ["/v1/messages"]))
+async def test_customer_key_update_keeps_admin_metadata_and_never_widens_restricted_routes(
+    routes: list[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from litellm.proxy.retail import key_policy
+
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    retained: Final = {"guardrails": ["required"], "retail_resource_policy": {"mode": "auto"}}
+
+    async def validate_policy(
+        metadata: object, user_id: str | None, existing_metadata: object = None,
+        *, provided: bool = True, owner_changed: bool = False,
+    ) -> dict[str, JsonValue]:
+        assert metadata == retained
+        assert user_id == "owner"
+        return retained
+
+    monkeypatch.setattr(key_policy, "validate_native_key_resource_metadata", validate_policy)
+    existing: Final = LiteLLM_VerificationToken(
+        token="owned-key", user_id="owner", allowed_routes=routes, metadata=retained,
+    )
+    payload: Final = await prepare_key_update_data(
+        UpdateKeyRequest(key="owned-key", metadata={"retail_resource_policy": {"mode": "auto"}}), existing,
+        user_api_key_dict=UserAPIKeyAuth(user_id="owner", user_role=LitellmUserRoles.INTERNAL_USER),
+    )
+    assert payload["metadata"] == retained
+    assert payload.get("allowed_routes", routes) == (routes or ["llm_api_routes"])

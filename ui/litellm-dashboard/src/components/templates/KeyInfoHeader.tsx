@@ -66,9 +66,20 @@ interface KeyInfoHeaderProps {
   regenerateDisabled?: boolean;
   regenerateTooltip?: string;
   regenerateLabel?: string;
+  showManagementLinks?: boolean;
 }
 
-function UserField({ userAlias, userEmail, userId }: { userAlias?: string | null; userEmail: string; userId: string }) {
+function UserField({
+  userAlias,
+  userEmail,
+  userId,
+  showManagementLinks,
+}: {
+  userAlias?: string | null;
+  userEmail: string;
+  userId: string;
+  showManagementLinks: boolean;
+}) {
   const labelEl = (
     <div className="flex items-center gap-1">
       <span className="text-muted-foreground">
@@ -147,7 +158,11 @@ function UserField({ userAlias, userEmail, userId }: { userAlias?: string | null
           <HoverCardTrigger
             render={
               <span className="block max-w-[200px] cursor-default truncate font-semibold">
-                {userId ? <EntityLink href={userDetailHref(userId)}>{displayValue}</EntityLink> : displayValue}
+                {userId && showManagementLinks ? (
+                  <EntityLink href={userDetailHref(userId)}>{displayValue}</EntityLink>
+                ) : (
+                  displayValue
+                )}
               </span>
             }
           />
@@ -174,6 +189,7 @@ export function KeyInfoHeader({
   regenerateDisabled = false,
   regenerateTooltip,
   regenerateLabel = "Regenerate Key",
+  showManagementLinks = true,
 }: KeyInfoHeaderProps) {
   const regenerateButton = (
     <span>
@@ -268,7 +284,12 @@ export function KeyInfoHeader({
 
       <div className="flex items-stretch gap-10" style={{ marginBottom: 40 }}>
         <div className="flex min-w-0 flex-col gap-4">
-          <UserField userAlias={data.userAlias} userEmail={data.userEmail} userId={data.userId} />
+          <UserField
+            userAlias={data.userAlias}
+            userEmail={data.userEmail}
+            userId={data.userId}
+            showManagementLinks={showManagementLinks}
+          />
           <LabeledField label="Expires" value={data.expires} icon={<Timer className="size-3.5" />} />
         </div>
 
@@ -280,7 +301,7 @@ export function KeyInfoHeader({
             label="Created By"
             value={data.createdBy}
             icon={<ShieldCheck className="size-3.5" />}
-            href={data.createdById ? userDetailHref(data.createdById) : undefined}
+            href={showManagementLinks && data.createdById ? userDetailHref(data.createdById) : undefined}
             truncate
             copyable
             defaultUserIdCheck
@@ -301,14 +322,14 @@ export function KeyInfoHeader({
             label="Team"
             value={data.teamAlias || data.teamId}
             icon={<Users className="size-3.5" />}
-            href={data.teamId ? teamDetailHref(data.teamId) : undefined}
+            href={showManagementLinks && data.teamId ? teamDetailHref(data.teamId) : undefined}
             truncate
           />
           <LabeledField
             label="Organization"
             value={data.orgAlias || data.orgId}
             icon={<Building2 className="size-3.5" />}
-            href={data.orgId ? orgDetailHref(data.orgId) : undefined}
+            href={showManagementLinks && data.orgId ? orgDetailHref(data.orgId) : undefined}
             truncate
           />
         </div>

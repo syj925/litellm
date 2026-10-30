@@ -1,4 +1,5 @@
 import os
+from contextlib import nullcontext
 from datetime import datetime
 from typing import Final
 from unittest.mock import MagicMock, patch
@@ -17,6 +18,81 @@ from litellm.proxy.auth.auth_checks import _is_api_route_allowed
 from litellm.proxy.auth.auth_checks_organization import user_is_org_admin
 from litellm.proxy.auth.route_checks import RouteChecks
 from litellm.proxy.pass_through_endpoints.llm_passthrough_endpoints import router as llm_passthrough_router
+
+
+@pytest.mark.parametrize("route", ("/key/generate", "/key/list", "/retail/wallet", "/user/info"))
+@pytest.mark.parametrize("allowed_routes", ([], ["management_routes"], ["*"], ["info_routes"]))
+def test_retail_legacy_api_keys_cannot_act_as_dashboard_sessions(
+    route: str, allowed_routes: list[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from litellm.constants import UI_SESSION_TOKEN_TEAM_ID
+
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    api_key: Final = UserAPIKeyAuth(
+        user_role=LitellmUserRoles.INTERNAL_USER, user_id="owner", allowed_routes=allowed_routes,
+        key_alias="litellm-dashboard", metadata={"is_session_token": True},
+    )
+    with pytest.raises(HTTPException) as failure:
+        RouteChecks.is_virtual_key_allowed_to_call_route(route, api_key)
+    assert failure.value.status_code == 403
+    session: Final = api_key.model_copy(update={"team_id": UI_SESSION_TOKEN_TEAM_ID, "allowed_routes": []})
+    assert RouteChecks.is_virtual_key_allowed_to_call_route(route, session) is True
+
+
+def test_customer_inference_keeps_the_administrators_further_route_restrictions(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    restricted: Final = UserAPIKeyAuth(
+        user_role=LitellmUserRoles.INTERNAL_USER, user_id="owner", allowed_routes=["/v1/messages"],
+    )
+    assert RouteChecks.is_virtual_key_allowed_to_call_route("/v1/messages", restricted) is True
+    with pytest.raises(HTTPException):
+        RouteChecks.is_virtual_key_allowed_to_call_route("/chat/completions", restricted)
+
+
+@pytest.mark.parametrize("route", ("/chat/completions", "/v1/messages", "/v1/models"))
+def test_retail_legacy_api_keys_preserve_inference_and_model_discovery(route: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    api_key: Final = UserAPIKeyAuth(user_role=LitellmUserRoles.INTERNAL_USER, user_id="owner", allowed_routes=[])
+    assert RouteChecks.is_virtual_key_allowed_to_call_route(route, api_key) is True
+
+
+@pytest.mark.parametrize(
+    "route",
+    (
+        "/health", "/health/services", "/health/test_connection", "/utils/transform_request",
+        "/search_tools/list", "/guardrails/list", "/tag/daily/activity", "/tag/daily/activity/export",
+    ),
+)
+def test_retail_ui_sessions_cannot_probe_suppliers(route: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    from litellm.constants import UI_SESSION_TOKEN_TEAM_ID
+
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    session: Final = UserAPIKeyAuth(
+        user_role=LitellmUserRoles.INTERNAL_USER, user_id="owner", team_id=UI_SESSION_TOKEN_TEAM_ID,
+    )
+    with pytest.raises(HTTPException) as failure:
+        RouteChecks.is_virtual_key_allowed_to_call_route(route, session)
+    assert failure.value.status_code == 403
+
+
+@pytest.mark.parametrize(
+    ("role", "route"),
+    (
+        (LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY, "/v1/messages"),
+        (LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY, "/health"),
+        (LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY, "/team/update"),
+        (LitellmUserRoles.INTERNAL_USER_VIEW_ONLY, "/team/update"),
+        (LitellmUserRoles.INTERNAL_USER_VIEW_ONLY, "/model/new"),
+    ),
+)
+def test_readonly_role_gate_cannot_fall_through_to_inference_or_team_write_routes(
+    role: LitellmUserRoles, route: str,
+) -> None:
+    request: Final = Request({"type": "http", "method": "POST", "path": route, "headers": []})
+    token: Final = UserAPIKeyAuth(user_id="viewer", user_role=role)
+    with pytest.raises(HTTPException) as failure:
+        RouteChecks.non_proxy_admin_allowed_routes_check(None, role, route, request, token, {})
+    assert failure.value.status_code == 403
 
 DAILY_ACTIVITY_ROUTE_PAIRS: Final[tuple[tuple[str, str], ...]] = (
     ("/user/daily/activity", "/user/daily/activity/aggregated"),
@@ -3911,14 +3987,19 @@ def test_agent_registry_route_gate_open_to_non_admin_roles(user_role, method, ro
     request.method = method
     request.query_params = {}
 
-    RouteChecks.non_proxy_admin_allowed_routes_check(
-        user_obj=LiteLLM_UserTable(user_id="test_user", user_role=user_role),
-        _user_role=user_role,
-        route=route,
-        request=request,
-        valid_token=valid_token,
-        request_data={},
+    expectation: Final = (
+        pytest.raises(HTTPException) if user_role == LitellmUserRoles.INTERNAL_USER_VIEW_ONLY and method == "POST"
+        else nullcontext()
     )
+    with expectation:
+        RouteChecks.non_proxy_admin_allowed_routes_check(
+            user_obj=LiteLLM_UserTable(user_id="test_user", user_role=user_role),
+            _user_role=user_role,
+            route=route,
+            request=request,
+            valid_token=valid_token,
+            request_data={},
+        )
 
 
 def test_proxy_admin_viewer_user_update_password_param_rejected():

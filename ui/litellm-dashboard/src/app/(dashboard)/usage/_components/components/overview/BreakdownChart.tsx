@@ -46,17 +46,19 @@ export function BreakdownControls({
   state,
   onChange,
   showDimension = true,
+  showCosts = true,
 }: {
   state: BreakdownState;
   onChange: (next: BreakdownState) => void;
   showDimension?: boolean;
+  showCosts?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Segmented
         label="Metric"
         value={state.metric}
-        options={METRIC_OPTIONS}
+        options={showCosts ? METRIC_OPTIONS : METRIC_OPTIONS.filter((option) => option.value !== "spend")}
         onChange={(metric) => onChange({ ...state, metric })}
       />
       {showDimension && (

@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/cva.config";
 import { uiHref } from "@/utils/uiHref";
 import { isProxyAdminRole } from "@/utils/roles";
+import { isProxyDashboardRole } from "@/utils/dashboardAccess";
 import { ChevronsUpDown, Crown, IdCard, KeyRound, LogOut, Mail, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import React from "react";
@@ -97,7 +98,7 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
   } = useAuthorized();
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
-  const { data: healthData } = useHealthReadinessDetails(accessToken);
+  const { data: healthData } = useHealthReadinessDetails(isProxyDashboardRole(role ?? "") ? accessToken : null);
   const version = healthData?.litellm_version;
   const disableShowPrompts = useDisableShowPrompts();
   const disableBlogPosts = useDisableBlogPosts();

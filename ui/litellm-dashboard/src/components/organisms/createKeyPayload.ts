@@ -5,6 +5,7 @@ import type { BudgetWindowEntry } from "../key_team_helpers/BudgetWindowsEditor"
 import type { ModelMaxBudget } from "../key_team_helpers/ModelMaxBudgetEditor";
 import { tagRowsToLimits, type TagRateLimitEntry } from "../key_team_helpers/TagRateLimitEditor";
 import { ResourceRoutingPolicy, withResourcePolicy } from "./resourceRoutingPolicy";
+import { selfServiceKeyValues } from "./keyFormAccess";
 
 export interface KeyLoggingSetting {
   callback_name?: string;
@@ -16,6 +17,7 @@ export interface ExistingKey {
 }
 
 export interface KeyCreateInput {
+  readonly selfService?: boolean;
   readonly formValues: Record<string, unknown>;
   readonly existingKeys: readonly ExistingKey[] | null;
   readonly keyOwner: string;
@@ -175,6 +177,25 @@ const duplicateAlias = (input: KeyCreateInput): { alias: string; teamId: string 
 };
 
 export const buildKeyCreatePayload = (input: KeyCreateInput): KeyPayloadResult => {
+  if (input.selfService) {
+    return buildKeyCreatePayload({
+      ...input,
+      selfService: false,
+      formValues: { ...selfServiceKeyValues(input.formValues), key_type: "llm_api" },
+      keyOwner: "you",
+      selectedAgentId: null,
+      loggingSettings: [],
+      disabledCallbacks: [],
+      autoRotationEnabled: false,
+      modelAliases: {},
+      routerSettings: null,
+      budgetLimits: [],
+      tagRateLimits: [],
+      budgetFallbacks: {},
+      modelMaxBudget: {},
+      resourcePolicy: input.resourcePolicy ?? { mode: "auto" },
+    });
+  }
   const duplicate = duplicateAlias(input);
   if (duplicate) {
     return { kind: "duplicate_alias", ...duplicate };

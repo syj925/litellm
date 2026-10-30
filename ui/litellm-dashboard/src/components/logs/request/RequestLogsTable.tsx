@@ -5,6 +5,8 @@ import { ScrollText } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { useUserEmailLookup } from "@/app/(dashboard)/hooks/users/useUsers";
+import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
+import { isProxyDashboardRole } from "@/utils/dashboardAccess";
 import { DataTable, DataTableFilterDrawer, DataTableToolbar } from "@/components/shared/DataTable";
 
 import type { Team } from "../../key_team_helpers/key_list";
@@ -84,14 +86,18 @@ export function RequestLogsTable({
   toolbarChildren,
 }: RequestLogsTableProps) {
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const { userRole } = useAuthorized();
+  const showCosts = isProxyDashboardRole(userRole);
 
   const userIds = useMemo(() => data.flatMap((log) => (log.user ? [log.user] : [])), [data]);
   const { data: emailByUserId } = useUserEmailLookup(userIds);
 
   const columns = useMemo(() => {
     const resolveUserEmail = (userId: string) => emailByUserId?.[userId];
-    return getRequestLogsTableColumns({ onKeyHashClick, onSessionClick, resolveUserEmail });
-  }, [onKeyHashClick, onSessionClick, emailByUserId]);
+    return getRequestLogsTableColumns({ onKeyHashClick, onSessionClick, resolveUserEmail }).filter(
+      (column) => showCosts || column.id !== "spend",
+    );
+  }, [onKeyHashClick, onSessionClick, emailByUserId, showCosts]);
 
   const isFiltered = columnFilters.length > 0 || searchValue !== "";
 

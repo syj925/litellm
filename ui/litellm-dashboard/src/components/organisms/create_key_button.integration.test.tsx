@@ -269,6 +269,46 @@ describe("CreateKey", () => {
     vi.unstubAllGlobals();
   });
 
+  it("limits ordinary customers to their own AI keys and authorized resource models", async () => {
+    state.authorized = { ...state.authorized, userRole: "Internal User" };
+    const catalog = {
+      routing_enabled: false,
+      items: [{ id: "aws", name: "AWS Claude", enabled: true, models: ["gpt-4"], allowed_models: ["gpt-4"] }],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async (input: RequestInfo | URL) =>
+          ({
+            ok: true,
+            status: 200,
+            json: async () => (String(input).includes("/retail/") ? catalog : OPENAPI_SCHEMA),
+          }) as Response,
+      ),
+    );
+    await openModal();
+    await nameTheKey("my-api-key");
+    expect(screen.queryByText("Key Ownership")).not.toBeInTheDocument();
+    expect(screen.queryByText("Service Account")).not.toBeInTheDocument();
+    expect(screen.queryByText("Optional Settings")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Metadata")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Key limits and expiry" })).toBeInTheDocument();
+    await userEvent.click(await screen.findByLabelText("Key Type"));
+    expect(screen.getByRole("option", { name: /AI APIs/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Management/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Full Access/ })).not.toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.getByRole("button", { name: /^create key$/i })).toBeEnabled());
+    await submit();
+    const payload = await createdPayload();
+    expect(payload).toMatchObject({ key_alias: "my-api-key", key_type: "llm_api", user_id: "test-user-id" });
+    expect(JSON.parse(payload.metadata as string)).toEqual({ retail_resource_policy: { mode: "auto" } });
+    expect(payload).not.toHaveProperty("team_id");
+    expect(payload).not.toHaveProperty("allowed_routes");
+    expect(payload).not.toHaveProperty("config");
+    expect(keyCreateServiceAccountCall).not.toHaveBeenCalled();
+  });
+
   it("does not expose native model choices while resource authorization is loading or has failed", async () => {
     let finish: (response: Response) => void = () => {
       throw new Error("Discovery did not start");
@@ -664,8 +704,7 @@ describe("CreateKey", () => {
     it("hides the disable_global_guardrails switch from a non-admin", async () => {
       state.authorized = { ...state.authorized, userRole: "Internal User" };
       await openModal();
-      await openSection(/Optional Settings/i);
-
+      expect(screen.queryByText("Optional Settings")).not.toBeInTheDocument();
       expect(screen.queryByRole("switch", { name: /Disable Global Guardrails/i })).not.toBeInTheDocument();
     });
 
@@ -793,13 +832,11 @@ describe("CreateKey", () => {
       expect(await screen.findByRole("combobox", { name: "Default Customer Budget" })).toBeInTheDocument();
     });
 
-    it("hides the default customer budget from a non-admin creating a service account", async () => {
+    it("hides service-account creation and its default customer budget from a non-admin", async () => {
       state.authorized = { ...state.authorized, userRole: "Internal User" };
       await openModal();
-      await userEvent.click(screen.getByRole("radio", { name: "Service Account" }));
-      await openSection(/Optional Settings/i);
-
-      await screen.findByLabelText(/Max Budget/);
+      expect(screen.queryByRole("radio", { name: "Service Account" })).not.toBeInTheDocument();
+      expect(screen.getByLabelText(/Max Budget/)).toBeInTheDocument();
       expect(screen.queryByRole("combobox", { name: "Default Customer Budget" })).not.toBeInTheDocument();
     });
   });
@@ -892,7 +929,9 @@ describe("CreateKey", () => {
       state.authorized = { ...state.authorized, userRole: "Internal User" };
       renderCreateKey({ autoOpenCreate: true, prefillData: { owned_by: "another_user", key_alias: "example-key" } });
 
-      expect(await screen.findByRole("radio", { name: "You" })).toBeChecked();
+      expect(await screen.findByLabelText(/Key Name/)).toHaveValue("example-key");
+      expect(screen.queryByText("Key Ownership")).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText("Type email or user ID to search for users")).not.toBeInTheDocument();
     });
 
     it("applies another_user for an admin", async () => {
@@ -943,12 +982,12 @@ describe("CreateKey", () => {
       expect(await screen.findByLabelText("Organization")).not.toHaveAttribute("data-disabled");
     });
 
-    it("is read-only for a non-admin", async () => {
+    it("is hidden for a non-admin", async () => {
       state.authorized = { ...state.authorized, userRole: "Internal User" };
       state.organizations = [{ organization_id: "org-1", organization_alias: "Engineering" }];
       await openModal();
 
-      expect(await screen.findByLabelText("Organization")).toHaveAttribute("data-disabled", "");
+      expect(screen.queryByLabelText("Organization")).not.toBeInTheDocument();
     });
 
     it("routes a chosen organization into organization_id", async () => {

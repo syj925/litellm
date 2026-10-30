@@ -10,6 +10,10 @@ import { Check, ChevronsUpDown, LayoutGrid } from "lucide-react";
 import { usePluginMode } from "@/contexts/PluginModeContext";
 import { useUISettings } from "@/app/(dashboard)/hooks/uiSettings/useUISettings";
 import { uiHref } from "@/utils/uiHref";
+import { getCookie } from "@/utils/cookieUtils";
+import { decodeToken } from "@/utils/jwtUtils";
+import { isViewOnlySessionRole } from "@/utils/roles";
+import { canUseAdminControlPlane } from "@/utils/dashboardAccess";
 import moyaiHead from "../../../public/assets/moyai/moyai-head.svg";
 
 const GATEWAY = "ai-gateway";
@@ -37,6 +41,10 @@ export default function ViewSwitcher() {
   const { mode, setMode, plugins } = usePluginMode();
   const { data: uiSettings } = useUISettings();
   const pathname = usePathname();
+  const claims = decodeToken(typeof document === "undefined" ? null : getCookie("token"));
+  const userRole = typeof claims?.user_role === "string" ? claims.user_role : "";
+  const adminControls = canUseAdminControlPlane({ userRole, isViewOnly: isViewOnlySessionRole(userRole) });
+  const visiblePlugins = adminControls ? plugins : [];
 
   const chatEnabled = Boolean(uiSettings?.values?.enable_chat_ui);
   const moyaiUrl = (uiSettings?.values?.moyai_url as string | undefined) ?? null;
@@ -46,11 +54,15 @@ export default function ViewSwitcher() {
   const isMoyaiRoute = isRoute(normalizedPathname, uiHref(MOYAI));
   const isStandaloneRoute = isChatRoute || isMoyaiRoute;
 
-  const activeLabel = activeLabelFor(isChatRoute, isMoyaiRoute, plugins.find((p) => p.name === mode)?.display_name);
+  const activeLabel = activeLabelFor(
+    isChatRoute,
+    isMoyaiRoute,
+    visiblePlugins.find((p) => p.name === mode)?.display_name,
+  );
 
   const modeEntries = [
     { key: GATEWAY, label: "AI Gateway" },
-    ...plugins.map((p) => ({ key: p.name, label: p.display_name })),
+    ...visiblePlugins.map((p) => ({ key: p.name, label: p.display_name })),
   ];
 
   const selectMode = (key: string) => {
@@ -95,22 +107,26 @@ export default function ViewSwitcher() {
       ),
       onClick: () => selectMode(e.key),
     })),
-    {
-      key: MOYAI,
-      label: (
-        <div className="flex items-center justify-between gap-6 py-0.5">
-          <span className="flex items-center gap-2">
-            <img src={moyaiHead.src} alt="" className="h-4 w-auto" />
-            <span className="flex flex-col">
-              <span className="font-medium">Moyai</span>
-              <span className="text-xs leading-snug text-muted-foreground">Cloud Coding Agent</span>
-            </span>
-          </span>
-          {isMoyaiRoute && <Check className="size-4 text-info" />}
-        </div>
-      ),
-      onClick: () => window.location.assign(moyaiUrl ?? uiHref(MOYAI)),
-    },
+    ...(adminControls
+      ? [
+          {
+            key: MOYAI,
+            label: (
+              <div className="flex items-center justify-between gap-6 py-0.5">
+                <span className="flex items-center gap-2">
+                  <img src={moyaiHead.src} alt="" className="h-4 w-auto" />
+                  <span className="flex flex-col">
+                    <span className="font-medium">Moyai</span>
+                    <span className="text-xs leading-snug text-muted-foreground">Cloud Coding Agent</span>
+                  </span>
+                </span>
+                {isMoyaiRoute && <Check className="size-4 text-info" />}
+              </div>
+            ),
+            onClick: () => window.location.assign(moyaiUrl ?? uiHref(MOYAI)),
+          },
+        ]
+      : []),
     chatItem,
   ];
 

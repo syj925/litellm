@@ -17,12 +17,21 @@ interface Props {
   metadata: unknown;
   models: readonly string[] | null | undefined;
   className?: string;
+  accountScoped?: boolean;
 }
 
-export default function KeyResourceAccess({ accessToken, userId, admin, metadata, models, className }: Props) {
+export default function KeyResourceAccess({
+  accessToken,
+  userId,
+  admin,
+  metadata,
+  models,
+  className,
+  accountScoped = false,
+}: Props) {
   const savedPolicy = readResourcePolicy(metadata);
   const catalog = useKeyResourceCatalog({ accessToken, targetUserId: userId, admin });
-  const policy = savedPolicy ?? (catalog.data?.routing_enabled ? { mode: "auto" as const } : null);
+  const policy = savedPolicy ?? (accountScoped || catalog.data?.routing_enabled ? { mode: "auto" as const } : null);
   if (!policy) return null;
   const modeLabel = { fixed: "Fixed pool", custom: "Custom pools", auto: "Automatic" }[policy.mode];
 

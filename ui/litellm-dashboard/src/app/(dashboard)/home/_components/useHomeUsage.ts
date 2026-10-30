@@ -4,7 +4,7 @@ import { useCurrentUser } from "@/app/(dashboard)/hooks/users/useCurrentUser";
 import { gatewayDailyActivityCall } from "@/components/networking";
 import { toDailyData } from "@/components/UsagePage/dailyActivityApi";
 import type { DailyData } from "@/components/UsagePage/types";
-import { all_admin_roles } from "@/utils/roles";
+import { isProxyDashboardRole } from "@/utils/dashboardAccess";
 import { useAggregatedDailyActivity } from "@/app/(dashboard)/usage/_components/hooks/useAggregatedDailyActivity";
 import { ENTITY_API } from "@/app/(dashboard)/usage/_components/components/EntityUsage/entityFetchFns";
 import type { GatewayActivity } from "@/app/(dashboard)/usage/_components/components/gatewayActivity";
@@ -30,7 +30,7 @@ export interface HomeUsage {
 export function useHomeUsage(): HomeUsage {
   const { accessToken, userRole, userId } = useAuthorized();
   const { data: currentUser } = useCurrentUser();
-  const isAdmin = all_admin_roles.includes(userRole || "");
+  const isAdmin = isProxyDashboardRole(userRole || "");
   const [attempt, setAttempt] = useState(0);
   const range = useMemo(() => {
     const endTime = new Date();

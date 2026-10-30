@@ -6,11 +6,11 @@ import useAuthorized from "../useAuthorized";
 
 export const mcpServersKeys = createQueryKeys("mcpServers");
 
-export const useMCPServers = (teamId?: string | null) => {
+export const useMCPServers = (teamId?: string | null, enabled = true) => {
   const { accessToken } = useAuthorized();
   return useQuery<MCPServer[]>({
     queryKey: mcpServersKeys.list(teamId ? { filters: { teamId } } : undefined),
     queryFn: async () => await fetchMCPServers(accessToken!, teamId),
-    enabled: !!accessToken,
+    enabled: !!accessToken && enabled,
   });
 };

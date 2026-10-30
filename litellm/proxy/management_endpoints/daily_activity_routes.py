@@ -8,7 +8,7 @@ from typing import Annotated, Final, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from litellm import constants
 from litellm._logging import verbose_proxy_logger
@@ -36,6 +36,8 @@ from litellm.proxy.management_endpoints.daily_activity_scopes import (
 )
 from litellm.proxy.management_endpoints.team_endpoints import aggregated_date_range_error
 from litellm.proxy.management_helpers.utils import management_endpoint_wrapper
+from litellm.proxy.retail.customer_access import is_retail_customer
+from litellm.proxy.retail.customer_logs import customer_activity_response, private_activity_field
 from litellm.proxy.utils import PrismaClient, get_prisma_client_or_throw
 from litellm.repositories.daily_activity_repository import DailyActivityRepository
 from litellm.types.proxy.management_endpoints.common_daily_activity import (
@@ -216,22 +218,30 @@ def _stream_export_rows(
     first_row: ExportRow | None,
     rows: AsyncIterator[ExportRow],
     file_format: Literal["csv", "json"],
+    *, customer: bool = False,
 ) -> AsyncIterator[bytes]:
+    field_names: Final = tuple(
+        field.name for field in fields(ExportRow) if not customer or not private_activity_field(field.name)
+    )
+
+    def export_data(row: ExportRow) -> Mapping[str, object]:
+        return {key: value for key, value in asdict(row).items() if key in field_names}
+
     async def stream() -> AsyncIterator[bytes]:
         if file_format == "csv":
-            yield _csv_row(tuple(field.name for field in fields(ExportRow)))
+            yield _csv_row(field_names)
             if first_row is not None:
-                yield _csv_row(tuple(asdict(first_row).values()))
+                yield _csv_row(tuple(export_data(first_row).values()))
             async for row in rows:
-                yield _csv_row(tuple(asdict(row).values()))
+                yield _csv_row(tuple(export_data(row).values()))
             return
 
         if first_row is None:
             yield b"[]"
             return
-        yield b"[" + json.dumps(jsonable_encoder(first_row), separators=(",", ":")).encode()
+        yield b"[" + json.dumps(jsonable_encoder(export_data(first_row)), separators=(",", ":")).encode()
         async for row in rows:
-            yield b"," + json.dumps(jsonable_encoder(row), separators=(",", ":")).encode()
+            yield b"," + json.dumps(jsonable_encoder(export_data(row)), separators=(",", ":")).encode()
         yield b"]"
 
     return stream()
@@ -247,7 +257,7 @@ def _register_aggregated_route(router: APIRouter, resolver: EntityScopeResolver,
         api_key_limit: Annotated[
             int, Query(ge=1, le=constants.USAGE_TOP_API_KEYS_MAX)
         ] = constants.USAGE_TOP_API_KEYS_DEFAULT,
-    ) -> SpendAnalyticsPaginatedResponse:
+    ) -> SpendAnalyticsPaginatedResponse | JSONResponse:
         try:
             resolved: ResolvedScope = await _resolved_scope(
                 resolver,
@@ -256,13 +266,14 @@ def _register_aggregated_route(router: APIRouter, resolver: EntityScopeResolver,
                 prisma_client,
                 user_aggregated=resolver.entity == "user",
             )
-            return await get_daily_activity_aggregated(
+            response: Final = await get_daily_activity_aggregated(
                 repository,
                 resolved.scope,
                 entity_metadata_field=resolved.entity_metadata,
                 include_entity_breakdown=resolver.include_entity_breakdown,
                 api_key_limit=api_key_limit,
             )
+            return customer_activity_response(response, user_api_key_dict)
         except HTTPException:
             raise
         except Exception as exc:
@@ -319,7 +330,7 @@ def _register_key_page_route(router: APIRouter, resolver: EntityScopeResolver, p
         prisma_client: Annotated[PrismaClient, Depends(get_daily_activity_prisma_client)],
         offset: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=constants.USAGE_KEY_PAGE_MAX)] = constants.USAGE_KEY_PAGE_DEFAULT,
-    ) -> DailyActivityKeyPageResponse:
+    ) -> DailyActivityKeyPageResponse | JSONResponse:
         try:
             resolved: Final = await _resolved_scope(
                 resolver,
@@ -329,12 +340,13 @@ def _register_key_page_route(router: APIRouter, resolver: EntityScopeResolver, p
                 user_aggregated=False,
             )
             page: Final = await repository.key_page(resolved.scope, offset=offset, limit=limit)
-            return DailyActivityKeyPageResponse(
+            response: Final = DailyActivityKeyPageResponse(
                 api_keys=await _key_activity_rows(repository, page.rows, resolved),
                 total_api_keys=page.total_api_keys,
                 offset=offset,
                 limit=limit,
             )
+            return customer_activity_response(response, user_api_key_dict)
         except HTTPException:
             raise
         except Exception as exc:
@@ -362,7 +374,7 @@ def _register_search_route(router: APIRouter, resolver: EntityScopeResolver, pre
         repository: Annotated[DailyActivityRepository, Depends(get_daily_activity_repository)],
         prisma_client: Annotated[PrismaClient, Depends(get_daily_activity_prisma_client)],
         limit: Annotated[int, Query(ge=1, le=constants.USAGE_KEY_SEARCH_MAX)] = constants.USAGE_KEY_SEARCH_DEFAULT,
-    ) -> DailyActivityKeySearchResponse:
+    ) -> DailyActivityKeySearchResponse | JSONResponse:
         try:
             resolved: ResolvedScope = await _resolved_scope(
                 resolver,
@@ -377,13 +389,15 @@ def _register_search_route(router: APIRouter, resolver: EntityScopeResolver, pre
                 limit=limit,
             )
             if not keys:
-                return DailyActivityKeySearchResponse(api_keys=[])
+                return customer_activity_response(DailyActivityKeySearchResponse(api_keys=[]), user_api_key_dict)
             search_response: SpendAnalyticsPaginatedResponse = await get_daily_activity_aggregated(
                 repository,
                 replace(resolved.scope, api_keys=keys),
                 include_entity_breakdown=False,
             )
-            return DailyActivityKeySearchResponse(api_keys=_search_rows(keys, search_response))
+            return customer_activity_response(
+                DailyActivityKeySearchResponse(api_keys=_search_rows(keys, search_response)), user_api_key_dict,
+            )
         except HTTPException:
             raise
         except Exception as exc:
@@ -414,7 +428,7 @@ def _register_model_top_keys_route(router: APIRouter, resolver: EntityScopeResol
         limit: Annotated[int, Query(ge=1, le=constants.USAGE_MODEL_TOP_KEYS_MAX)] = (
             constants.USAGE_MODEL_TOP_KEYS_DEFAULT
         ),
-    ) -> ModelTopKeysResponse:
+    ) -> ModelTopKeysResponse | JSONResponse:
         try:
             resolved: ResolvedScope = await _resolved_scope(
                 resolver,
@@ -429,11 +443,12 @@ def _register_model_top_keys_route(router: APIRouter, resolver: EntityScopeResol
                 by_model_group=by_model_group,
                 limit=limit,
             )
-            return ModelTopKeysResponse(
+            response: Final = ModelTopKeysResponse(
                 model=model_group,
                 by_model_group=by_model_group,
                 api_keys=await _key_activity_rows(repository, rows, resolved),
             )
+            return customer_activity_response(response, user_api_key_dict)
         except HTTPException:
             raise
         except Exception as exc:
@@ -473,7 +488,7 @@ def _register_export_route(router: APIRouter, resolver: EntityScopeResolver, pre
             rows: Final = repository.export_rows(resolved.scope, export_type=export_type)
             first_row: Final = await anext(rows, None)
             return StreamingResponse(
-                _stream_export_rows(first_row, rows, file_format),
+                _stream_export_rows(first_row, rows, file_format, customer=is_retail_customer(user_api_key_dict)),
                 media_type="text/csv" if file_format == "csv" else "application/json",
                 headers={
                     "Cache-Control": "no-store",
@@ -523,7 +538,7 @@ def _register_cache_leakage_route(router: APIRouter, resolver: EntityScopeResolv
         limit: Annotated[
             int, Query(ge=1, le=constants.USAGE_CACHE_LEAKAGE_KEYS_MAX)
         ] = constants.USAGE_CACHE_LEAKAGE_KEYS_DEFAULT,
-    ) -> CacheLeakageKeysResponse:
+    ) -> CacheLeakageKeysResponse | JSONResponse:
         try:
             resolved: ResolvedScope = await _resolved_scope(
                 resolver,
@@ -536,9 +551,10 @@ def _register_cache_leakage_route(router: APIRouter, resolver: EntityScopeResolv
                 resolved.scope,
                 limit=limit,
             )
-            return CacheLeakageKeysResponse(
+            response: Final = CacheLeakageKeysResponse(
                 api_keys=await _key_activity_rows(repository, rows, resolved),
             )
+            return customer_activity_response(response, user_api_key_dict)
         except HTTPException:
             raise
         except Exception as exc:

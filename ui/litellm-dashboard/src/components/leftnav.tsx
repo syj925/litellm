@@ -82,6 +82,7 @@ import BetaBadge from "./BetaBadge";
 import SidebarAccountMenu from "./SidebarAccountMenu/SidebarAccountMenu";
 import SidebarUsageCard from "./SidebarUsageCard";
 import { routeSegmentForPathname, uiHref } from "@/utils/uiHref";
+import { canAccessDashboardRoute, isProxyDashboardRole } from "@/utils/dashboardAccess";
 
 const ICON = { strokeWidth: 1.75 } as const;
 
@@ -168,15 +169,9 @@ const pageIsDisabledForInternalUsers = (
   return !(allowedForTeamAdmins && context.isTeamAdmin);
 };
 
-const pageIsEnabledForInternalUser = (item: MenuItem, context: MenuVisibilityContext): boolean => {
-  const enabledPages = context.enabledPagesInternalUsers;
-  if (enabledPages == null) return true;
-  if (item.children?.some((child) => enabledPages.includes(child.page))) return true;
-  return enabledPages.includes(item.page);
-};
-
 const menuItemIsVisible = (item: MenuItem, context: MenuVisibilityContext, isAdmin: boolean): boolean => {
   if (item.children && item.children.length === 0) return false;
+  if (!item.children && !canAccessDashboardRoute(item.route ?? item.page, context)) return false;
   if (item.key === "llm-playground" && context.isViewOnly) return false;
   const adminVisibility = adminPageVisibility(item, context, isAdmin);
   if (adminVisibility !== null) return adminVisibility;
@@ -184,7 +179,6 @@ const menuItemIsVisible = (item: MenuItem, context: MenuVisibilityContext, isAdm
   if (pageIsDisabledForInternalUsers(item, "agents", isAdmin, context)) return false;
   if (pageIsDisabledForInternalUsers(item, "vector-stores", isAdmin, context)) return false;
   if (item.roles && !item.roles.includes(context.userRole)) return false;
-  if (!isAdmin && context.enabledPagesInternalUsers != null) return pageIsEnabledForInternalUser(item, context);
   return true;
 };
 
@@ -217,6 +211,13 @@ const menuGroups: MenuGroup[] = [
         label: "Playground",
         icon: <PlayCircle {...ICON} />,
         roles: rolesWithWriteAccess,
+      },
+      {
+        key: "model-catalog",
+        page: "model-catalog",
+        label: "Models",
+        icon: <Network {...ICON} />,
+        roles: [...internalUserRoles, "internal", "App Owner", "App User", "Org Admin", "org_admin"],
       },
       {
         key: "models",
@@ -571,7 +572,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
   const { data: teams } = useTeams();
   const { logoUrl, logoUrlDark } = useTheme();
   const [erroredDarkLogo, setErroredDarkLogo] = useState<string | null>(null);
-  const { data: healthData } = useHealthReadinessDetails(accessToken);
+  const { data: healthData } = useHealthReadinessDetails(isProxyDashboardRole(userRole) ? accessToken : null);
   const logout = useLogout(accessToken);
 
   const baseUrl = getProxyBaseUrl();
@@ -768,7 +769,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
       </ScrollArea>
 
       <SidebarFooter>
-        {isAdminRole(userRole) && (
+        {isProxyDashboardRole(userRole) && (
           <SidebarUsageCard
             accessToken={accessToken}
             collapsed={collapsed}

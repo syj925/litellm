@@ -13,6 +13,7 @@ from litellm._logging import verbose_proxy_logger
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.proxy._types import UserAPIKeyAuth
 
+from .customer_access import customer_resource_policy
 from .models import InsufficientFunds, ParallelLimitExceeded
 from .pool_routing import (
     bind_pool_routing,
@@ -100,11 +101,7 @@ def _pool_request_data(
 
 
 def _resource_policy(auth: UserAPIKeyAuth) -> object | None:
-    metadata: Final = as_mapping(auth.metadata)
-    policy: Final = metadata.get("retail_resource_policy")
-    if "retail_resource_policy" in metadata and policy is None:
-        raise HTTPException(403, "This API key contains an invalid resource policy")
-    return policy
+    return customer_resource_policy(auth)
 
 
 class RetailBilling(CustomLogger):

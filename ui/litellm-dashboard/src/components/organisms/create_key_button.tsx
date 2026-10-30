@@ -91,6 +91,8 @@ import {
   resourceModelHelp,
 } from "./resourceRoutingPolicy";
 import { useKeyResourceCatalog } from "./useKeyResourceCatalog";
+import { canAssignKeyOwnership, isSelfServiceKeyContext } from "./keyFormAccess";
+import SelfServiceKeyLimits from "./SelfServiceKeyLimits";
 import { simplifyKeyGenerateError } from "./utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -227,7 +229,7 @@ export const fetchUserModels = async (
  * ─────────────────────────────────────────────────────────────────────────
  */
 const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOpenCreate, prefillData }) => {
-  const { accessToken, userId: userID, userRole, premiumUser } = useAuthorized();
+  const { accessToken, userId: userID, userRole, premiumUser, isViewOnly } = useAuthorized();
   const canEditGuardrails = premiumUser || (userRole != null && rolesWithWriteAccess.includes(userRole));
   const canViewPolicies = useCan("viewPolicies");
   const canViewPrompts = useCan("viewPrompts");
@@ -267,6 +269,8 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   const [promptsList, setPromptsList] = useState<string[]>([]);
   const [loggingSettings, setLoggingSettings] = useState<any[]>([]);
   const [selectedCreateKeyTeam, setSelectedCreateKeyTeam] = useState<Team | null>(team);
+  const selfService = isSelfServiceKeyContext(userRole, userID, teams, selectedCreateKeyTeam?.team_id);
+  const canAssignOwnership = canAssignKeyOwnership(userRole, userID, teams);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isCreateUserModalVisible, setIsCreateUserModalVisible] = useState(false);
@@ -290,6 +294,10 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   const [agentsList, setAgentsList] = useState<{ agent_id: string; agent_name: string }[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [resourcePolicy, setResourcePolicy] = useState<ResourceRoutingPolicy | null>(null);
+  const activeResourcePolicy = useMemo<ResourceRoutingPolicy | null>(
+    () => (selfService ? resourcePolicy ?? { mode: "auto" } : resourcePolicy),
+    [selfService, resourcePolicy],
+  );
   const [createdResourcePolicy, setCreatedResourcePolicy] = useState<ResourceRoutingPolicy | null>(null);
   const [resourceRoutingValid, setResourceRoutingValid] = useState(true);
   const assignedUserId = useWatch({ control: form.control, name: "user_id" }) as string | undefined;
@@ -299,16 +307,19 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
     targetUserId: resourceUserId,
     admin: isProxyAdminRole(userRole ?? ""),
   });
-  const usesPoolModels = resourcePolicy !== null || resourceCatalog.data?.routing_enabled === true;
+  const usesPoolModels = activeResourcePolicy !== null || resourceCatalog.data?.routing_enabled === true;
   const modelScopeReady =
     !resourceUserId ||
     Boolean(resourceCatalog.data && !resourceCatalog.error && (!usesPoolModels || nativeModelsReady));
   const selectableModels = useMemo(() => {
     if (!modelScopeReady) return [];
     if (!usesPoolModels) return modelsToPick;
-    const poolModels = resourcePolicyModels(resourcePolicy ?? { mode: "auto" }, resourceCatalog.data?.items ?? []);
+    const poolModels = resourcePolicyModels(
+      activeResourcePolicy ?? { mode: "auto" },
+      resourceCatalog.data?.items ?? [],
+    );
     return poolModels.filter((model) => modelsToPick.includes(model));
-  }, [modelScopeReady, usesPoolModels, resourcePolicy, resourceCatalog.data, modelsToPick]);
+  }, [modelScopeReady, usesPoolModels, activeResourcePolicy, resourceCatalog.data, modelsToPick]);
   const resourceModelsValid =
     keyType === "management" || keyType === "read_only" || !usesPoolModels || selectableModels.length > 0;
   const previousResourceUser = useRef(resourceUserId);
@@ -356,12 +367,12 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   }, [accessToken, userID, userRole]);
 
   useEffect(() => {
-    if (accessToken) {
+    if (accessToken && !selfService) {
       getAgentsList(accessToken)
         .then((res) => setAgentsList(res?.agents || []))
         .catch(() => setAgentsList([]));
     }
-  }, [accessToken]);
+  }, [accessToken, selfService]);
 
   useEffect(() => {
     const fetchGuardrails = async () => {
@@ -393,16 +404,17 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
       }
     };
 
+    if (selfService) return;
     fetchGuardrails();
     if (canViewPolicies) fetchPolicies();
     if (canViewPrompts) fetchPrompts();
-  }, [accessToken, canViewPolicies, canViewPrompts]);
+  }, [accessToken, canViewPolicies, canViewPrompts, selfService]);
 
   // Fetch possible user roles when component mounts
   useEffect(() => {
     const fetchPossibleRoles = async () => {
       try {
-        if (accessToken) {
+        if (accessToken && !selfService) {
           // Check if roles are cached in session storage
           const cachedRoles = sessionStorage.getItem("possibleUserRoles");
           if (cachedRoles) {
@@ -419,12 +431,19 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
     };
 
     fetchPossibleRoles();
-  }, [accessToken]);
+  }, [accessToken, selfService]);
 
   // Auto-open modal and prefill form from URL params (deep link).
   // Guarded by write access so we don't open for read-only users.
   useEffect(() => {
-    if (autoOpenCreate && !hasPrefilled && teams && userRole && rolesWithWriteAccess.includes(userRole)) {
+    if (
+      autoOpenCreate &&
+      !hasPrefilled &&
+      teams &&
+      userRole &&
+      rolesWithWriteAccess.includes(userRole) &&
+      !isViewOnly
+    ) {
       // Open the modal
       setIsModalVisible(true);
       setHasPrefilled(true);
@@ -432,7 +451,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
       // Apply prefill data if provided
       if (prefillData) {
         // Set key owner (owned_by) - validate that "another_user" is only allowed for Admin
-        if (prefillData.owned_by) {
+        if (prefillData.owned_by && canAssignOwnership) {
           if (prefillData.owned_by === "another_user" && userRole !== "Admin") {
             // Ignore invalid owned_by for non-admin users, fall back to default
             setKeyOwner("you");
@@ -462,13 +481,13 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
         }
 
         // Set key type
-        if (prefillData.key_type) {
+        if (prefillData.key_type && isProxyAdminRole(userRole)) {
           setKeyType(prefillData.key_type);
           form.setValue("key_type", prefillData.key_type);
         }
       }
     }
-  }, [autoOpenCreate, prefillData, teams, hasPrefilled, form, userRole]);
+  }, [autoOpenCreate, prefillData, teams, hasPrefilled, form, userRole, isViewOnly, canAssignOwnership]);
 
   // Check if team selection is required
   const isTeamSelectionRequired = modelsToPick.includes("no-default-models");
@@ -476,9 +495,11 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
 
   const handleCreate = async (formValues: MountedFormValues) => {
     try {
+      if (isViewOnly) return;
       if (!resourceRoutingValid || !modelScopeReady || !resourceModelsValid)
         throw new Error("Review the resource routing selection and available models before creating this key.");
       const input: KeyCreateInput = {
+        selfService,
         formValues,
         existingKeys: data,
         keyOwner,
@@ -494,7 +515,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
         modelMaxBudget,
         tagRateLimits,
         budgetFallbacks,
-        resourcePolicy,
+        resourcePolicy: activeResourcePolicy,
       };
       const built = buildKeyCreatePayload(input);
       if (built.kind === "duplicate_alias") {
@@ -712,7 +733,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
 
   return (
     <div>
-      {userRole && rolesWithWriteAccess.includes(userRole) && (
+      {userRole && rolesWithWriteAccess.includes(userRole) && !isViewOnly && (
         <Button className="mx-auto" onClick={() => setIsModalVisible(true)} data-testid="create-key-button">
           + Create New Key
         </Button>
@@ -725,185 +746,191 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
           <MountedFormProvider value={mountedForm}>
             <form onSubmit={handleSubmit}>
               {/* Section 1: Key Ownership */}
-              <div className="mb-8">
-                <h3 className="text-lg font-medium text-foreground mb-4">Key Ownership</h3>
-                <Field className="mb-4">
-                  <FieldLabel>
-                    <span>
-                      Owned By{" "}
-                      <SimpleTooltip content="Select who will own this Virtual Key">
-                        <Info className="ml-1 inline size-3.5 align-text-bottom" />
-                      </SimpleTooltip>
-                    </span>
-                  </FieldLabel>
-                  <RadioGroup
-                    className="flex flex-wrap items-center gap-4"
-                    value={keyOwner}
-                    onValueChange={(value: unknown) => setKeyOwner(String(value))}
-                  >
-                    <label className={KEY_OWNER_LABEL_CLASS}>
-                      <RadioGroupItem value="you" />
-                      You
-                    </label>
-                    <label className={KEY_OWNER_LABEL_CLASS}>
-                      <RadioGroupItem value="service_account" />
-                      Service Account
-                    </label>
-                    {userRole === "Admin" && (
+              {canAssignOwnership && (
+                <div className="mb-8">
+                  <h3 className="text-lg font-medium text-foreground mb-4">Key Ownership</h3>
+                  <Field className="mb-4">
+                    <FieldLabel>
+                      <span>
+                        Owned By{" "}
+                        <SimpleTooltip content="Select who will own this Virtual Key">
+                          <Info className="ml-1 inline size-3.5 align-text-bottom" />
+                        </SimpleTooltip>
+                      </span>
+                    </FieldLabel>
+                    <RadioGroup
+                      className="flex flex-wrap items-center gap-4"
+                      value={keyOwner}
+                      onValueChange={(value: unknown) => setKeyOwner(String(value))}
+                    >
                       <label className={KEY_OWNER_LABEL_CLASS}>
-                        <RadioGroupItem value="another_user" />
-                        Another User
+                        <RadioGroupItem value="you" />
+                        You
                       </label>
-                    )}
-                    <label className={KEY_OWNER_LABEL_CLASS}>
-                      <RadioGroupItem value="agent" />
-                      Agent <Badge>New</Badge>
-                    </label>
-                  </RadioGroup>
-                </Field>
+                      <label className={KEY_OWNER_LABEL_CLASS}>
+                        <RadioGroupItem value="service_account" />
+                        Service Account
+                      </label>
+                      {userRole === "Admin" && (
+                        <label className={KEY_OWNER_LABEL_CLASS}>
+                          <RadioGroupItem value="another_user" />
+                          Another User
+                        </label>
+                      )}
+                      <label className={KEY_OWNER_LABEL_CLASS}>
+                        <RadioGroupItem value="agent" />
+                        Agent <Badge>New</Badge>
+                      </label>
+                    </RadioGroup>
+                  </Field>
 
-                {keyOwner === "another_user" && (
-                  <MountedFormField
-                    label={
-                      <span>
-                        User ID{" "}
-                        <SimpleTooltip content="The user who will own this key and be responsible for its usage">
-                          <Info className="ml-1 inline size-3.5 align-text-bottom" />
-                        </SimpleTooltip>
-                      </span>
-                    }
-                    name="user_id"
-                    className="mt-4"
-                    required
-                    rules={requiredRule(
-                      keyOwner === "another_user",
-                      `Please input the user ID of the user you are assigning the key to`,
-                    )}
-                  >
-                    {(control) => (
-                      <div>
-                        <div className="mb-2 flex">
-                          <PaginatedSearchSelect
-                            options={userOptions}
-                            value={typeof control.value === "string" ? control.value : undefined}
-                            onValueChange={control.onChange}
-                            onSearchChange={fetchUsers}
-                            isLoading={userSearchLoading}
-                            placeholder="Type email or user ID to search for users"
-                            emptyText="No users found"
-                            loadingText="Searching..."
-                            inputId={control.id}
-                            aria-required={control["aria-required"] === "true" ? true : undefined}
-                            aria-invalid={control["aria-invalid"] === "true" ? true : undefined}
-                            aria-describedby={control["aria-describedby"]}
-                          />
-                          <Button variant="outline" className="ml-2" onClick={() => setIsCreateUserModalVisible(true)}>
-                            Create User
-                          </Button>
+                  {keyOwner === "another_user" && (
+                    <MountedFormField
+                      label={
+                        <span>
+                          User ID{" "}
+                          <SimpleTooltip content="The user who will own this key and be responsible for its usage">
+                            <Info className="ml-1 inline size-3.5 align-text-bottom" />
+                          </SimpleTooltip>
+                        </span>
+                      }
+                      name="user_id"
+                      className="mt-4"
+                      required
+                      rules={requiredRule(
+                        keyOwner === "another_user",
+                        `Please input the user ID of the user you are assigning the key to`,
+                      )}
+                    >
+                      {(control) => (
+                        <div>
+                          <div className="mb-2 flex">
+                            <PaginatedSearchSelect
+                              options={userOptions}
+                              value={typeof control.value === "string" ? control.value : undefined}
+                              onValueChange={control.onChange}
+                              onSearchChange={fetchUsers}
+                              isLoading={userSearchLoading}
+                              placeholder="Type email or user ID to search for users"
+                              emptyText="No users found"
+                              loadingText="Searching..."
+                              inputId={control.id}
+                              aria-required={control["aria-required"] === "true" ? true : undefined}
+                              aria-invalid={control["aria-invalid"] === "true" ? true : undefined}
+                              aria-describedby={control["aria-describedby"]}
+                            />
+                            <Button
+                              variant="outline"
+                              className="ml-2"
+                              onClick={() => setIsCreateUserModalVisible(true)}
+                            >
+                              Create User
+                            </Button>
+                          </div>
+                          <div className="text-xs text-muted-foreground">Search by email or user ID to find users</div>
                         </div>
-                        <div className="text-xs text-muted-foreground">Search by email or user ID to find users</div>
+                      )}
+                    </MountedFormField>
+                  )}
+                  {keyOwner === "agent" && (
+                    <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-md dark:bg-purple-950 dark:border-purple-800">
+                      <div className="mb-3">
+                        <label htmlFor="create-key-agent" className="text-sm font-medium text-foreground">
+                          Select Agent <span className="text-destructive">*</span>
+                        </label>
                       </div>
-                    )}
-                  </MountedFormField>
-                )}
-                {keyOwner === "agent" && (
-                  <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-md dark:bg-purple-950 dark:border-purple-800">
-                    <div className="mb-3">
-                      <label htmlFor="create-key-agent" className="text-sm font-medium text-foreground">
-                        Select Agent <span className="text-destructive">*</span>
-                      </label>
+                      <SearchSelect
+                        inputId="create-key-agent"
+                        placeholder="Select an agent"
+                        emptyText="No agents found"
+                        value={selectedAgentId}
+                        onValueChange={setSelectedAgentId}
+                        options={agentsList.map((a) => ({
+                          label: a.agent_name || a.agent_id,
+                          value: a.agent_id,
+                        }))}
+                      />
+                      <div className="text-xs text-muted-foreground mt-2">
+                        This key will be used by the selected agent to make requests to LiteLLM
+                      </div>
                     </div>
-                    <SearchSelect
-                      inputId="create-key-agent"
-                      placeholder="Select an agent"
-                      emptyText="No agents found"
-                      value={selectedAgentId}
-                      onValueChange={setSelectedAgentId}
-                      options={agentsList.map((a) => ({
-                        label: a.agent_name || a.agent_id,
-                        value: a.agent_id,
-                      }))}
-                    />
-                    <div className="text-xs text-muted-foreground mt-2">
-                      This key will be used by the selected agent to make requests to LiteLLM
-                    </div>
-                  </div>
-                )}
-                <MountedFormField
-                  label={
-                    <span>
-                      Organization{" "}
-                      <SimpleTooltip content="The organization this key belongs to. Selecting an organization filters the available teams.">
-                        <Info className="ml-1 inline size-3.5 align-text-bottom" />
-                      </SimpleTooltip>
-                    </span>
-                  }
-                  name="organization_id"
-                  className="mt-4"
-                >
-                  {(control) => (
-                    <OrganizationDropdown
-                      id={control.id}
-                      value={typeof control.value === "string" ? control.value : null}
-                      organizations={organizations}
-                      loading={isOrganizationsLoading}
-                      disabled={userRole !== "Admin"}
-                      onChange={changeOrganization(control.onChange)}
-                    />
                   )}
-                </MountedFormField>
-                <MountedFormField
-                  label={
-                    <span>
-                      Team{" "}
-                      <SimpleTooltip content="The team this key belongs to, which determines available models and budget limits">
-                        <Info className="ml-1 inline size-3.5 align-text-bottom" />
-                      </SimpleTooltip>
-                    </span>
-                  }
-                  name="team_id"
-                  className="mt-4"
-                  required={keyOwner === "service_account"}
-                  rules={requiredRule(keyOwner === "service_account", "Please select a team for the service account")}
-                  help={keyOwner === "service_account" ? "required" : ""}
-                >
-                  {(control) => (
-                    <TeamDropdown
-                      id={control.id}
-                      value={typeof control.value === "string" ? control.value : null}
-                      onChange={control.onChange}
-                      disabled={selectedProjectId !== null}
-                      organizationId={selectedOrganizationId}
-                      onTeamSelect={selectTeam}
-                    />
-                  )}
-                </MountedFormField>
-                {enableProjectsUI && (
                   <MountedFormField
                     label={
                       <span>
-                        Project{" "}
-                        <SimpleTooltip content="Assign this key to a project. Selecting a project will lock the team to the project's team.">
+                        Organization{" "}
+                        <SimpleTooltip content="The organization this key belongs to. Selecting an organization filters the available teams.">
                           <Info className="ml-1 inline size-3.5 align-text-bottom" />
                         </SimpleTooltip>
                       </span>
                     }
-                    name="project_id"
+                    name="organization_id"
                     className="mt-4"
                   >
                     {(control) => (
-                      <ProjectDropdown
+                      <OrganizationDropdown
                         id={control.id}
                         value={typeof control.value === "string" ? control.value : null}
-                        projects={projects}
-                        teamId={selectedCreateKeyTeam?.team_id}
-                        loading={isProjectsLoading || !teams}
-                        onChange={changeProject(control.onChange)}
+                        organizations={organizations}
+                        loading={isOrganizationsLoading}
+                        disabled={userRole !== "Admin"}
+                        onChange={changeOrganization(control.onChange)}
                       />
                     )}
                   </MountedFormField>
-                )}
-              </div>
+                  <MountedFormField
+                    label={
+                      <span>
+                        Team{" "}
+                        <SimpleTooltip content="The team this key belongs to, which determines available models and budget limits">
+                          <Info className="ml-1 inline size-3.5 align-text-bottom" />
+                        </SimpleTooltip>
+                      </span>
+                    }
+                    name="team_id"
+                    className="mt-4"
+                    required={keyOwner === "service_account"}
+                    rules={requiredRule(keyOwner === "service_account", "Please select a team for the service account")}
+                    help={keyOwner === "service_account" ? "required" : ""}
+                  >
+                    {(control) => (
+                      <TeamDropdown
+                        id={control.id}
+                        value={typeof control.value === "string" ? control.value : null}
+                        onChange={control.onChange}
+                        disabled={selectedProjectId !== null}
+                        organizationId={selectedOrganizationId}
+                        onTeamSelect={selectTeam}
+                      />
+                    )}
+                  </MountedFormField>
+                  {enableProjectsUI && (
+                    <MountedFormField
+                      label={
+                        <span>
+                          Project{" "}
+                          <SimpleTooltip content="Assign this key to a project. Selecting a project will lock the team to the project's team.">
+                            <Info className="ml-1 inline size-3.5 align-text-bottom" />
+                          </SimpleTooltip>
+                        </span>
+                      }
+                      name="project_id"
+                      className="mt-4"
+                    >
+                      {(control) => (
+                        <ProjectDropdown
+                          id={control.id}
+                          value={typeof control.value === "string" ? control.value : null}
+                          projects={projects}
+                          teamId={selectedCreateKeyTeam?.team_id}
+                          loading={isProjectsLoading || !teams}
+                          onChange={changeProject(control.onChange)}
+                        />
+                      )}
+                    </MountedFormField>
+                  )}
+                </div>
+              )}
 
               {/* Show message when team selection is required */}
               {isFormDisabled && (
@@ -949,7 +976,8 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                     accessToken={accessToken}
                     targetUserId={resourceUserId}
                     admin={isProxyAdminRole(userRole ?? "")}
-                    value={resourcePolicy}
+                    allowLegacy={!selfService}
+                    value={activeResourcePolicy}
                     onChange={setResourcePolicy}
                     onValidityChange={setResourceRoutingValid}
                   />
@@ -1012,7 +1040,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                   >
                     {(control) => (
                       <Select
-                        items={KEY_TYPE_OPTIONS}
+                        items={isProxyAdminRole(userRole ?? "") ? KEY_TYPE_OPTIONS : KEY_TYPE_OPTIONS.slice(0, 1)}
                         value={control.value as string | undefined}
                         onValueChange={(value: string | null) =>
                           value != null && changeKeyType(control.onChange)(value)
@@ -1027,14 +1055,16 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                           <SelectValue placeholder="Select key type" />
                         </SelectTrigger>
                         <SelectContent>
-                          {KEY_TYPE_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              <div className="py-1">
-                                <div className="font-medium">{option.label}</div>
-                                <div className="mt-0.5 text-[11px] text-muted-foreground">{option.hint}</div>
-                              </div>
-                            </SelectItem>
-                          ))}
+                          {(isProxyAdminRole(userRole ?? "") ? KEY_TYPE_OPTIONS : KEY_TYPE_OPTIONS.slice(0, 1)).map(
+                            (option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                <div className="py-1">
+                                  <div className="font-medium">{option.label}</div>
+                                  <div className="mt-0.5 text-[11px] text-muted-foreground">{option.hint}</div>
+                                </div>
+                              </SelectItem>
+                            ),
+                          )}
                         </SelectContent>
                       </Select>
                     )}
@@ -1043,7 +1073,8 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
               )}
 
               {/* Section 3: Optional Settings */}
-              {!isFormDisabled && (
+              {!isFormDisabled && selfService && <SelfServiceKeyLimits />}
+              {!isFormDisabled && !selfService && (
                 <div className="mb-8">
                   <Collapsible className="mt-4 mb-4 overflow-hidden rounded-lg border">
                     <h3 className="m-0 text-lg font-medium text-foreground">
@@ -1904,7 +1935,9 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
               <div style={{ textAlign: "right", marginTop: "10px" }}>
                 <Button
                   type="submit"
-                  disabled={isFormDisabled || !resourceRoutingValid || !modelScopeReady || !resourceModelsValid}
+                  disabled={
+                    isViewOnly || isFormDisabled || !resourceRoutingValid || !modelScopeReady || !resourceModelsValid
+                  }
                 >
                   Create Key
                 </Button>

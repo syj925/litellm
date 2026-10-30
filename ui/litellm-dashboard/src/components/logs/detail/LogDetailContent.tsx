@@ -1,4 +1,8 @@
 import { useState } from "react";
+import Link from "next/link";
+import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
+import { isProxyDashboardRole } from "@/utils/dashboardAccess";
+import { uiHref } from "@/utils/uiHref";
 import { Check, ChevronDown, ChevronRight, CircleAlert, Copy, Info } from "lucide-react";
 import moment from "moment";
 import { Badge } from "@/components/ui/badge";
@@ -76,6 +80,8 @@ export function LogDetailContent({
   accessToken,
   userEmail,
 }: LogDetailContentProps) {
+  const { userRole } = useAuthorized();
+  const showCosts = isProxyDashboardRole(userRole);
   const metadata = logEntry.metadata || {};
   const resourceRoute = recordedResourceRoute(metadata);
   const hasError = metadata.status === "failure";
@@ -194,19 +200,29 @@ export function LogDetailContent({
       <RoutingDecisionCard decision={metadata?.routing_decision as RoutingDecision | undefined} />
 
       {/* Metrics */}
-      <MetricsSection logEntry={logEntry} metadata={metadata} />
+      <MetricsSection logEntry={logEntry} metadata={metadata} showCosts={showCosts} />
 
       {/* Cost Breakdown */}
-      <CostBreakdownViewer
-        costBreakdown={metadata?.cost_breakdown}
-        totalSpend={logEntry.spend ?? 0}
-        promptTokens={logEntry.prompt_tokens}
-        completionTokens={logEntry.completion_tokens}
-        cacheHit={logEntry.cache_hit}
-        rawInputTokens={metadata?.additional_usage_values?.prompt_tokens_details?.text_tokens}
-        cacheReadTokens={metadata?.additional_usage_values?.cache_read_input_tokens}
-        cacheCreationTokens={metadata?.additional_usage_values?.cache_creation_input_tokens}
-      />
+      {showCosts ? (
+        <CostBreakdownViewer
+          costBreakdown={metadata?.cost_breakdown}
+          totalSpend={logEntry.spend ?? 0}
+          promptTokens={logEntry.prompt_tokens}
+          completionTokens={logEntry.completion_tokens}
+          cacheHit={logEntry.cache_hit}
+          rawInputTokens={metadata?.additional_usage_values?.prompt_tokens_details?.text_tokens}
+          cacheReadTokens={metadata?.additional_usage_values?.cache_read_input_tokens}
+          cacheCreationTokens={metadata?.additional_usage_values?.cache_creation_input_tokens}
+        />
+      ) : (
+        <p className="mb-6 text-sm text-muted-foreground">
+          Actual charges after your discount are recorded in{" "}
+          <Link href={uiHref("billing")} className="font-medium text-info underline">
+            Billing
+          </Link>
+          .
+        </p>
+      )}
 
       {/* Tools */}
       <ToolsSection log={logEntry} />
@@ -237,6 +253,7 @@ export function LogDetailContent({
           getRawRequest={() => rawRequest}
           getFormattedResponse={getFormattedResponse}
           logEntry={logEntry}
+          showCosts={showCosts}
         />
       )}
 
@@ -475,7 +492,15 @@ function BatchResultsSection({ logEntry, metadata }: { logEntry: LogEntry; metad
   );
 }
 
-function MetricsSection({ logEntry, metadata }: { logEntry: LogEntry; metadata: Record<string, any> }) {
+function MetricsSection({
+  logEntry,
+  metadata,
+  showCosts,
+}: {
+  logEntry: LogEntry;
+  metadata: Record<string, any>;
+  showCosts: boolean;
+}) {
   const completionStartTime = logEntry.completionStartTime;
   const ttftMs =
     completionStartTime && completionStartTime !== logEntry.endTime
@@ -521,7 +546,9 @@ function MetricsSection({ logEntry, metadata }: { logEntry: LogEntry; metadata: 
             {reasoningTokens !== undefined && reasoningTokens > 0 && (
               <DescriptionItem label="Reasoning Tokens">{formatNumberWithCommas(reasoningTokens)}</DescriptionItem>
             )}
-            <DescriptionItem label="Cost">${formatNumberWithCommas(logEntry.spend || 0, 8)}</DescriptionItem>
+            {showCosts && (
+              <DescriptionItem label="Cost">${formatNumberWithCommas(logEntry.spend || 0, 8)}</DescriptionItem>
+            )}
             <DescriptionItem label="Duration">
               {logEntry.request_duration_ms != null ? (logEntry.request_duration_ms / 1000).toFixed(3) : "-"} s
             </DescriptionItem>
@@ -620,6 +647,7 @@ interface RequestResponseSectionProps {
   getRawRequest: () => any;
   getFormattedResponse: () => any;
   logEntry: LogEntry;
+  showCosts: boolean;
 }
 
 function RequestResponseSection({
@@ -628,6 +656,7 @@ function RequestResponseSection({
   getRawRequest,
   getFormattedResponse,
   logEntry,
+  showCosts,
 }: RequestResponseSectionProps) {
   const [open, setOpen] = useState(true);
   const [activeTab, setActiveTab] = useState<typeof TAB_REQUEST | typeof TAB_RESPONSE>(TAB_REQUEST);
@@ -678,8 +707,7 @@ function RequestResponseSection({
                   metrics={{
                     prompt_tokens: promptTokens,
                     completion_tokens: completionTokens,
-                    input_cost: inputCost,
-                    output_cost: outputCost,
+                    ...(showCosts ? { input_cost: inputCost, output_cost: outputCost } : {}),
                   }}
                 />
               </TabsContent>

@@ -329,6 +329,23 @@ def allowed_model_names(
     return frozenset(chain.from_iterable(grant.models for grant in grants if grant.models != "*"))
 
 
+def allowed_deployment_ids(
+    access: PoolAccess,
+    pools: Sequence[PoolDefinition],
+    bindings: Sequence[_StoredBinding],
+    policy: object | None,
+    deployments: Sequence[Mapping[str, object]],
+) -> frozenset[str]:
+    live: Final = _live_bindings(bindings, deployments)
+    account: Final = effective_account_grants(access, pools, live)
+    grants: Final = {grant.pool_id: grant for grant in effective_key_grants(_runtime_policy(policy), account, strict=False)}
+    return frozenset(
+        binding.deployment_id
+        for binding in live
+        if binding.pool_id in grants and binding.model in grants[binding.pool_id].models
+    )
+
+
 def router_deployments() -> tuple[Mapping[str, object], ...]:
     from litellm.proxy.proxy_server import llm_router
 
@@ -651,6 +668,20 @@ class PoolStore:
             pools, bindings = await self._state(connection)
             access: Final = await self._access(connection, user_id)
             return allowed_model_names(access, pools, bindings, policy, deployments)
+
+    async def key_deployment_ids(
+        self, user_id: str, policy: object | None, deployments: Sequence[Mapping[str, object]],
+    ) -> frozenset[str] | None:
+        await self.wallet_store.initialize()
+        async with self._read_transaction() as connection:
+            settings: Final = await self._settings(connection)
+            if not settings.routing_enabled and policy is None:
+                return None
+            if not user_id:
+                raise HTTPException(403, "Resource pool discovery requires a key owned by a user account")
+            pools, bindings = await self._state(connection)
+            access: Final = await self._access(connection, user_id)
+            return allowed_deployment_ids(access, pools, bindings, policy, deployments)
 
 
 def _live_bindings(

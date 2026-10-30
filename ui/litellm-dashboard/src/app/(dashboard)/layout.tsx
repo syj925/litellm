@@ -25,14 +25,21 @@ import { Button } from "@/components/ui/button";
 import { Menu } from "lucide-react";
 import { useMediaQuery } from "usehooks-ts";
 import { CommandPaletteProvider } from "@/components/CommandPalette/CommandPaletteProvider";
+import DashboardAccessBoundary from "@/components/DashboardAccessBoundary";
+import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
+import { canUseAdminControlPlane, isProxyDashboardRole } from "@/utils/dashboardAccess";
 
 const pluginApiClient = createApiClient({ getBaseUrl: () => getProxyBaseUrl() ?? "" });
 
 // Wrapper so PluginModeProvider receives the live accessToken from auth context,
 // which means plugin data refreshes on login/logout without stale cookie reads.
 function PluginModeProviderWithAuth({ children }: { children: React.ReactNode }) {
-  const { accessToken } = useAuth();
-  return <PluginModeProvider accessToken={accessToken}>{children}</PluginModeProvider>;
+  const { accessToken, userRole } = useAuth();
+  return (
+    <PluginModeProvider accessToken={isProxyDashboardRole(userRole) ? accessToken : null}>
+      {children}
+    </PluginModeProvider>
+  );
 }
 
 export function AgentControlPlaneView() {
@@ -109,6 +116,7 @@ const FULL_BLEED_SEGMENTS = new Set(["logs"]);
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const { accessToken } = useAuth();
+  const { userRole, isViewOnly } = useAuthorized();
   const { mode } = usePluginMode();
   const pathname = usePathname();
   const routeSegment = routeSegmentForPathname(pathname);
@@ -127,7 +135,8 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   const sidebarCollapsed = sidebarOverride?.segment === routeSegment ? sidebarOverride.collapsed : isFullBleed;
   const toggleSidebar = () => setSidebarOverride({ segment: routeSegment, collapsed: !sidebarCollapsed });
 
-  const isGateway = mode === "ai-gateway";
+  const isGateway = mode === "ai-gateway" || !canUseAdminControlPlane({ userRole, isViewOnly });
+  const showOperationalBanners = isProxyDashboardRole(userRole);
 
   // Non-gateway (agent control plane) mode keeps the original full-width Navbar,
   // which carries the account menu; the redesigned sidebar + header shell is
@@ -190,13 +199,15 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
                 </SheetTrigger>
               }
             />
-            <DebugWarningBanner accessToken={accessToken} />
-            <NoRedisWarningBanner accessToken={accessToken} />
-            <EnvCredentialLoginWarningBanner accessToken={accessToken} />
-            <LicenseExpiryBanner accessToken={accessToken} />
+            {showOperationalBanners && <DebugWarningBanner accessToken={accessToken} />}
+            {showOperationalBanners && <NoRedisWarningBanner accessToken={accessToken} />}
+            {showOperationalBanners && <EnvCredentialLoginWarningBanner accessToken={accessToken} />}
+            {showOperationalBanners && <LicenseExpiryBanner accessToken={accessToken} />}
             <UserBanner accessToken={accessToken} />
-            <UpgradeBanner accessToken={accessToken} />
-            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">{children}</main>
+            {showOperationalBanners && <UpgradeBanner accessToken={accessToken} />}
+            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+              <DashboardAccessBoundary>{children}</DashboardAccessBoundary>
+            </main>
           </div>
         </CommandPaletteProvider>
       </LiteAdminFrame>

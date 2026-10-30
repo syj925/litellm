@@ -11,6 +11,7 @@ from litellm.proxy.retail.billing import RetailBilling, price_snapshot, reservat
 from litellm.proxy.retail.pool_routing import filter_pool_deployments, guard_pool_deployment, reset_pool_routing
 from litellm.proxy.retail.pool_store import (
     PoolAccess,
+    PoolGrant,
     PoolRouteDecision,
     PoolStore,
     _PoolRow,
@@ -180,7 +181,8 @@ async def test_disabled_retail_model_discovery_preserves_native_key_results(monk
 
 
 class _MemoryPools(PoolStore):
-    def __init__(self, enabled: bool = True, has_bindings: bool = True) -> None:
+    def __init__(self, enabled: bool = True, has_bindings: bool = True, access: PoolAccess | None = None) -> None:
+        self.access = access if access is not None else PoolAccess()
         self.pools = (
             _PoolRow(
                 id="aws", name="AWS resource", source_kind="bedrock", enabled=enabled,
@@ -203,14 +205,14 @@ class _MemoryPools(PoolStore):
         self, user_id: str, model: str, policy: object | None, deployments: Sequence[Mapping[str, object]],
     ) -> PoolRouteDecision | None:
         return choose_route(
-            _Settings(routing_enabled=False, version=1), self.pools, self.bindings, PoolAccess(),
+            _Settings(routing_enabled=False, version=1), self.pools, self.bindings, self.access,
             model, policy, deployments,
         )
 
     async def key_model_names(
         self, user_id: str, policy: object | None, deployments: Sequence[Mapping[str, object]],
     ) -> frozenset[str] | None:
-        return allowed_model_names(PoolAccess(), self.pools, self.bindings, policy, deployments)
+        return allowed_model_names(self.access, self.pools, self.bindings, policy, deployments)
 
 
 def _pooled_deployments() -> tuple[Mapping[str, object], ...]:
@@ -299,3 +301,23 @@ async def test_explicit_null_policy_cannot_be_treated_as_an_unrestricted_adminis
     with pytest.raises(HTTPException) as discovery:
         await callback.async_filter_listed_models(admin, ("shared",))
     assert inference.value.status_code == discovery.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_customer_without_key_policy_cannot_bypass_account_pools_when_global_routing_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from litellm.constants import UI_SESSION_TOKEN_TEAM_ID
+
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    monkeypatch.setenv("RETAIL_BILLING_ENABLED", "false")
+    access: Final = PoolAccess(mode="custom", grants=(PoolGrant(pool_id="aws"),))
+    callback: Final = RetailBilling(pool_store=_MemoryPools(access=access), deployments=_pooled_deployments)
+    user: Final = UserAPIKeyAuth(
+        user_id="owner", user_role=LitellmUserRoles.INTERNAL_USER, team_id=UI_SESSION_TOKEN_TEAM_ID,
+    )
+    assert await callback.async_filter_listed_models(user, ("shared", "foreign")) == ("shared",)
+    with pytest.raises(HTTPException) as failure:
+        await callback.async_pre_call_hook(user, None, {"model": "foreign"}, "acompletion")
+    assert failure.value.status_code == 403
+    reset_pool_routing()

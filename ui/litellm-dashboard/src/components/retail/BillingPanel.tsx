@@ -290,8 +290,7 @@ export default function BillingPanel() {
         </div>
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        This statement shows customer charges after your discount. Gateway costs shown in the Usage dashboard can differ
-        from your wallet charges.
+        Billing lists settled customer charges after your model and resource pool discounts.
       </p>
     </div>
   );
