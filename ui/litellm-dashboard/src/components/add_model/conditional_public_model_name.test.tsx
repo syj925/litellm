@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { MountedFormHost } from "../../../tests/mounted-form-host";
 import type { MountedFormValues } from "../common_components/MountedFormField";
 import ConditionalPublicModelName from "./conditional_public_model_name";
+import { Providers } from "../provider_info_helpers";
 
 const WRITE_BUDGET = 20;
 
@@ -24,7 +25,82 @@ const LoopGuard: React.FC = () => {
   return null;
 };
 
+const MappingState: React.FC = () => {
+  const form = useFormContext<MountedFormValues>();
+  const mappings = useWatch({ control: form.control, name: "model_mappings" });
+  return <output data-testid="mapping-state">{JSON.stringify(mappings)}</output>;
+};
+
 describe("ConditionalPublicModelName", () => {
+  it("fills new mapping rows with plain public defaults and keeps an existing alias and target exact", () => {
+    render(
+      <MountedFormHost
+        defaultValues={{
+          custom_llm_provider: Providers.OpenAI,
+          model: ["openai/existing", "openai/vendor/model-name", "custom/model-name"],
+          model_mappings: [{ public_name: "customer-alias", litellm_model: "openai/existing" }],
+        }}
+      >
+        <ConditionalPublicModelName />
+        <MappingState />
+        <LoopGuard />
+      </MountedFormHost>,
+    );
+    expect(screen.getByDisplayValue("customer-alias")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("vendor/model-name")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("custom/model-name")).toBeInTheDocument();
+    expect(JSON.parse(screen.getByTestId("mapping-state").textContent!)).toEqual([
+      { public_name: "customer-alias", litellm_model: "openai/existing" },
+      { public_name: "vendor/model-name", litellm_model: "openai/vendor/model-name" },
+      { public_name: "custom/model-name", litellm_model: "custom/model-name" },
+    ]);
+  });
+
+  it("shows the unprefixed upstream name while preserving the mapping value and editable public alias", async () => {
+    const user = userEvent.setup();
+    render(
+      <MountedFormHost
+        defaultValues={{
+          custom_llm_provider: Providers.Anthropic,
+          model: ["anthropic/claude-test"],
+          model_mappings: [{ public_name: "customer-alias", litellm_model: "anthropic/claude-test" }],
+        }}
+      >
+        <ConditionalPublicModelName />
+        <MappingState />
+        <LoopGuard />
+      </MountedFormHost>,
+    );
+    expect(screen.getByText("claude-test")).toBeInTheDocument();
+    expect(screen.queryByText("anthropic/claude-test")).not.toBeInTheDocument();
+    const input = screen.getByDisplayValue("customer-alias");
+    await user.type(input, "-prod");
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue("customer-alias-prod");
+    expect(JSON.parse(screen.getByTestId("mapping-state").textContent!)).toEqual([
+      { public_name: "customer-alias-prod", litellm_model: "anthropic/claude-test" },
+    ]);
+  });
+
+  it("removes only the selected adapter from the mapping display", () => {
+    render(
+      <MountedFormHost
+        defaultValues={{
+          custom_llm_provider: Providers.Openrouter,
+          model: ["openrouter/anthropic/claude-test", "custom/vendor-model"],
+          model_mappings: [
+            { public_name: "claude-alias", litellm_model: "openrouter/anthropic/claude-test" },
+            { public_name: "vendor-alias", litellm_model: "custom/vendor-model" },
+          ],
+        }}
+      >
+        <ConditionalPublicModelName />
+      </MountedFormHost>,
+    );
+    expect(screen.getByText("anthropic/claude-test")).toBeInTheDocument();
+    expect(screen.getByText("custom/vendor-model")).toBeInTheDocument();
+  });
+
   it("should render", () => {
     render(
       <MountedFormHost

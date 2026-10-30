@@ -7,6 +7,7 @@ import { SimpleTooltip } from "@/components/ui/tooltip";
 import { validatorRules } from "../common_components/formRules";
 import { MountedFormField, type MountedFormValues } from "../common_components/MountedFormField";
 import { Providers } from "../provider_info_helpers";
+import { modelDisplayName } from "./modelDisplayName";
 
 interface ModelMapping {
   public_name: string;
@@ -83,6 +84,12 @@ const PublicNameInput: React.FC<{ readonly index: number; readonly value: string
   return <Input value={value} onChange={handleChange} />;
 };
 
+const UpstreamModelNameCell: React.FC<{ readonly value: string }> = ({ value }) => {
+  const form = useFormContext<MountedFormValues>();
+  const selectedProvider = useWatch({ control: form.control, name: "custom_llm_provider" });
+  return <span>{modelDisplayName(value, selectedProvider)}</span>;
+};
+
 /**
  * Module-level so the header and cell renderers keep a stable identity: React treats a renderer
  * declared inside the component as a new element type on every render and remounts the input,
@@ -103,6 +110,7 @@ const columns: ColumnDef<ModelMapping>[] = [
   {
     id: "litellm_model",
     accessorKey: "litellm_model",
+    cell: ({ row }) => <UpstreamModelNameCell value={row.original.litellm_model} />,
     header: () => (
       <span className="flex items-center">
         LiteLLM Model Name
@@ -169,6 +177,10 @@ const ConditionalPublicModelName: React.FC = () => {
 
       if (shouldUpdateMappings) {
         const mappings = selectedModels.map((model: string) => {
+          const requestedModel = model === "custom" && customModelName ? customModelName : model;
+          const target = selectedProvider === Providers.Azure ? `azure/${requestedModel}` : requestedModel;
+          const existing = currentMappings.find((mapping) => mapping.litellm_model === target);
+          if (existing) return existing;
           if (model === "custom" && customModelName) {
             if (selectedProvider === Providers.Azure) {
               return {
@@ -188,7 +200,7 @@ const ConditionalPublicModelName: React.FC = () => {
             };
           }
           return {
-            public_name: model,
+            public_name: modelDisplayName(model, selectedProvider),
             litellm_model: model,
           };
         });

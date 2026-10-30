@@ -7,6 +7,7 @@ import { requiredRule } from "../common_components/formRules";
 import { labelWithHint } from "@/components/shared/form/LabelWithHint";
 import { MountedFormField, type MountedFormValues } from "../common_components/MountedFormField";
 import { Providers } from "../provider_info_helpers";
+import { buildModelChoices, modelDisplayName } from "./modelDisplayName";
 
 interface LiteLLMModelNameFieldProps {
   selectedProvider: string | null;
@@ -33,8 +34,10 @@ const LiteLLMModelNameField: React.FC<LiteLLMModelNameFieldProps> = ({
       (usesCustomCatalog ? [] : providerModels).filter((model) => model && !["custom", "all-wildcard"].includes(model)),
     ),
   );
-  const selectableModels = Array.from(
-    new Set([...availableModels, ...selectedModels.filter((model) => !["custom", "all-wildcard"].includes(model))]),
+  const choices = buildModelChoices(
+    availableModels,
+    selectedModels.filter((model) => !["custom", "all-wildcard"].includes(model)),
+    selectedProvider,
   );
 
   const handleModelChange = (value: string | string[]) => {
@@ -48,7 +51,10 @@ const LiteLLMModelNameField: React.FC<LiteLLMModelNameFieldProps> = ({
       const mappings = values.map((model) => {
         const target = isAzure ? `azure/${model}` : model;
         return (
-          previous.find((mapping) => mapping.litellm_model === target) ?? { public_name: model, litellm_model: target }
+          previous.find((mapping) => mapping.litellm_model === target) ?? {
+            public_name: modelDisplayName(model, selectedProvider),
+            litellm_model: target,
+          }
         );
       });
       form.setValue("model", values, { shouldDirty: true, shouldValidate: true });
@@ -153,10 +159,7 @@ const LiteLLMModelNameField: React.FC<LiteLLMModelNameFieldProps> = ({
                   label: `All ${selectedProvider ?? "provider"} Models (Wildcard)`,
                   value: "all-wildcard",
                 },
-                ...selectableModels.map((model) => ({
-                  label: model,
-                  value: model,
-                })),
+                ...choices.options,
               ]}
               className="max-h-40 w-full overflow-y-auto"
             />
@@ -174,8 +177,8 @@ const LiteLLMModelNameField: React.FC<LiteLLMModelNameFieldProps> = ({
 
       {!isAzure && selectedProvider && availableModels.length > 0 && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" size="xs" onClick={() => handleModelChange(availableModels)}>
-            Select all {availableModels.length} catalog models
+          <Button type="button" variant="outline" size="xs" onClick={() => handleModelChange(choices.selectAllValues)}>
+            Select all {choices.catalogCount} catalog models
           </Button>
           <Button
             type="button"
