@@ -228,7 +228,7 @@ def catalog_snapshot(
         _catalog_model(deployment, source) != candidates[0]["catalog_model"] for deployment in deployments
     ):
         raise ValueError(
-            "A single supported catalog reference is required. Import the model's official reference price in Customer wallets"
+            "A single supported catalog reference is required. Import or configure the model's base price in Model Pricing"
         )
     return {"version": "token-v3", "multiplier": multiplier, **candidates[0]}
 

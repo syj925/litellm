@@ -3,6 +3,10 @@
  * This file contains descriptions and metadata for all navigation pages
  */
 
+export const detailPageMetadata: Readonly<Record<string, { section: string; title: string }>> = {
+  "channel-details": { section: "AI Gateway", title: "Channel details" },
+};
+
 // Page descriptions for UI Settings configuration
 export const pageDescriptions: Record<string, string> = {
   home: "Usage at a glance, recent launches and blog updates",
@@ -16,6 +20,7 @@ export const pageDescriptions: Record<string, string> = {
   wallet: "View your available balance and wallet transactions",
   billing: "View your request charges and billing history",
   "wallet-admin": "Manage customer wallets and account billing settings",
+  "model-pricing": "Manage site-wide model base prices and cache duration rates separately from customer discounts",
   agents: "Create and manage AI agents",
   agentic: "Manage agentic resources: agents, workflow runs, and memory",
   workflows: "Track and inspect durable workflow run history",

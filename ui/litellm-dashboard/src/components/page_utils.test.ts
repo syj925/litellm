@@ -6,7 +6,7 @@
 import { describe, it, expect } from "vitest";
 import { getAvailablePages } from "./page_utils";
 import { menuGroups, routeOf } from "./leftnav";
-import { pageDescriptions } from "./page_metadata";
+import { detailPageMetadata, pageDescriptions } from "./page_metadata";
 import { canAccessDashboardRoute } from "@/utils/dashboardAccess";
 
 /**
@@ -156,7 +156,7 @@ describe("Page Utils - LeftNav Sync", () => {
     // Check for descriptions that don't match any menu page
     const orphanedDescriptions: string[] = [];
     Object.keys(pageDescriptions).forEach((descKey) => {
-      if (!menuPageKeys.includes(descKey)) {
+      if (!menuPageKeys.includes(descKey) && !Object.hasOwn(detailPageMetadata, descKey)) {
         orphanedDescriptions.push(descKey);
       }
     });
@@ -165,6 +165,14 @@ describe("Page Utils - LeftNav Sync", () => {
       orphanedDescriptions,
       `These descriptions don't match any page in menuGroups: ${orphanedDescriptions.join(", ")}. Remove them or add the pages to leftnav.`,
     ).toHaveLength(0);
+  });
+
+  it("keeps the known channel details title without offering it as a navigation or configurable page", () => {
+    expect(detailPageMetadata["channel-details"]).toEqual({ section: "AI Gateway", title: "Channel details" });
+    expect(pageDescriptions["channel-details"]).toContain("Inspect channel traffic");
+    expect(getAvailablePages().map(({ page }) => page)).not.toContain("channel-details");
+    const navPages = menuGroups.flatMap((group) => group.items.flatMap((item) => item.children ?? [item]));
+    expect(navPages.map(({ page }) => page)).not.toContain("channel-details");
   });
 
   it("should have proper group hierarchy for nested pages", () => {
@@ -206,7 +214,15 @@ describe("Page Utils - LeftNav Sync", () => {
   it("offers the customer model catalog without allowing admin surfaces to be enabled", () => {
     const keys = getAvailablePages().map((page) => page.page);
     expect(keys).toContain("model-catalog");
-    for (const page of ["models", "channels", "resource-pools", "wallet-admin", "transform-request", "lens"]) {
+    for (const page of [
+      "models",
+      "channels",
+      "resource-pools",
+      "wallet-admin",
+      "model-pricing",
+      "transform-request",
+      "lens",
+    ]) {
       expect(keys).not.toContain(page);
     }
   });

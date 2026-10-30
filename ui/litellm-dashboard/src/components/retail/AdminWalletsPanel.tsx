@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, CircleAlert, CreditCard, Plus, RefreshCw, Search, Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleAlert, CreditCard, Plus, RefreshCw, Search, Tags, Users } from "lucide-react";
+import Link from "next/link";
 import { parseAsInteger, parseAsString, useQueryStates } from "nuqs";
 import { FormEvent, useState } from "react";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
@@ -11,7 +12,7 @@ import { LoadingState } from "@/components/shared/LoadingState";
 import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components/shared/PageHeader";
 import { StateMessage } from "@/components/shared/StateMessage";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -27,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/lib/toast";
 import { isProxyAdminRole } from "@/utils/roles";
+import { uiHref } from "@/utils/uiHref";
 import {
   formatMoney,
   discountDescription,
@@ -41,7 +43,6 @@ import {
 } from "./api";
 
 import PendingReservations from "./PendingReservations";
-import ModelPrices from "./ModelPrices";
 import ModelDiscountEditor, { DiscountScope } from "./ModelDiscounts";
 import PoolAccessEditor from "./pools/PoolAccessEditor";
 
@@ -201,6 +202,10 @@ export default function AdminWalletsPanel() {
           </PageHeaderDescription>
         </PageHeader>
         <div className="flex gap-2">
+          <Link href={uiHref("model-pricing")} className={buttonVariants({ variant: "outline" })}>
+            <Tags />
+            Model pricing
+          </Link>
           <Button
             variant="outline"
             disabled={wallets.isFetching}
@@ -275,7 +280,7 @@ export default function AdminWalletsPanel() {
               <TableRow>
                 <TableHead className="pl-5">Account</TableHead>
                 <TableHead>Discount plan</TableHead>
-                <TableHead>Model pricing</TableHead>
+                <TableHead>Model discounts</TableHead>
                 <TableHead className="text-right">Available (USD)</TableHead>
                 <TableHead className="text-right">Reserved</TableHead>
                 <TableHead className="text-right">Lifetime spend</TableHead>
@@ -455,7 +460,6 @@ export default function AdminWalletsPanel() {
         </CardContent>
       </Card>
 
-      <ModelPrices accessToken={accessToken} enabled={isAuthorized && isAdmin} />
       <PendingReservations accessToken={accessToken} enabled={isAuthorized && isAdmin} />
 
       <Dialog

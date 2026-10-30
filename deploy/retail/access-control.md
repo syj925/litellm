@@ -7,7 +7,8 @@ The retail portal uses LiteLLM roles, account resource grants and per-key polici
 | Home, personal usage and request logs | Own data | Own / delegated scope | Global |
 | Models | Read-only account-authorized catalog | Authorized catalog | Deployment management |
 | Keys | Own AI API keys | Native delegated team scope | Global key management |
-| Wallet and Billing | Own balance and actual charges | Own account | Customer wallets and pricing administration |
+| Wallet and Billing | Own balance and actual charges | Own account | Customer wallets, credits and discounts |
+| Model Pricing | Denied | Denied | Site-wide model base prices and cache duration prices |
 | Teams / organizations | No administrative page | Explicit delegated scope | Global |
 | Channels, resource pools, credentials and routing configuration | Denied | Denied | Allowed |
 | Channel activity, performance and upstream error analytics | Denied | Denied | Writable proxy administrators only |

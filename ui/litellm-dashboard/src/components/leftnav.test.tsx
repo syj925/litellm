@@ -149,6 +149,24 @@ describe("Sidebar (leftnav)", () => {
     });
     expect(visible.flatMap((group) => group.items).some((item) => item.page === "resource-pools")).toBe(expected);
   });
+  it.each([
+    ["Admin", false, true],
+    ["proxy_admin", false, true],
+    ["Internal User", false, false],
+    ["org_admin", false, false],
+    ["proxy_admin_viewer", false, false],
+    ["Admin", true, false],
+  ] as const)("shows model pricing to %s with view-only %s only when permitted", (userRole, isViewOnly, expected) => {
+    const context = {
+      userRole,
+      isViewOnly,
+      isOrgAdmin: userRole === "org_admin",
+      isTeamAdmin: true,
+      enabledPagesInternalUsers: ["model-pricing"],
+    };
+    const visible = visibleMenuGroups(menuGroups, context);
+    expect(visible.flatMap((group) => group.items).some((item) => item.page === "model-pricing")).toBe(expected);
+  });
   const defaultProps = {
     collapsed: false,
   };
@@ -739,6 +757,9 @@ describe("Sidebar (leftnav)", () => {
 });
 
 describe("getBreadcrumb", () => {
+  it("titles global model pricing in the Billing section", () => {
+    expect(getBreadcrumb("/ui/model-pricing/")).toEqual({ section: "Billing", title: "Model Pricing" });
+  });
   it("keeps channel details in the gateway section", () => {
     expect(getBreadcrumb("/ui/channel-details/")).toEqual({ section: "AI Gateway", title: "Channel details" });
   });

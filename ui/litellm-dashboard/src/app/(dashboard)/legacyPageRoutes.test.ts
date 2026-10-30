@@ -8,6 +8,7 @@ describe("legacyPageRedirectHref", () => {
   it("sends an old ?page= bookmark to the path route that replaced it", () => {
     expect(redirect("page=logs")).toBe("/ui/logs");
     expect(redirect("page=models")).toBe("/ui/models-and-endpoints");
+    expect(redirect("page=model-pricing")).toBe("/ui/model-pricing");
     expect(redirect("page=llm-playground")).toBe("/ui/playground");
     expect(redirect("page=new_usage")).toBe("/ui/usage");
     expect(redirect("page=usage")).toBe("/ui/old-usage");
@@ -17,6 +18,17 @@ describe("legacyPageRedirectHref", () => {
     expect(redirect("page=api_ref")).toBe("/ui/api-reference");
     expect(redirect("page=api-reference")).toBe("/ui/api-reference");
     expect(redirect("page=claude-code-plugins")).toBe("/ui/skills");
+  });
+
+  it.each(["model-catalog", "model-pricing", "channels", "resource-pools", "wallet", "billing", "wallet-admin"])(
+    "opens the existing retail dashboard route for %s",
+    (page) => {
+      expect(redirect(`page=${page}`)).toBe(`/ui/${page}`);
+    },
+  );
+
+  it("keeps the selected channel when opening a legacy channel details link", () => {
+    expect(redirect("page=channel-details&channel=channel-a")).toBe("/ui/channel-details?channel=channel-a");
   });
 
   it("forwards the remaining query params so the MCP env-var setup link still opens its form", () => {

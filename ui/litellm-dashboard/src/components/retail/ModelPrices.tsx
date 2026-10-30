@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, CircleAlert, Download, Plus, RefreshCw, Tags, Trash2 } from "lucide-react";
+import { CircleAlert, Download, Plus, RefreshCw, Tags, Trash2 } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/shared/Alert";
 import { LoadingState } from "@/components/shared/LoadingState";
@@ -75,7 +75,7 @@ const emptyPrice: SalesPrice = {
 
 function referenceKind(source: SavedSalesPrice["source"]): string {
   if (source === "catalog") return "Catalog reference";
-  return source === "manual" ? "Custom reference" : "Legacy, unverified";
+  return source === "manual" ? "Custom price" : "Legacy, unverified";
 }
 
 export default function ModelPrices({ accessToken, enabled }: { accessToken: string | null; enabled: boolean }) {
@@ -105,7 +105,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["retail", "model-prices"] });
       setEditing(false);
-      toast.success("Custom reference price saved");
+      toast.success("Custom base price saved");
     },
   });
   const catalog = useQuery({
@@ -129,7 +129,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["retail", "model-prices"] });
       setImporting(false);
-      toast.success("Selected reference prices imported");
+      toast.success("Selected base prices imported");
     },
   });
   const groups = [...new Set(catalog.data?.items.map((candidate) => candidate.model) ?? [])].map((model) => ({
@@ -189,50 +189,50 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
 
   return (
     <>
-      <details className="group overflow-hidden rounded-xl border" open>
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-sm font-medium">
-          <span>
-            Reference prices{" "}
+      <section className="overflow-hidden rounded-xl border" aria-labelledby="base-prices-title">
+        <div className="flex items-center justify-between gap-3 px-5 py-4">
+          <h2 id="base-prices-title" className="text-base font-semibold">
+            Base prices{" "}
             <Badge variant="secondary" className="ml-2">
-              {prices.data?.items.length ?? "..."}
+              {prices.data?.items.length ?? "..."} configured
             </Badge>
-          </span>
-          <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
-        </summary>
+          </h2>
+        </div>
         <div className="border-t">
           <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-              Customer charges use these reference rates multiplied by the negotiated discount for that customer and
-              model. Channel procurement costs are separate. Catalog imports require review and confirmation; existing
-              bills keep their saved prices.
+              Manage site-wide base rates for each public model. Review catalog references before importing them, or set
+              custom rates. Existing bills keep their saved prices.
             </p>
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 disabled={prices.isFetching}
-                aria-label="Refresh reference prices"
+                aria-label="Refresh base prices"
                 onClick={() => void prices.refetch()}
               >
                 <RefreshCw className={prices.isFetching ? "animate-spin" : ""} />
               </Button>
               <Button variant="outline" size="sm" onClick={openImport}>
                 <Download />
-                Import catalog references
+                Import catalog prices
               </Button>
               <Button variant="outline" size="sm" onClick={() => editPrice(emptyPrice)}>
                 <Plus />
-                Add reference price
+                Add base price
               </Button>
             </div>
           </div>
-          {prices.isPending && <LoadingState title="Loading model prices" description="Retrieving reference rates." />}
+          {prices.isPending && (
+            <LoadingState title="Loading model prices" description="Retrieving configured base rates." />
+          )}
           {!prices.isPending && prices.error && (
             <StateMessage
               role="alert"
               tone="destructive"
               icon={<CircleAlert className="size-5" />}
-              title="Unable to load reference prices"
+              title="Unable to load base prices"
               description={prices.error.message}
             />
           )}
@@ -240,8 +240,8 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
             <StateMessage
               role="status"
               icon={<Tags className="size-5" />}
-              title="No reference prices yet"
-              description="Import rates from the LiteLLM reference catalog, or configure custom reference rates for your customers. Channel procurement costs remain separate."
+              title="No custom base prices configured"
+              description="Models can use catalog defaults without a saved base price here. Import catalog rates to review and customize them, or add a base price for a public model. This count does not indicate model availability."
             />
           )}
           {showPrices && (
@@ -256,7 +256,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                   ))}
                   <TableHead>Cache write / 1M tokens</TableHead>
                   <TableHead>Version</TableHead>
-                  <TableHead>Reference source</TableHead>
+                  <TableHead>Price source</TableHead>
                   <TableHead>Updated</TableHead>
                   <TableHead className="pr-5 text-right">Actions</TableHead>
                 </TableRow>
@@ -288,8 +288,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                     <TableCell className="max-w-64 text-xs text-muted-foreground">
                       <Badge variant="outline">{referenceKind(price.source)}</Badge>
                       <p className="mt-1 break-words">
-                        {price.source_label ??
-                          "Existing reference price, review before publishing it to customers"}
+                        {price.source_label ?? "Existing base price, review before publishing it to customers"}
                       </p>
                       {price.catalog_model && <p className="mt-1 break-all font-mono">{price.catalog_model}</p>}
                     </TableCell>
@@ -307,7 +306,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
             </Table>
           )}
         </div>
-      </details>
+      </section>
       <Dialog
         open={editing}
         onOpenChange={(open) => {
@@ -316,9 +315,9 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
       >
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Save custom reference price</DialogTitle>
+            <DialogTitle>Save custom base price</DialogTitle>
             <DialogDescription>
-              Configure your reference rate in USD per one million tokens. Customer discounts apply separately.
+              Configure the site-wide base rate in USD per one million tokens. Customer discounts apply separately.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={savePrice} className="flex flex-col gap-5">
@@ -449,12 +448,12 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
             {(validation || mutation.error) && (
               <Alert variant="error">
                 <CircleAlert />
-                <AlertTitle>Reference price was not saved</AlertTitle>
+                <AlertTitle>Base price was not saved</AlertTitle>
                 <AlertDescription>{validation || mutation.error?.message}</AlertDescription>
               </Alert>
             )}
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Saving changes the reference price for future customer requests. Their effective discount still applies.
+              Saving changes the base price for future customer requests. Their effective discount still applies.
               Requests already reserved keep their original pricing snapshot.
             </p>
             <DialogFooter>
@@ -462,7 +461,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                 Cancel
               </Button>
               <Button type="submit" disabled={mutation.isPending}>
-                {mutation.isPending ? "Saving..." : "Save reference price"}
+                {mutation.isPending ? "Saving..." : "Save base price"}
               </Button>
             </DialogFooter>
           </form>
@@ -476,10 +475,10 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
       >
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-5xl">
           <DialogHeader>
-            <DialogTitle>Import catalog reference prices</DialogTitle>
+            <DialogTitle>Import catalog prices</DialogTitle>
             <DialogDescription>
               Review the LiteLLM reference catalog before applying it. This is a reference catalog, not a live check of
-              provider websites. Importing replaces selected models&apos; reference rates for new requests only.
+              provider websites. Importing replaces selected models&apos; base rates for new requests only.
             </DialogDescription>
           </DialogHeader>
           {catalog.isPending && (
@@ -562,7 +561,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                         <TableRow key={model}>
                           <TableCell>
                             <Checkbox
-                              aria-label={`Import reference for ${model}`}
+                              aria-label={`Import base price for ${model}`}
                               checked={Boolean(selected[model])}
                               disabled={importMutation.isPending || !chosen}
                               onCheckedChange={(checked) =>
@@ -677,7 +676,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
           )}
           {importMutation.error && (
             <Alert variant="error">
-              <AlertTitle>Reference prices were not imported</AlertTitle>
+              <AlertTitle>Base prices were not imported</AlertTitle>
               <AlertDescription>{importMutation.error.message}</AlertDescription>
             </Alert>
           )}
@@ -702,7 +701,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
               }
               onClick={() => importMutation.mutate()}
             >
-              {importMutation.isPending ? "Applying..." : `Apply ${Object.keys(selected).length} reference prices`}
+              {importMutation.isPending ? "Applying..." : `Apply ${Object.keys(selected).length} base prices`}
             </Button>
           </DialogFooter>
         </DialogContent>

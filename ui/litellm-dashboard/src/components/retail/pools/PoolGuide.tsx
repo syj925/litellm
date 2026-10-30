@@ -50,7 +50,7 @@ export default function PoolGuide({
       complete: progress.publishedPools > 0,
       description:
         "Choose public or restricted access. A public pool can be inherited by accounts; restricted pools need explicit grants. Give this pool a default discount, then add customer or shared-plan model exceptions when needed. Pricing and permission are separate settings.",
-      action: "Open customer pricing",
+      action: "Manage customer discounts",
       href: uiHref("wallet-admin"),
     },
     {

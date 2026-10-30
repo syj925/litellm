@@ -29,6 +29,7 @@ describe("dashboard role boundaries", () => {
     "channel-details",
     "resource-pools",
     "wallet-admin",
+    "model-pricing",
     "agents",
     "workflows",
     "memory",
@@ -75,6 +76,7 @@ describe("dashboard role boundaries", () => {
     expect(canAccessDashboardRoute("users", organizationAdmin)).toBe(true);
     expect(canAccessDashboardRoute("admin-panel", organizationAdmin)).toBe(false);
     expect(canAccessDashboardRoute("wallet-admin", organizationAdmin)).toBe(false);
+    expect(canAccessDashboardRoute("model-pricing", organizationAdmin)).toBe(false);
   });
   it("preserves proxy management and viewer cost restrictions", () => {
     expect(canAccessDashboardRoute("models-and-endpoints", { ...customer, userRole: "Admin" })).toBe(true);
@@ -84,7 +86,7 @@ describe("dashboard role boundaries", () => {
     expect(canUseAdminControlPlane({ userRole: "proxy_admin_viewer", isViewOnly: false })).toBe(false);
     expect(canAccessDashboardRoute("moyai", { ...customer, userRole: "Admin", isViewOnly: true })).toBe(false);
   });
-  it.each(["channels", "channel-details", "resource-pools", "wallet-admin"])(
+  it.each(["channels", "channel-details", "resource-pools", "wallet-admin", "model-pricing"])(
     "does not expose %s to a proxy viewer",
     (page) => {
       expect(canAccessDashboardRoute(page, { ...customer, userRole: "proxy_admin_viewer" })).toBe(false);
@@ -92,6 +94,10 @@ describe("dashboard role boundaries", () => {
       expect(canAccessDashboardRoute(page, { ...customer, userRole: "Admin" })).toBe(true);
     },
   );
+  it.each(["Admin", "proxy_admin"])("allows global model pricing only for the writable proxy role %s", (userRole) => {
+    expect(canAccessDashboardRoute("model-pricing", { ...customer, userRole })).toBe(true);
+    expect(canAccessDashboardRoute("model-pricing", { ...customer, userRole, isViewOnly: true })).toBe(false);
+  });
   it("fails closed for unresolved roles", () => {
     expect(canAccessDashboardRoute("home", { ...customer, userRole: "" })).toBe(false);
     expect(canAccessDashboardRoute("channels", { ...customer, userRole: "Unknown Role" })).toBe(false);

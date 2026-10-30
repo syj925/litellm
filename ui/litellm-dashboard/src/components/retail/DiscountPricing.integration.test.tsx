@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NuqsTestingAdapter } from "nuqs/adapters/testing";
 import { afterEach, expect, it, vi } from "vitest";
+import { uiHref } from "@/utils/uiHref";
 import AdminWalletsPanel from "./AdminWalletsPanel";
 import WalletPanel from "./WalletPanel";
 import type { ResourcePool } from "./pools/types";
@@ -54,33 +55,7 @@ const modelDiscounts = [
   },
   { model: "gamma-model", discount: "1", discount_source: "standard", customer_discount: null, plan_discount: null },
 ];
-const rate = {
-  input_per_million: "2",
-  output_per_million: "10",
-  cache_read_per_million: "0.2",
-  cache_write_per_million: "2.5",
-};
-const candidates = [
-  { ...rate, model: "public-one", catalog_model: "provider/one", source_label: "Reference catalog revision test" },
-  {
-    ...rate,
-    model: "public-two",
-    catalog_model: "provider/two-region-a",
-    source_label: "Reference catalog revision test",
-  },
-  {
-    ...rate,
-    model: "public-two",
-    catalog_model: "provider/two-region-b",
-    source_label: "Reference catalog revision test",
-  },
-];
-
-function serveApi(
-  activeModels = modelDiscounts.map((row) => row.model),
-  pools: ResourcePool[] = [],
-  cacheWriteTiers?: Record<string, string>,
-) {
+function serveApi(activeModels = modelDiscounts.map((row) => row.model), pools: ResourcePool[] = []) {
   const writes: { path: string; body: unknown }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -131,25 +106,6 @@ function serveApi(
         if (path.endsWith("/plans")) return { items: [plan] };
         if (path.endsWith("/wallets")) return { items: [wallet], total: 1 };
         if (path.endsWith("/wallet")) return wallet;
-        if (path.endsWith("/model-prices"))
-          return {
-            items: [
-              {
-                ...rate,
-                cache_write_tiers: cacheWriteTiers,
-                model: "legacy-model",
-                version: 1,
-                updated_at: "2026-01-01T00:00:00Z",
-                source: "legacy",
-                source_label: "Existing unverified base price",
-              },
-            ],
-          };
-        if (path.endsWith("/reference-prices"))
-          return {
-            items: candidates,
-            unavailable: [{ model: "unpriced-model", reason: "Manual reference required" }],
-          };
         return { items: [], total: 0 };
       }
       return new Response(JSON.stringify(readData()), { status: 200 });
@@ -168,6 +124,18 @@ function renderPanel(panel = <AdminWalletsPanel />) {
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("links customer wallet admins to site-wide pricing while keeping only wallet and discount controls here", async () => {
+  serveApi();
+  renderPanel();
+  expect(await screen.findByRole("button", { name: "Model discounts for customer customer-example" })).toBeEnabled();
+  expect(screen.getByRole("link", { name: "Model pricing" })).toHaveAttribute("href", uiHref("model-pricing"));
+  expect(screen.getByRole("button", { name: "New plan" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Add base price" })).not.toBeInTheDocument();
+  expect(vi.mocked(fetch).mock.calls.filter(([input]) => /model-prices|reference-prices/.test(String(input)))).toEqual(
+    [],
+  );
+});
 
 it("keeps negotiated model and default discounts inside the selected resource pool", async () => {
   const pool: ResourcePool = {
@@ -306,51 +274,6 @@ it("shares selected model rules through a plan and rejects a markup", async () =
   );
 });
 
-it("requires explicit catalog import and a choice for aliases with multiple references", async () => {
-  const writes = serveApi();
-  renderPanel();
-  expect(await screen.findByText("Legacy, unverified")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Import catalog references" }));
-  expect(await screen.findByRole("checkbox", { name: "Import reference for public-two" })).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
-  expect(writes).toEqual([]);
-  fireEvent.click(screen.getByRole("button", { name: "Select single-match models" }));
-  expect(screen.getByRole("button", { name: "Apply 1 reference prices" })).toBeEnabled();
-  const user = userEvent.setup();
-  await user.click(screen.getByRole("combobox", { name: "Catalog reference for public-two" }));
-  await user.click(await screen.findByRole("option", { name: "provider/two-region-b" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Apply 2 reference prices" }));
-  await waitFor(() =>
-    expect(writes).toEqual([
-      {
-        path: "/retail/admin/reference-prices/import",
-        body: {
-          items: [
-            { model: "public-one", catalog_model: "provider/one", source_label: "Reference catalog revision test" },
-            {
-              model: "public-two",
-              catalog_model: "provider/two-region-b",
-              source_label: "Reference catalog revision test",
-            },
-          ],
-        },
-      },
-    ]),
-  );
-});
-
-it("shows saved duration prices without a duplicate default cache price", async () => {
-  serveApi(undefined, [], { "300": rate.cache_write_per_million, "3600": "4" });
-  renderPanel();
-  const saved = await screen.findByRole("row", { name: /legacy-model/ });
-  expect(within(saved).getByText("Cache write · 5m")).toBeInTheDocument();
-  expect(within(saved).getByText("Cache write · 1h")).toBeInTheDocument();
-  expect(within(saved).getAllByText("$2.50")).toHaveLength(1);
-  expect(within(saved).queryByText("Cache write", { exact: true })).not.toBeInTheDocument();
-});
-
 it("shows different effective discounts for each customer model without an account-wide percentage", async () => {
   serveApi();
   renderPanel(<WalletPanel />);
@@ -360,41 +283,4 @@ it("shows different effective discounts for each customer model without an accou
   expect(screen.getByText("80% of reference price (20% off)")).toBeInTheDocument();
   expect(screen.getByText("100% of reference price (0% off)")).toBeInTheDocument();
   expect(screen.getByText("Standard")).toBeInTheDocument();
-});
-
-it("saves independent cache duration rates and rejects duplicate durations without a write", async () => {
-  const writes = serveApi();
-  renderPanel();
-  fireEvent.click(await screen.findByRole("button", { name: "Add reference price" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Public model name" }), { target: { value: "cache-model" } });
-  fireEvent.change(screen.getByRole("textbox", { name: "Input (USD / 1M)" }), { target: { value: "2" } });
-  fireEvent.change(screen.getByRole("textbox", { name: "Output (USD / 1M)" }), { target: { value: "10" } });
-  fireEvent.change(screen.getByRole("textbox", { name: "Cache read (USD / 1M)" }), { target: { value: "0.2" } });
-  fireEvent.click(screen.getByRole("button", { name: "+ 5m" }));
-  fireEvent.click(screen.getByRole("button", { name: "+ 1h" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "5m price (USD / 1M)" }), { target: { value: "2.5" } });
-  fireEvent.change(screen.getByRole("textbox", { name: "1h price (USD / 1M)" }), { target: { value: "4" } });
-  fireEvent.click(screen.getByRole("button", { name: "Add duration" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Duration 3 (seconds)" }), { target: { value: "300" } });
-  fireEvent.change(screen.getAllByRole("textbox", { name: "5m price (USD / 1M)" })[1], { target: { value: "0" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save reference price" }));
-  expect(screen.getByRole("alert")).toHaveTextContent("only one price");
-  expect(writes).toEqual([]);
-  fireEvent.change(screen.getByRole("textbox", { name: "Duration 3 (seconds)" }), { target: { value: "75" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save reference price" }));
-  await waitFor(() =>
-    expect(writes).toEqual([
-      {
-        path: "/retail/admin/model-prices",
-        body: {
-          model: "cache-model",
-          input_per_million: "2",
-          output_per_million: "10",
-          cache_read_per_million: "0.2",
-          cache_write_per_million: "0",
-          cache_write_tiers: { "300": "2.5", "3600": "4", "75": "0" },
-        },
-      },
-    ]),
-  );
 });

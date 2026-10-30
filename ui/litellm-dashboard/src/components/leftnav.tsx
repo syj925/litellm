@@ -83,6 +83,7 @@ import SidebarAccountMenu from "./SidebarAccountMenu/SidebarAccountMenu";
 import SidebarUsageCard from "./SidebarUsageCard";
 import { routeSegmentForPathname, uiHref } from "@/utils/uiHref";
 import { canAccessDashboardRoute, isProxyDashboardRole } from "@/utils/dashboardAccess";
+import { detailPageMetadata } from "./page_metadata";
 
 const ICON = { strokeWidth: 1.75 } as const;
 
@@ -360,6 +361,13 @@ const menuGroups: MenuGroup[] = [
         icon: <Users {...ICON} />,
         roles: ["Admin", "proxy_admin"],
       },
+      {
+        key: "model-pricing",
+        page: "model-pricing",
+        label: "Model Pricing",
+        icon: <Tags {...ICON} />,
+        roles: ["Admin", "proxy_admin"],
+      },
     ],
   },
   {
@@ -529,6 +537,7 @@ const findMenuItemKey = (route: string): string => {
 const SECTION_DISPLAY: Record<string, string> = {
   "AI GATEWAY": "AI Gateway",
   OBSERVABILITY: "Observability",
+  BILLING: "Billing",
   "ACCESS CONTROL": "Access Control",
   "DEVELOPER TOOLS": "Developer Tools",
   SETTINGS: "Settings",
@@ -547,7 +556,7 @@ export const labelText = (item: MenuItem): string => (typeof item.label === "str
 // Breadcrumb ("Section" / "Page") for the top bar, derived from the same nav config.
 export const getBreadcrumb = (pathname: string): { section: string | null; title: string } => {
   const route = routeForPathname(pathname);
-  if (route === "channel-details") return { section: "AI Gateway", title: "Channel details" };
+  if (Object.hasOwn(detailPageMetadata, route)) return detailPageMetadata[route];
   for (const group of menuGroups) {
     for (const item of group.items) {
       const section = sectionText(group.groupLabel);

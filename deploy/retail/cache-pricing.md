@@ -1,6 +1,6 @@
 # Cache duration pricing and usage
 
-Administrators configure reference prices in Customer wallets. The editor supports cache write prices for 5 minutes, 30 minutes, 1 hour, 12 hours and custom durations in seconds. Prices shown in the editor and public catalog are USD per million tokens. A model with duration prices displays those rows; a model with only a generic write price displays Cache write. A default billing rate is not an additional published duration
+Administrators configure site-wide base prices in Model Pricing at `/ui/model-pricing/`. Customer Wallets manages balances and customer discounts and links to that separate page. The editor supports cache write prices for 5 minutes, 30 minutes, 1 hour, 12 hours and custom durations in seconds. Prices shown in the editor and public catalog are USD per million tokens. A model with duration prices displays those rows; a model with only a generic write price displays Cache write. A default billing rate is not an additional published duration
 
 `POST /retail/admin/model-prices` accepts `cache_write_tiers` as a map from canonical positive integer seconds to decimal USD per million tokens. For example, `{"300":"2.50","3600":"4.00","750":"0"}` defines two standard durations and a free custom duration. Up to sixteen entries are allowed, with durations from 1 to 31536000 seconds. Duplicate durations, non-finite prices, negative prices and invalid duration keys are rejected
 

@@ -54,6 +54,7 @@ describe("visibleMenuGroups", () => {
       "channels",
       "resource-pools",
       "wallet-admin",
+      "model-pricing",
       "transform-request",
       "agents",
       "lens",
@@ -67,6 +68,20 @@ describe("visibleMenuGroups", () => {
       visibleMenuGroups(menuGroups, { ...context, enabledPagesInternalUsers: ["models"] }),
     ).map(({ route }) => route);
     expect(routes).toEqual(["model-catalog"]);
+  });
+
+  it("finds the dedicated global pricing page for a proxy administrator", () => {
+    const items = flattenNavItems(visibleMenuGroups(menuGroups, { ...context, userRole: "Admin" }));
+    expect(matchNavItems(items, "model pricing")).toEqual([
+      expect.objectContaining({ route: "model-pricing", label: "Model Pricing", section: "Billing" }),
+    ]);
+  });
+
+  it.each(["Org Admin", "proxy_admin_viewer"])("keeps global pricing out of command search for %s", (userRole) => {
+    const items = flattenNavItems(
+      visibleMenuGroups(menuGroups, { ...context, userRole, isOrgAdmin: userRole === "Org Admin" }),
+    );
+    expect(matchNavItems(items, "model pricing")).toEqual([]);
   });
 
   it("hides Projects when its UI setting is disabled", () => {

@@ -1,3 +1,21 @@
+# Dedicated model pricing page QA
+
+final result: passed for the reviewed local desktop state on 2026-10-30
+
+Site-wide model base pricing now has its own administrator page at /ui/model-pricing/, with a Model Pricing entry under Billing and a matching command-palette entry. Customer Wallets retains balances, customer discounts and account access, with a link to the new page. The page keeps catalog import, manual base rates, cache read prices and cache write duration presets or custom seconds. Empty configured prices explain that catalog defaults remain available
+
+Before: C:/Users/26933/AppData/Local/Temp/codex-clipboard-9efa27fe-bd45-4751-808a-ad7842418dde.png
+
+After: C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/model-pricing-page-proof.png
+
+The actual authenticated local page was reviewed in the existing dashboard shell. The base-price section, actions and empty state rendered correctly, and captured browser warning and error collections were empty. The user's separate tab and open import dialog were left untouched. Mobile and dark-theme visual acceptance were not performed
+
+Seventeen scoped pricing integration tests and 167 navigation, access and route tests passed. Ordinary users, organization administrators and proxy viewers cannot mount this administrative page. Legacy retail links preserve their query parameters, and the personal model-catalog route remains separate from the public models route. Production TypeScript and the webpack build passed, followed by a local service restart and HTTP 200 checks for health and the new page. Scoped lint added no errors; existing wallet-panel lint debt was not suppressed or expanded
+
+No pricing APIs or billing calculations changed. Existing bills and reserved request snapshots retain their saved rates. Before and after business fingerprints matched for four channels, fifty-six native models, fifty-six pool bindings, zero saved model prices and four wallets. This QA did not import prices or change rates, balances or discounts
+
+---
+
 # Cache compatibility and price display correction QA
 
 final result: passed for the reviewed local desktop states on 2026-10-30

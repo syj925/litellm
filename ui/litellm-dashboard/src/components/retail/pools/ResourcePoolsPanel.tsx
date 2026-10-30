@@ -354,7 +354,11 @@ export default function ResourcePoolsPanel() {
         </div>
       </section>
       <p className="text-xs text-muted-foreground">
-        Customer access and pool-specific discounts are managed in{" "}
+        Site-wide base prices are managed in{" "}
+        <Link className="underline underline-offset-4" href={uiHref("model-pricing")}>
+          Model Pricing
+        </Link>
+        . Customer access and pool-specific discounts are managed in{" "}
         <Link className="underline underline-offset-4" href={uiHref("wallet-admin")}>
           Customer Wallets
         </Link>
