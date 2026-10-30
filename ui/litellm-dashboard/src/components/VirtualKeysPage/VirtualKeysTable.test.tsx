@@ -207,6 +207,16 @@ it("should render VirtualKeysTable component", () => {
   expect(screen.getByText("Test Key Alias")).toBeInTheDocument();
 });
 
+it("shows a fixed resource policy without claiming that an empty model list allows every proxy model", () => {
+  mockUseKeys.mockReturnValue(
+    keysResult([{ ...mockKey, models: [], metadata: { retail_resource_policy: { mode: "fixed", pool_id: "aws" } } }]),
+  );
+  renderWithProviders(<VirtualKeysTable />);
+  expect(screen.getByText("Fixed pool")).toBeInTheDocument();
+  expect(screen.getByText("All authorized pool models")).toBeInTheDocument();
+  expect(screen.queryByText("All Proxy Models")).not.toBeInTheDocument();
+});
+
 it("right-aligns the Spend / Budget column", async () => {
   renderWithProviders(<VirtualKeysTable />);
   expect(await screen.findByRole("columnheader", { name: /^Spend/ })).toHaveClass("text-right");

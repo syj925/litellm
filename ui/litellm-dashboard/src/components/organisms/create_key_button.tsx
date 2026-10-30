@@ -87,7 +87,10 @@ import {
   ResourceRoutingPolicy,
   resourcePolicySummary,
   resourceRoutingCurl,
+  resourcePolicyModels,
+  resourceModelHelp,
 } from "./resourceRoutingPolicy";
+import { useKeyResourceCatalog } from "./useKeyResourceCatalog";
 import { simplifyKeyGenerateError } from "./utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -255,6 +258,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   const [apiKey, setApiKey] = useState(null);
   const [userModels, setUserModels] = useState<string[]>([]);
   const [modelsToPick, setModelsToPick] = useState<string[]>([]);
+  const [nativeModelsReady, setNativeModelsReady] = useState(false);
   const [keyOwner, setKeyOwner] = useState("you");
   const [hasPrefilled, setHasPrefilled] = useState(false);
   const [pendingPrefillModels, setPendingPrefillModels] = useState<string[] | null>(null);
@@ -290,6 +294,23 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   const [resourceRoutingValid, setResourceRoutingValid] = useState(true);
   const assignedUserId = useWatch({ control: form.control, name: "user_id" }) as string | undefined;
   const resourceUserId = keyOwner === "you" ? userID : keyOwner === "another_user" ? assignedUserId ?? null : null;
+  const resourceCatalog = useKeyResourceCatalog({
+    accessToken,
+    targetUserId: resourceUserId,
+    admin: isProxyAdminRole(userRole ?? ""),
+  });
+  const usesPoolModels = resourcePolicy !== null || resourceCatalog.data?.routing_enabled === true;
+  const modelScopeReady =
+    !resourceUserId ||
+    Boolean(resourceCatalog.data && !resourceCatalog.error && (!usesPoolModels || nativeModelsReady));
+  const selectableModels = useMemo(() => {
+    if (!modelScopeReady) return [];
+    if (!usesPoolModels) return modelsToPick;
+    const poolModels = resourcePolicyModels(resourcePolicy ?? { mode: "auto" }, resourceCatalog.data?.items ?? []);
+    return poolModels.filter((model) => modelsToPick.includes(model));
+  }, [modelScopeReady, usesPoolModels, resourcePolicy, resourceCatalog.data, modelsToPick]);
+  const resourceModelsValid =
+    keyType === "management" || keyType === "read_only" || !usesPoolModels || selectableModels.length > 0;
   const previousResourceUser = useRef(resourceUserId);
   useEffect(() => {
     if (previousResourceUser.current !== resourceUserId) {
@@ -298,6 +319,11 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
     }
   }, [resourceUserId]);
   const selectedModels: string[] = (useWatch({ control: form.control, name: "models" }) as string[] | undefined) ?? [];
+  useEffect(() => {
+    if (!usesPoolModels || !modelScopeReady) return;
+    const allowed = selectedModels.filter((model) => selectableModels.includes(model));
+    if (allowed.length !== selectedModels.length) form.setValue("models", allowed, { shouldDirty: true });
+  }, [usesPoolModels, modelScopeReady, selectableModels, selectedModels, form]);
   const handleCancel = () => {
     setIsModalVisible(false);
     setApiKey(null);
@@ -450,7 +476,8 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
 
   const handleCreate = async (formValues: MountedFormValues) => {
     try {
-      if (!resourceRoutingValid) throw new Error("Review the resource routing selection before creating this key.");
+      if (!resourceRoutingValid || !modelScopeReady || !resourceModelsValid)
+        throw new Error("Review the resource routing selection and available models before creating this key.");
       const input: KeyCreateInput = {
         formValues,
         existingKeys: data,
@@ -520,20 +547,25 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   // Note: Model prefill from URL params is handled by the useEffect below, which
   // watches for pendingPrefillModels + modelsToPick to both be populated.
   useEffect(() => {
+    let current = true;
+    setNativeModelsReady(false);
     if (selectedProjectId) {
       // When a project is selected, use the project's models
       const project = projects?.find((p) => p.project_id === selectedProjectId);
       const projectModels = project?.models ?? [];
       setModelsToPick(projectModels);
+      setNativeModelsReady(true);
       form.setValue("models", []);
       return;
     }
     if (userID && userRole && accessToken) {
       fetchTeamModels(userID, userRole, accessToken, selectedCreateKeyTeam?.team_id ?? null).then((models) => {
+        if (!current) return;
         const allModels = excludeProxyWideSentinel(
           Array.from(new Set([...(selectedCreateKeyTeam?.models ?? []), ...models])),
         );
         setModelsToPick(allModels);
+        setNativeModelsReady(true);
       });
     }
     // Only clear models if we don't have pending prefill models
@@ -542,6 +574,9 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
     }
     // Clear MCP server selection when team changes (available servers may differ)
     form.setValue("allowed_mcp_servers_and_groups", { servers: [], accessGroups: [] });
+    return () => {
+      current = false;
+    };
   }, [selectedCreateKeyTeam, selectedProjectId, accessToken, userID, userRole, form]);
 
   // Apply deferred model prefill once the available model list arrives.
@@ -653,13 +688,13 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
   };
 
   const modelOptions: MultiSelectOption[] = [
-    ...(selectedProjectId === null && selectedCreateKeyTeam
+    ...(modelScopeReady && !usesPoolModels && selectedProjectId === null && selectedCreateKeyTeam
       ? [{ value: "all-team-models", label: "All Team Models" }]
       : []),
-    ...(selectedProjectId === null && !selectedCreateKeyTeam
+    ...(modelScopeReady && !usesPoolModels && selectedProjectId === null && !selectedCreateKeyTeam
       ? [{ value: "all-proxy-models", label: "All Proxy Models" }]
       : []),
-    ...modelsToPick.map((model) => ({
+    ...selectableModels.map((model) => ({
       value: model,
       label: getModelDisplayName(model),
       disabled: hasAllModelsSentinel(selectedModels),
@@ -910,11 +945,20 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                     {(control) => <Input {...control} value={(control.value as string | undefined) ?? ""} />}
                   </MountedFormField>
 
+                  <KeyResourceRouting
+                    accessToken={accessToken}
+                    targetUserId={resourceUserId}
+                    admin={isProxyAdminRole(userRole ?? "")}
+                    value={resourcePolicy}
+                    onChange={setResourcePolicy}
+                    onValidityChange={setResourceRoutingValid}
+                  />
+
                   <MountedFormField
                     label={
                       <span>
                         Models{" "}
-                        <SimpleTooltip content="Select which models this key can access. Choose 'All Team Models' to grant access to all models available to the team. Leave empty to allow access to all models.">
+                        <SimpleTooltip content="Choose an additional model limit within the selected resource routing. Leave empty to use every model available in that scope.">
                           <Info className="ml-1 inline size-3.5 align-text-bottom" />
                         </SimpleTooltip>
                       </span>
@@ -923,7 +967,12 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                     help={
                       keyType === "management" || keyType === "read_only"
                         ? "Models field is disabled for this key type"
-                        : "optional - leave empty to allow access to all models"
+                        : resourceModelHelp(
+                            usesPoolModels,
+                            modelScopeReady,
+                            Boolean(resourceCatalog.error),
+                            selectableModels.length,
+                          ) ?? "Optional. Leave empty to allow all available native models."
                     }
                     className="mt-4"
                   >
@@ -933,7 +982,10 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                         options={modelOptions}
                         value={(control.value as string[] | undefined) ?? []}
                         placeholder="Select models"
-                        disabled={keyType === "management" || keyType === "read_only"}
+                        disabled={keyType === "management" || keyType === "read_only" || !modelScopeReady}
+                        emptyText={
+                          usesPoolModels ? "No available models in the selected resource scope" : "No models available"
+                        }
                         onValueChange={(values) => {
                           control.onChange(values);
                           if (values.includes("all-team-models")) {
@@ -990,16 +1042,6 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                 </div>
               )}
 
-              {!isFormDisabled && (
-                <KeyResourceRouting
-                  accessToken={accessToken}
-                  targetUserId={resourceUserId}
-                  admin={isProxyAdminRole(userRole ?? "")}
-                  value={resourcePolicy}
-                  onChange={setResourcePolicy}
-                  onValidityChange={setResourceRoutingValid}
-                />
-              )}
               {/* Section 3: Optional Settings */}
               {!isFormDisabled && (
                 <div className="mb-8">
@@ -1084,7 +1126,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                         <ModelMaxBudgetEditor
                           value={modelMaxBudget}
                           onChange={setModelMaxBudget}
-                          availableModels={modelsToPick}
+                          availableModels={selectableModels}
                           premiumUser={premiumUser === true}
                         />
                       </Field>
@@ -1101,7 +1143,7 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                           key={budgetFallbacksKey}
                           value={budgetFallbacks}
                           onChange={setBudgetFallbacks}
-                          availableModels={modelsToPick}
+                          availableModels={selectableModels}
                         />
                       </Field>
                       {keyOwner === "service_account" && isProxyAdminRole(userRole ?? "") && (
@@ -1860,7 +1902,10 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
               )}
 
               <div style={{ textAlign: "right", marginTop: "10px" }}>
-                <Button type="submit" disabled={isFormDisabled}>
+                <Button
+                  type="submit"
+                  disabled={isFormDisabled || !resourceRoutingValid || !modelScopeReady || !resourceModelsValid}
+                >
                   Create Key
                 </Button>
               </div>

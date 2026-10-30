@@ -3295,6 +3295,9 @@ class StandardLoggingMetadata(StandardLoggingUserAPIKeyMetadata):
     team_alias: str | None
     team_id: str | None
     used_client_oauth_token: ReadOnly[bool | None]
+    retail_resource_pool_id: NotRequired[ReadOnly[str]]
+    retail_resource_pool_name: NotRequired[ReadOnly[str]]
+    retail_resource_source_kind: NotRequired[ReadOnly[str]]
 
 
 class AzureSpillover(TypedDict):

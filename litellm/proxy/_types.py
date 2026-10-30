@@ -4354,6 +4354,9 @@ class SpendLogsMetadata(TypedDict):
     router_metadata: ReadOnly[SpendLogsRouterMetadata | None]  # None = deployment not flagged internal_router_model
     azure_spillover: ReadOnly[AzureSpillover | None]  # None = Azure did not report spillover
     used_client_oauth_token: ReadOnly[bool | None]  # None = row written before the flag existed
+    retail_resource_pool_id: ReadOnly[NotRequired[str | None]]
+    retail_resource_pool_name: ReadOnly[NotRequired[str | None]]
+    retail_resource_source_kind: ReadOnly[NotRequired[str | None]]
 
 
 class SpendLogsPayload(TypedDict):

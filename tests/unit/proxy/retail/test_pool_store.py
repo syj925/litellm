@@ -177,6 +177,20 @@ def test_revocations_disable_new_requests_without_mutating_an_already_frozen_dec
         saved.pool_id = "other"
 
 
+def test_resource_source_is_preserved_independently_of_the_upstream_protocol() -> None:
+    pool: Final = _pool("resource").model_copy(update={"source_kind": "bedrock"})
+    deployment: Final = {
+        **_deployment("deployment", "public-model"),
+        "litellm_params": {"model": "anthropic/provider-model"},
+    }
+    decision: Final = choose_route(
+        _Settings(routing_enabled=False, version=1), (pool,), (_binding(pool.id, "deployment", "public-model"),),
+        PoolAccess(), "public-model", {"mode": "fixed", "pool_id": pool.id}, (deployment,),
+    )
+    assert decision is not None and decision.source_kind == pool.source_kind
+    assert deployment_catalog((deployment,))[0].provider == "anthropic"
+
+
 def test_removed_native_deployments_are_unavailable_without_broadening_to_other_pool_resources() -> None:
     with pytest.raises(HTTPException) as failure:
         choose_route(

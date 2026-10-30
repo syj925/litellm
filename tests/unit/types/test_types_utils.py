@@ -42,6 +42,18 @@ class _DictHiddenParamsAccessor(Protocol):
     def hidden_params(self, hidden_params: dict[str, object]) -> None: ...
 
 
+def test_resource_pool_audit_fields_survive_standard_logging_normalization() -> None:
+    from litellm.litellm_core_utils.litellm_logging import StandardLoggingPayloadSetup
+
+    audit: Final = {
+        "retail_resource_pool_id": "example-pool",
+        "retail_resource_pool_name": "Example resource",
+        "retail_resource_source_kind": "bedrock",
+    }
+    result: Final = StandardLoggingPayloadSetup.get_standard_logging_metadata(audit)
+    assert {key: result[key] for key in audit} == audit
+
+
 @pytest.mark.parametrize(
     ("mode", "expected"),
     (("decisions", True), ("evaluation", True), ("chat", False), (None, False)),

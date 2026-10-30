@@ -53,6 +53,7 @@ import { KeyEditView } from "./key_edit_view";
 import { isTeamAdminEditingMemberKey, teamAdminMemberKeyPayload } from "./teamAdminMemberKeyPayload";
 import { retailKeys, retailRequest, type RetailConfig } from "../retail/api";
 import RotateKeyModal, { type RotatedKey } from "../retail/RotateKeyModal";
+import KeyResourceAccess from "./KeyResourceAccess";
 
 export function needsLifetimeSpendBackfill(spend: number, totalSpend: number | null | undefined): boolean {
   return (totalSpend ?? 0) < spend;
@@ -734,6 +735,14 @@ export default function KeyInfoView({
           {/* Overview Panel */}
           <TabsContent value="overview" keepMounted>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <KeyResourceAccess
+                accessToken={accessToken}
+                userId={currentKeyData.user_id || null}
+                admin={isProxyAdminRole(userRole)}
+                metadata={currentKeyData.metadata}
+                models={currentKeyData.models}
+                className="rounded-xl bg-card p-6 text-card-foreground shadow-xs ring-1 ring-foreground/10 sm:col-span-2 lg:col-span-3"
+              />
               <Card className="block p-6">
                 <p className="text-sm">Spend</p>
                 <div className="mt-2">
@@ -788,7 +797,7 @@ export default function KeyInfoView({
               </Card>
 
               <Card className="block p-6">
-                <p className="text-sm">Models</p>
+                <p className="text-sm">Key model restriction</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {currentKeyData.models && currentKeyData.models.length > 0 ? (
                     currentKeyData.models.map((model, index) => (
@@ -801,7 +810,7 @@ export default function KeyInfoView({
                       </BadgeLink>
                     ))
                   ) : (
-                    <p className="text-sm">No models specified</p>
+                    <p className="text-sm">All models allowed by resource routing and account permissions</p>
                   )}
                 </div>
               </Card>
@@ -935,6 +944,13 @@ export default function KeyInfoView({
                 />
               ) : (
                 <div className="space-y-4">
+                  <KeyResourceAccess
+                    accessToken={accessToken}
+                    userId={currentKeyData.user_id || null}
+                    admin={isProxyAdminRole(userRole)}
+                    metadata={currentKeyData.metadata}
+                    models={currentKeyData.models}
+                  />
                   <div>
                     <p className="text-sm font-medium">Key ID</p>
                     <p className="text-sm font-mono">{currentKeyData.token_id || currentKeyData.token}</p>
@@ -1144,7 +1160,7 @@ export default function KeyInfoView({
                   </div>
 
                   <div>
-                    <p className="text-sm font-medium">Models</p>
+                    <p className="text-sm font-medium">Key model restriction</p>
                     <div className="flex flex-wrap gap-2 mt-1">
                       {currentKeyData.models && currentKeyData.models.length > 0 ? (
                         currentKeyData.models.map((model, index) => (
@@ -1157,7 +1173,7 @@ export default function KeyInfoView({
                           </BadgeLink>
                         ))
                       ) : (
-                        <p className="text-sm">No models specified</p>
+                        <p className="text-sm">All models allowed by resource routing and account permissions</p>
                       )}
                     </div>
                   </div>

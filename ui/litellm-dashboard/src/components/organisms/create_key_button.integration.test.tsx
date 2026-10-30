@@ -1,6 +1,13 @@
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, renderWithProviders, screen, testQueryClient, waitFor } from "../../../tests/test-utils";
+import {
+  act,
+  chooseSelectOption,
+  renderWithProviders,
+  screen,
+  testQueryClient,
+  waitFor,
+} from "../../../tests/test-utils";
 import type { Team } from "../key_team_helpers/key_list";
 import { keyCreateCall, keyCreateServiceAccountCall, modelAvailableCall, userFilterUICall } from "../networking";
 import { toast } from "@/lib/toast";
@@ -260,6 +267,93 @@ describe("CreateKey", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("does not expose native model choices while resource authorization is loading or has failed", async () => {
+    let finish: (response: Response) => void = () => {
+      throw new Error("Discovery did not start");
+    };
+    const pending = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).includes("/retail/")
+          ? pending
+          : ({ ok: true, status: 200, json: async () => OPENAPI_SCHEMA } as Response),
+      ),
+    );
+    await openModal();
+    expect(screen.getByRole("combobox", { name: "Select models" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^create key$/i })).toBeDisabled();
+    await act(async () => finish(new Response(JSON.stringify({ detail: "Unavailable" }), { status: 503 })));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Resource pools could not be verified");
+    expect(screen.getByRole("combobox", { name: "Select models" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^create key$/i })).toBeDisabled();
+  });
+
+  it("limits fixed-pool model choices and clears models that are outside the new pool", async () => {
+    const catalog = {
+      routing_enabled: false,
+      items: [
+        {
+          id: "aws",
+          name: "AWS Bedrock Claude",
+          enabled: true,
+          models: ["claude-model"],
+          allowed_models: ["claude-model"],
+        },
+        {
+          id: "vertex",
+          name: "Vertex Gemini",
+          enabled: true,
+          models: ["gemini-model"],
+          allowed_models: ["gemini-model"],
+        },
+      ],
+    };
+    vi.mocked(modelAvailableCall).mockResolvedValue({
+      data: ["gpt-model", "claude-model", "gemini-model"].map((id) => ({ id })),
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async (input: RequestInfo | URL) =>
+          ({
+            ok: true,
+            status: 200,
+            json: async () => (String(input).includes("/retail/") ? catalog : OPENAPI_SCHEMA),
+          }) as Response,
+      ),
+    );
+    await openModal();
+    await nameTheKey();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", { name: "Select models" }));
+    await user.click(await screen.findByRole("option", { name: "gpt-model" }));
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("radio", { name: /^Fixed pool/ }));
+    await chooseSelectOption(
+      user,
+      screen.getByRole("combobox", { name: "Allowed resource pool" }),
+      "AWS Bedrock Claude",
+    );
+    await user.click(screen.getByRole("combobox", { name: "Select models" }));
+    expect(screen.queryByRole("option", { name: "gpt-model" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "gemini-model" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "All Proxy Models" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: "claude-model" }));
+    await user.keyboard("{Escape}");
+    await chooseSelectOption(user, screen.getByRole("combobox", { name: "Allowed resource pool" }), "Vertex Gemini");
+    await user.click(screen.getByRole("combobox", { name: "Select models" }));
+    expect(screen.queryByRole("option", { name: "claude-model" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: "gemini-model" }));
+    await user.keyboard("{Escape}");
+    await submit();
+    const payload = await createdPayload();
+    expect(payload.models).toEqual(["gemini-model"]);
+    expect(JSON.parse(payload.metadata as string).retail_resource_policy).toEqual({ mode: "fixed", pool_id: "vertex" });
   });
 
   describe("submit payload contract", () => {

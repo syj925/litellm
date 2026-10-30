@@ -1,20 +1,14 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/shared/Alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FieldLabel } from "@/components/ui/field";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { retailRequest } from "../retail/api";
 import { uiHref } from "@/utils/uiHref";
-import {
-  KeyResourceCatalog,
-  ResourceRoutingPolicy,
-  resourcePolicyError,
-  resourcePolicySummary,
-} from "./resourceRoutingPolicy";
+import { ResourceRoutingPolicy, resourcePolicyError, resourcePolicySummary } from "./resourceRoutingPolicy";
+import { useKeyResourceCatalog } from "./useKeyResourceCatalog";
 
 interface Props {
   accessToken: string | null;
@@ -36,16 +30,7 @@ export default function KeyResourceRouting({
   onValidityChange,
 }: Props) {
   const id = useId();
-  const catalog = useQuery({
-    queryKey: ["retail", "key-resource-pools", targetUserId, admin],
-    queryFn: () =>
-      retailRequest<KeyResourceCatalog>(
-        admin ? `/admin/pools/catalog?user_id=${encodeURIComponent(targetUserId ?? "")}` : "/pools",
-        accessToken,
-      ),
-    enabled: Boolean(accessToken && targetUserId),
-    retry: false,
-  });
+  const catalog = useKeyResourceCatalog({ accessToken, targetUserId, admin });
   const pools = catalog.data?.items ?? [];
   const active = pools.filter((pool) => pool.enabled && pool.allowed_models.length > 0);
   const configured = catalog.data?.routing_enabled === true || value !== null;
@@ -70,8 +55,8 @@ export default function KeyResourceRouting({
     <section className="mb-6 rounded-lg border p-4" aria-label="Resource routing">
       <h3 className="text-base font-medium">Resource routing</h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        Select pool and model pairs within this account&apos;s entitlement. The Models field above remains an additional
-        limit.
+        Select pool and model pairs within this account&apos;s entitlement. The Models field lists only models available
+        through the selected resource routing.
       </p>
       {!targetUserId ? (
         <p className="mt-3 text-sm text-muted-foreground">

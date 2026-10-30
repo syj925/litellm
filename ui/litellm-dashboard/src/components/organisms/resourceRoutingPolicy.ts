@@ -14,11 +14,42 @@ export interface KeyResourcePool {
   enabled: boolean;
   models: string[];
   allowed_models: string[];
+  source_kind?: string;
 }
 
 export interface KeyResourceCatalog {
   routing_enabled: boolean;
   items: KeyResourcePool[];
+}
+
+export function resourcePolicyPoolModels(
+  policy: ResourceRoutingPolicy | null,
+  pools: KeyResourcePool[],
+): { pool: KeyResourcePool; models: string[] }[] {
+  if (policy === null) return [];
+  return pools.flatMap((pool) => {
+    if (!pool.enabled || !pool.allowed_models.length) return [];
+    if (policy.mode === "fixed" && policy.pool_id !== pool.id) return [];
+    const grant = policy.mode === "custom" ? policy.grants.find((item) => item.pool_id === pool.id) : undefined;
+    if (policy.mode === "custom" && !grant) return [];
+    const grantModels = grant?.models;
+    const models = pool.allowed_models.filter(
+      (model) => grantModels === undefined || grantModels === "*" || grantModels.includes(model),
+    );
+    return models.length ? [{ pool, models: [...new Set(models)] }] : [];
+  });
+}
+
+export function resourcePolicyModels(policy: ResourceRoutingPolicy | null, pools: KeyResourcePool[]): string[] {
+  return [...new Set(resourcePolicyPoolModels(policy, pools).flatMap((item) => item.models))];
+}
+
+export function resourceModelHelp(scoped: boolean, ready: boolean, failed: boolean, count: number): string | undefined {
+  if (failed) return "Resource access could not be verified. Retry before selecting models.";
+  if (!ready) return "Loading account-authorized models...";
+  if (!scoped) return undefined;
+  if (!count) return "No models are available in this resource scope. Choose an available pool or model grant.";
+  return "Optional. Leave empty to allow all models in the selected resource scope.";
 }
 
 export function resourcePolicyError(policy: ResourceRoutingPolicy | null, pools: KeyResourcePool[]): string | null {

@@ -12,7 +12,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { FormField } from "@/components/shared/form/FormField";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { hasCapability } from "../../utils/capabilities";
 import { isProxyAdminRole, rolesWithWriteAccess } from "../../utils/roles";
 import AccessGroupSelector from "../common_components/AccessGroupSelector";
@@ -77,7 +77,14 @@ import EditLoggingSettings from "../team/EditLoggingSettings";
 import { useZodForm } from "@/lib/forms/useZodForm";
 import VectorStoreSelector from "../vector_store_management/VectorStoreSelector";
 import KeyResourceRouting from "../organisms/KeyResourceRouting";
-import { readResourcePolicy, ResourceRoutingPolicy, withResourcePolicy } from "../organisms/resourceRoutingPolicy";
+import {
+  readResourcePolicy,
+  ResourceRoutingPolicy,
+  withResourcePolicy,
+  resourcePolicyModels,
+  resourceModelHelp,
+} from "../organisms/resourceRoutingPolicy";
+import { useKeyResourceCatalog } from "../organisms/useKeyResourceCatalog";
 
 interface KeyEditViewProps {
   keyData: KeyResponse;
@@ -153,12 +160,43 @@ export function KeyEditView({
   const selectedModels = (form.watch("models") as string[] | undefined) ?? [];
   const allowedRoutes = parseAllowedRoutes(allowedRoutesValue);
   const isModelsDisabled = allowedRoutes.includes("management_routes") || allowedRoutes.includes("info_routes");
+  const nativeModelsScope = useMemo(
+    () => Symbol(),
+    [userID, userRole, accessToken, team, keyData.team_id, canViewPrompts],
+  );
+  const [nativeModelState, setNativeModelState] = useState<{ scope: symbol; error: boolean } | null>(null);
+  const nativeModelsReady = nativeModelState?.scope === nativeModelsScope;
+  const nativeModelsError = nativeModelsReady && nativeModelState.error;
+  const resourceCatalog = useKeyResourceCatalog({
+    accessToken,
+    targetUserId: keyData.user_id ?? null,
+    admin: isProxyAdminRole(userRole ?? ""),
+  });
+  const usesPoolModels = resourcePolicy !== null || resourceCatalog.data?.routing_enabled === true;
+  const modelScopeReady =
+    !keyData.user_id ||
+    Boolean(
+      resourceCatalog.data && !resourceCatalog.error && (!usesPoolModels || (nativeModelsReady && !nativeModelsError)),
+    );
+  const selectableModels = useMemo(() => {
+    if (!modelScopeReady) return [];
+    if (!usesPoolModels) return availableModels;
+    const poolModels = resourcePolicyModels(resourcePolicy ?? { mode: "auto" }, resourceCatalog.data?.items ?? []);
+    return poolModels.filter((model) => availableModels.includes(model));
+  }, [modelScopeReady, usesPoolModels, resourcePolicy, resourceCatalog.data, availableModels]);
+  const resourceModelsValid = isModelsDisabled || !usesPoolModels || selectableModels.length > 0;
+  useEffect(() => {
+    if (!usesPoolModels || !modelScopeReady) return;
+    const allowed = selectedModels.filter((model) => selectableModels.includes(model));
+    if (allowed.length !== selectedModels.length) form.setValue("models", allowed, { shouldDirty: true });
+  }, [usesPoolModels, modelScopeReady, selectableModels, selectedModels, form]);
   const mcpSelection = form.watch("mcp_servers_and_groups") as
     | { servers?: string[]; accessGroups?: string[]; toolsets?: string[] }
     | undefined;
   const mcpToolPermissions = form.watch("mcp_tool_permissions");
 
   useEffect(() => {
+    let current = true;
     const fetchModels = async () => {
       if (!userID || !userRole || !accessToken) return;
 
@@ -166,14 +204,18 @@ export function KeyEditView({
         if (keyData.team_id === null) {
           // Fetch user models if no team
           const model_available = await modelAvailableCall(accessToken, userID, userRole);
+          if (!current) return;
           const available_model_names = model_available["data"].map((element: { id: string }) => element.id);
           setAvailableModels(excludeProxyWideSentinel(available_model_names));
         } else if (team?.team_id) {
           // Fetch team models if team exists
           const models = await fetchTeamModels(userID, userRole, accessToken, team.team_id);
+          if (!current) return;
           setAvailableModels(excludeProxyWideSentinel(Array.from(new Set([...team.models, ...models]))));
         }
+        if (current) setNativeModelState({ scope: nativeModelsScope, error: false });
       } catch (error) {
+        if (current) setNativeModelState({ scope: nativeModelsScope, error: true });
         console.error("Error fetching models:", error);
       }
     };
@@ -190,7 +232,10 @@ export function KeyEditView({
 
     if (canViewPrompts) fetchPrompts();
     fetchModels();
-  }, [userID, userRole, accessToken, team, keyData.team_id, canViewPrompts]);
+    return () => {
+      current = false;
+    };
+  }, [userID, userRole, accessToken, team, keyData.team_id, canViewPrompts, nativeModelsScope]);
 
   // Sync disabled callbacks with form when component mounts
   useEffect(() => {
@@ -228,8 +273,8 @@ export function KeyEditView({
 
   const handleSubmit = async (values: any) => {
     try {
-      if (!resourceRoutingValid) {
-        toast.error("Review the resource routing selection before saving this key.");
+      if (!resourceRoutingValid || !modelScopeReady || !resourceModelsValid) {
+        toast.error("Review the resource routing selection and available models before saving this key.");
         return;
       }
       setIsKeySaving(true);
@@ -366,8 +411,8 @@ export function KeyEditView({
   };
 
   const modelOptions = [
-    ...modelSentinelOptions(keyData.team_id, team != null),
-    ...availableModels.map((model) => ({
+    ...(modelScopeReady && !usesPoolModels ? modelSentinelOptions(keyData.team_id, team != null) : []),
+    ...selectableModels.map((model) => ({
       value: model,
       label: model,
       disabled: hasAllModelsSentinel(selectedModels),
@@ -406,7 +451,16 @@ export function KeyEditView({
             control={form.control}
             name="models"
             label="Models"
-            description={isModelsDisabled ? "Models field is disabled for this key type" : undefined}
+            description={
+              isModelsDisabled
+                ? "Models field is disabled for this key type"
+                : resourceModelHelp(
+                    usesPoolModels,
+                    modelScopeReady,
+                    Boolean(resourceCatalog.error || nativeModelsError),
+                    selectableModels.length,
+                  )
+            }
           >
             {({ value, onChange, id }) => (
               <MultiSelect
@@ -422,7 +476,10 @@ export function KeyEditView({
                     onChange(next);
                   }
                 }}
-                disabled={isModelsDisabled}
+                disabled={isModelsDisabled || !modelScopeReady}
+                emptyText={
+                  usesPoolModels ? "No available models in the selected resource scope" : "No models available"
+                }
                 placeholder="Select models"
               />
             )}
@@ -906,7 +963,11 @@ export function KeyEditView({
             <Button type="button" variant="secondary" onClick={onCancel} disabled={isKeySaving}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isKeySaving} aria-busy={isKeySaving}>
+            <Button
+              type="submit"
+              disabled={isKeySaving || !resourceRoutingValid || !modelScopeReady || !resourceModelsValid}
+              aria-busy={isKeySaving}
+            >
               {isKeySaving && <UiLoadingSpinner className="size-4" />}
               Save Changes
             </Button>

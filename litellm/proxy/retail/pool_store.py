@@ -115,6 +115,7 @@ class PoolRouteDecision(BaseModel):
 
     pool_id: str
     pool_name: str
+    source_kind: Literal["anthropic", "openai", "bedrock", "vertex", "anthropic_subscribe", "custom"] = "custom"
     allowed_deployment_ids: tuple[str, ...]
     bindings: tuple[PoolBinding, ...]
     settings_version: int
@@ -307,6 +308,7 @@ def choose_route(
     return PoolRouteDecision(
         pool_id=selected.id,
         pool_name=selected.name,
+        source_kind=selected.source_kind,
         allowed_deployment_ids=tuple(dict.fromkeys(item.deployment_id for item in chosen)),
         bindings=chosen,
         settings_version=settings.version,

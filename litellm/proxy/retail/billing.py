@@ -1,6 +1,6 @@
 import json
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextvars import ContextVar
 from datetime import datetime
 from typing import Final
@@ -85,29 +85,75 @@ def price_snapshot(
     }
 
 
+def _pool_request_data(
+    data: Mapping[str, object], user_id: str, pool: PoolRouteDecision | None, request_id: str | None = None,
+) -> dict[str, object]:
+    reservation: Final = {"retail_request_id": request_id} if request_id is not None else {}
+    return {
+        **data,
+        **pool_cache_scope(user_id, pool, data),
+        "metadata": {**clean_pool_metadata(data.get("metadata"), pool), **pool_metadata(pool), **reservation},
+        "litellm_metadata": {
+            **clean_pool_metadata(data.get("litellm_metadata"), pool), **pool_metadata(pool), **reservation,
+        },
+    }
+
+
+def _resource_policy(auth: UserAPIKeyAuth) -> object | None:
+    metadata: Final = as_mapping(auth.metadata)
+    policy: Final = metadata.get("retail_resource_policy")
+    if "retail_resource_policy" in metadata and policy is None:
+        raise HTTPException(403, "This API key contains an invalid resource policy")
+    return policy
+
+
 class RetailBilling(CustomLogger):
     is_accounting_callback = True
 
-    def __init__(self, store: WalletStore | None = None) -> None:
+    def __init__(
+        self,
+        store: WalletStore | None = None,
+        pool_store: PoolStore | None = None,
+        deployments: Callable[[], Sequence[Mapping[str, object]]] = router_deployments,
+    ) -> None:
         super().__init__()
         self.store = store
+        self.pool_store = pool_store
+        self.deployments = deployments
 
     def _store(self) -> WalletStore:
         return self.store if self.store is not None else get_store()
+
+    def _pools(self) -> PoolStore:
+        return self.pool_store if self.pool_store is not None else PoolStore(self._store())
+
+    async def _route_exempt_request(
+        self, user_api_key_dict: UserAPIKeyAuth, data: Mapping[str, object], policy: object,
+    ) -> dict[str, object]:
+        user_id: Final = user_api_key_dict.user_id
+        if not user_id:
+            raise HTTPException(403, "Resource pool routing requires a key owned by a user account")
+        model: Final = str(data.get("model", ""))
+        pool: Final = await self._pools().resolve_route(user_id, model, policy, self.deployments())
+        bind_pool_routing(model, pool, data)
+        return _pool_request_data(data, user_id, pool)
 
     async def async_filter_listed_models(
         self,
         user_api_key_dict: UserAPIKeyAuth,
         model_names: Sequence[str],
     ) -> Sequence[str]:
-        if str(user_api_key_dict.user_role) in {"proxy_admin", "LitellmUserRoles.PROXY_ADMIN"}:
+        policy: Final = _resource_policy(user_api_key_dict)
+        exempt: Final = (
+            str(user_api_key_dict.user_role) in {"proxy_admin", "LitellmUserRoles.PROXY_ADMIN"}
+            or os.getenv("RETAIL_BILLING_ENABLED", "false").lower() != "true"
+        )
+        if not model_names or (exempt and policy is None):
             return model_names
-        if os.getenv("RETAIL_BILLING_ENABLED", "false").lower() != "true" or not model_names:
-            return model_names
-        allowed: Final = await PoolStore(self._store()).key_model_names(
+        allowed: Final = await self._pools().key_model_names(
             user_api_key_dict.user_id or "",
-            as_mapping(user_api_key_dict.metadata).get("retail_resource_policy"),
-            router_deployments(),
+            policy,
+            self.deployments(),
         )
         return model_names if allowed is None else tuple(model for model in model_names if model in allowed)
 
@@ -120,10 +166,13 @@ class RetailBilling(CustomLogger):
     ) -> dict[str, object]:
         _active_reservation.set(None)
         reset_pool_routing()
-        if str(user_api_key_dict.user_role) in {"proxy_admin", "LitellmUserRoles.PROXY_ADMIN"}:
-            return data
-        if os.getenv("RETAIL_BILLING_ENABLED", "false").lower() != "true":
-            return data
+        policy: Final = _resource_policy(user_api_key_dict)
+        exempt: Final = (
+            str(user_api_key_dict.user_role) in {"proxy_admin", "LitellmUserRoles.PROXY_ADMIN"}
+            or os.getenv("RETAIL_BILLING_ENABLED", "false").lower() != "true"
+        )
+        if exempt:
+            return data if policy is None else await self._route_exempt_request(user_api_key_dict, data, policy)
         user_id: Final = user_api_key_dict.user_id
         if not user_id:
             raise HTTPException(403, "Wallet billing requires an API key owned by a user")
@@ -154,9 +203,7 @@ class RetailBilling(CustomLogger):
         deployments: Final = llm_router.get_model_list(model, team_id=user_api_key_dict.team_id) if llm_router else ()
         if not deployments:
             raise HTTPException(400, "No configured deployment is available for this model")
-        pool: Final = await PoolStore(store).resolve_route(
-            user_id, model, as_mapping(user_api_key_dict.metadata).get("retail_resource_policy"), deployments
-        )
+        pool: Final = await self._pools().resolve_route(user_id, model, policy, deployments)
         bind_pool_routing(model, pool, data)
         priced_deployments: Final = (
             tuple(
@@ -234,24 +281,8 @@ class RetailBilling(CustomLogger):
         except ParallelLimitExceeded as exc:
             raise HTTPException(429, "Your wallet has reached its concurrent request limit") from exc
         _active_reservation.set(request_id)
-        metadata: Final = {
-            **clean_pool_metadata(data.get("metadata"), pool),
-            **pool_metadata(pool),
-            "retail_request_id": request_id,
-        }
-        litellm_metadata: Final = {
-            **clean_pool_metadata(data.get("litellm_metadata"), pool),
-            **pool_metadata(pool),
-            "retail_request_id": request_id,
-        }
         limit: Final = {} if embedding or "max_completion_tokens" in data else {limit_key: output_limit}
-        return {
-            **data,
-            **limit,
-            **pool_cache_scope(user_id, pool, data),
-            "metadata": metadata,
-            "litellm_metadata": litellm_metadata,
-        }
+        return {**_pool_request_data(data, user_id, pool, request_id), **limit}
 
     async def async_filter_deployments(
         self,

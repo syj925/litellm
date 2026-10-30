@@ -51,6 +51,8 @@ import { ToolsSection } from "./sections/ToolsSection";
 import { PrettyMessagesView } from "./PrettyMessagesView";
 import { ClassifierAuditView } from "./ClassifierAuditView";
 import { AUTOROUTER_CLASSIFIER_ORIGIN } from "./ClassifyTag";
+import { recordedResourceRoute } from "../resourceRoute";
+import { sourceKindLabel } from "../../retail/pools/types";
 
 export interface LogDetailContentProps {
   logEntry: LogEntry;
@@ -75,6 +77,7 @@ export function LogDetailContent({
   userEmail,
 }: LogDetailContentProps) {
   const metadata = logEntry.metadata || {};
+  const resourceRoute = recordedResourceRoute(metadata);
   const hasError = metadata.status === "failure";
   const errorInfo = hasError ? metadata.error_information : null;
   const isClassifier =
@@ -147,15 +150,21 @@ export function LogDetailContent({
           <CardContent>
             <DescriptionList>
               <DescriptionItem label="Model">{logEntry.model}</DescriptionItem>
-              <DescriptionItem label="Provider">{logEntry.custom_llm_provider || "-"}</DescriptionItem>
+              <DescriptionItem label="API integration">{logEntry.custom_llm_provider || "-"}</DescriptionItem>
+              <DescriptionItem label="Resource pool">
+                {resourceRoute.poolName ?? resourceRoute.poolId ?? "Not recorded"}
+              </DescriptionItem>
+              <DescriptionItem label="Resource source">
+                {resourceRoute.sourceKind ? sourceKindLabel(resourceRoute.sourceKind) : "Not recorded"}
+              </DescriptionItem>
               <DescriptionItem label="Call Type">{logEntry.call_type}</DescriptionItem>
               {logEntry.user && (
                 <DescriptionItem label="User">
                   <UserIdentity userId={logEntry.user} email={userEmail} />
                 </DescriptionItem>
               )}
-              <DescriptionItem label="Model ID">
-                <TruncatedValue value={logEntry.model_id} />
+              <DescriptionItem label="Deployment ID">
+                <TruncatedValue value={logEntry.model_id || "Not recorded"} />
               </DescriptionItem>
               <DescriptionItem label="API Base">
                 <TruncatedValue value={logEntry.api_base} maxWidth={API_BASE_MAX_WIDTH} />

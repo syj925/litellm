@@ -130,7 +130,11 @@ def pool_has_uncertain_attempt() -> bool:
 def pool_metadata(decision: PoolRouteDecision | None) -> dict[str, str]:
     if decision is None:
         return {}
-    return {"retail_resource_pool_id": decision.pool_id, "retail_resource_pool_name": decision.pool_name}
+    return {
+        "retail_resource_pool_id": decision.pool_id,
+        "retail_resource_pool_name": decision.pool_name,
+        "retail_resource_source_kind": decision.source_kind,
+    }
 
 
 def clean_pool_metadata(value: object, decision: PoolRouteDecision | None = None) -> dict[str, object]:

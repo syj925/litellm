@@ -8,6 +8,8 @@ import { CellTooltip, DateCell, IdCell, MoneyCell, StatusBadge } from "@/compone
 import { copyToClipboard, getSpendString } from "@/utils/dataUtils";
 
 import { getProviderLogoAndName } from "../../provider_info_helpers";
+import { sourceKindLabel } from "../../retail/pools/types";
+import { recordedResourceRoute } from "../resourceRoute";
 import { getBatchIdFromRequestId, getBatchRequestCounts, isBatchCallType } from "../batchLogUtils";
 import type { LogEntry } from "../types";
 import { AGENT_CALL_TYPES, MCP_CALL_TYPES } from "../constants";
@@ -312,6 +314,7 @@ export const getRequestLogsTableColumns = ({
             <img
               src={getLogoUrl(log, provider)}
               alt=""
+              title={`API integration: ${provider}`}
               className="w-4 h-4"
               onError={(event) => {
                 event.currentTarget.style.display = "none";
@@ -326,6 +329,21 @@ export const getRequestLogsTableColumns = ({
               </span>
             }
           />
+        </div>
+      );
+    },
+  },
+  {
+    id: "resource_pool",
+    header: "Resource pool",
+    size: 190,
+    enableSorting: false,
+    cell: ({ row }) => {
+      const route = recordedResourceRoute(row.original.metadata);
+      return (
+        <div className="flex flex-col gap-1 text-xs">
+          <span>{route.poolName ?? route.poolId ?? "Not recorded"}</span>
+          {route.sourceKind && <span className="text-muted-foreground">{sourceKindLabel(route.sourceKind)}</span>}
         </div>
       );
     },

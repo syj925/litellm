@@ -7,6 +7,8 @@ import { DataTableMultiSortHeader, DataTableSortHeader, type DataTableSortField 
 import { inheritedBudgetGates, keyOwnerBudgetSource } from "@/components/shared/InheritedBudgetHint";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { readResourcePolicy } from "../organisms/resourceRoutingPolicy";
 import {
   DateCell,
   ENTITY_CELL_TITLE_CLASSES,
@@ -115,17 +117,24 @@ export const getKeyTableColumns = ({
     enableSorting: true,
     cell: ({ row }) => {
       const status = getKeyStatus(row.original);
+      const policy = readResourcePolicy(row.original.metadata);
+      const policyLabel = policy
+        ? { fixed: "Fixed pool", custom: "Custom pools", auto: "Automatic" }[policy.mode]
+        : null;
       return (
         <IdentityCell
           title={row.original.key_alias || "-"}
           subtitle={row.original.key_name}
           badge={
-            <StatusBadge
-              tone={status.tone}
-              label={status.label}
-              tooltip={status.tooltip}
-              dataTestId={`key-status-${row.original.token_id}`}
-            />
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <StatusBadge
+                tone={status.tone}
+                label={status.label}
+                tooltip={status.tooltip}
+                dataTestId={`key-status-${row.original.token_id}`}
+              />
+              {policyLabel && <Badge variant="outline">{policyLabel}</Badge>}
+            </span>
           }
           onClick={() => onSelectKey(row.original)}
         />
@@ -318,13 +327,20 @@ export const getKeyTableColumns = ({
     header: "Models",
     size: 220,
     enableSorting: false,
-    cell: (info) => (
-      <ModelsCell
-        models={info.getValue() as string[] | null | undefined}
-        allowedRoutes={info.row.original.allowed_routes}
-        keyType={info.row.original.key_type}
-      />
-    ),
+    cell: (info) => {
+      const models = info.getValue() as string[] | null | undefined;
+      const policy = readResourcePolicy(info.row.original.metadata);
+      if (policy && (!models?.length || models.includes("all-proxy-models"))) {
+        return <span className="text-xs">All authorized pool models</span>;
+      }
+      return (
+        <ModelsCell
+          models={models}
+          allowedRoutes={info.row.original.allowed_routes}
+          keyType={info.row.original.key_type}
+        />
+      );
+    },
   },
   {
     id: "rate_limits",

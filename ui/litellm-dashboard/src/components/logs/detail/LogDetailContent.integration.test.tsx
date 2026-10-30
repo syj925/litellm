@@ -34,6 +34,27 @@ const createLogEntry = (overrides: Partial<LogEntry> = {}): LogEntry =>
   }) as LogEntry;
 
 describe("LogDetailContent", () => {
+  it("distinguishes the recorded resource source, API integration, and actual deployment", () => {
+    render(
+      <LogDetailContent
+        logEntry={createLogEntry({
+          custom_llm_provider: "anthropic",
+          model_id: "deployment-in-aws-pool",
+          metadata: {
+            retail_resource_pool_id: "aws",
+            retail_resource_pool_name: "AWS Bedrock Claude",
+            retail_resource_source_kind: "bedrock",
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText("AWS Bedrock Claude")).toBeInTheDocument();
+    expect(screen.getByText("AWS Bedrock")).toBeInTheDocument();
+    expect(screen.getByText("API integration")).toBeInTheDocument();
+    expect(screen.getByText("anthropic")).toBeInTheDocument();
+    expect(screen.getByText("deployment-in-aws-pool")).toBeInTheDocument();
+  });
+
   it("should render the component successfully", () => {
     render(<LogDetailContent logEntry={createLogEntry()} />);
 
@@ -672,7 +693,7 @@ describe("LogDetailContent", () => {
       />,
     );
 
-    const descriptions = screen.getByText("Provider").parentElement as HTMLElement;
+    const descriptions = screen.getByText("API integration").parentElement as HTMLElement;
     expect(descriptions).toBeInTheDocument();
     expect(within(descriptions).getByText("-")).toBeInTheDocument();
   });

@@ -72,6 +72,30 @@ def _get_additional_usage_values_for_usage(usage: litellm.Usage) -> dict:
     return metadata["additional_usage_values"]
 
 
+@pytest.mark.parametrize("bucket", ("metadata", "litellm_metadata"))
+@pytest.mark.parametrize("status", ("success", "failure"))
+def test_resource_pool_audit_survives_spend_log_payload_serialization(bucket: str, status: str) -> None:
+    audit: Final = {
+        "retail_resource_pool_id": "aws-resource",
+        "retail_resource_pool_name": "AWS resource",
+        "retail_resource_source_kind": "bedrock",
+    }
+    payload: Final = get_logging_payload(
+        kwargs={
+            "model": "provider-model", "custom_llm_provider": "anthropic", "call_type": "aanthropic_messages",
+            "litellm_params": {bucket: {**audit, "status": status, "model_info": {"id": "aws-deployment"}}},
+        },
+        response_obj={"id": "request-id", "usage": {"prompt_tokens": 1, "completion_tokens": 1}},
+        start_time=datetime.datetime(2026, 1, 1, tzinfo=timezone.utc),
+        end_time=datetime.datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    persisted: Final = json.loads(payload["metadata"])
+    assert {key: persisted[key] for key in audit} == audit
+    assert payload["model_id"] == "aws-deployment"
+    assert payload["custom_llm_provider"] == "anthropic"
+    assert payload["status"] == status
+
+
 @pytest.mark.parametrize("store_prompts,redact", [(True, False), (False, False), (True, True)])
 def test_classifier_audit_spend_storage_obeys_privacy_and_truncation(monkeypatch, store_prompts, redact):
     from litellm.proxy import proxy_server

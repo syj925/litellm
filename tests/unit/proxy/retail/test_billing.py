@@ -1,3 +1,4 @@
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Final
 
@@ -7,6 +8,17 @@ from fastapi import HTTPException
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.retail.billing import RetailBilling, price_snapshot, reservation_id
+from litellm.proxy.retail.pool_routing import filter_pool_deployments, guard_pool_deployment, reset_pool_routing
+from litellm.proxy.retail.pool_store import (
+    PoolAccess,
+    PoolRouteDecision,
+    PoolStore,
+    _PoolRow,
+    _Settings,
+    _StoredBinding,
+    allowed_model_names,
+    choose_route,
+)
 from litellm.proxy.retail.pricing import UsageFacts, charge_for_usage
 
 
@@ -165,3 +177,125 @@ async def test_disabled_retail_model_discovery_preserves_native_key_results(monk
     user: Final = UserAPIKeyAuth(user_id="reader", user_role=LitellmUserRoles.INTERNAL_USER)
     models: Final = ("shared", "other", "retry")
     assert await RetailBilling().async_filter_listed_models(user, models) == models
+
+
+class _MemoryPools(PoolStore):
+    def __init__(self, enabled: bool = True, has_bindings: bool = True) -> None:
+        self.pools = (
+            _PoolRow(
+                id="aws", name="AWS resource", source_kind="bedrock", enabled=enabled,
+                visibility="public", version=1, updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            ),
+            _PoolRow(
+                id="direct", name="Direct resource", source_kind="anthropic", enabled=True,
+                visibility="public", version=1, updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            ),
+        )
+        self.bindings = (
+            (_StoredBinding(pool_id="aws", deployment_id="aws-deployment", model="shared"),)
+            if has_bindings else ()
+        ) + (
+            _StoredBinding(pool_id="direct", deployment_id="direct-deployment", model="shared"),
+            _StoredBinding(pool_id="direct", deployment_id="foreign-deployment", model="foreign"),
+        )
+
+    async def resolve_route(
+        self, user_id: str, model: str, policy: object | None, deployments: Sequence[Mapping[str, object]],
+    ) -> PoolRouteDecision | None:
+        return choose_route(
+            _Settings(routing_enabled=False, version=1), self.pools, self.bindings, PoolAccess(),
+            model, policy, deployments,
+        )
+
+    async def key_model_names(
+        self, user_id: str, policy: object | None, deployments: Sequence[Mapping[str, object]],
+    ) -> frozenset[str] | None:
+        return allowed_model_names(PoolAccess(), self.pools, self.bindings, policy, deployments)
+
+
+def _pooled_deployments() -> tuple[Mapping[str, object], ...]:
+    return tuple(
+        {
+            "model_name": model, "model_info": {"id": deployment_id},
+            "litellm_params": {"model": "anthropic/" + model},
+        }
+        for deployment_id, model in (
+            ("aws-deployment", "shared"), ("direct-deployment", "shared"), ("foreign-deployment", "foreign"),
+        )
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("policy", "visible"),
+    (
+        ({"mode": "fixed", "pool_id": "aws"}, ("shared",)),
+        ({"mode": "custom", "grants": [{"pool_id": "aws", "models": ["shared"]}]}, ("shared",)),
+        ({"mode": "auto"}, ("shared", "foreign")),
+    ),
+)
+@pytest.mark.parametrize(
+    ("role", "billing_enabled"),
+    (
+        (LitellmUserRoles.PROXY_ADMIN, "true"),
+        (LitellmUserRoles.PROXY_ADMIN, "false"),
+        (LitellmUserRoles.INTERNAL_USER, "false"),
+    ),
+)
+async def test_explicit_pool_policy_enforces_routing_and_discovery_despite_wallet_exemption(
+    policy: dict[str, object], visible: tuple[str, ...], role: LitellmUserRoles,
+    billing_enabled: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RETAIL_BILLING_ENABLED", billing_enabled)
+    callback: Final = RetailBilling(pool_store=_MemoryPools(), deployments=_pooled_deployments)
+    user: Final = UserAPIKeyAuth(
+        user_id="owner", user_role=role, metadata={"retail_resource_policy": policy},
+    )
+    request: Final[dict[str, object]] = {
+        "model": "shared", "metadata": {"retail_resource_pool_id": "forged", "retail_request_id": "forged"},
+    }
+    result: Final = await callback.async_pre_call_hook(user, None, request, "acompletion")
+    assert result["metadata"] == result["litellm_metadata"] == {
+        "retail_resource_pool_id": "aws", "retail_resource_pool_name": "AWS resource",
+        "retail_resource_source_kind": "bedrock",
+    }
+    assert result["cache"] == {"namespace": "retail:owner:aws"}
+    assert reservation_id(result) is None
+    assert await callback.async_filter_listed_models(user, ("shared", "foreign")) == visible
+    assert [item["model_info"] for item in filter_pool_deployments(_pooled_deployments())] == [
+        {"id": "aws-deployment"},
+    ]
+    with pytest.raises(HTTPException, match="outside"):
+        guard_pool_deployment({"model_info": {"id": "direct-deployment"}})
+    reset_pool_routing()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("enabled", "has_bindings", "status"), ((False, True, 403), (True, False, 503)))
+async def test_exempt_key_cannot_fall_back_from_a_disabled_or_empty_fixed_pool(
+    enabled: bool, has_bindings: bool, status: int, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RETAIL_BILLING_ENABLED", "false")
+    callback: Final = RetailBilling(
+        pool_store=_MemoryPools(enabled=enabled, has_bindings=has_bindings), deployments=_pooled_deployments,
+    )
+    admin: Final = UserAPIKeyAuth(
+        user_id="owner", user_role=LitellmUserRoles.PROXY_ADMIN,
+        metadata={"retail_resource_policy": {"mode": "fixed", "pool_id": "aws"}},
+    )
+    with pytest.raises(HTTPException) as failure:
+        await callback.async_pre_call_hook(admin, None, {"model": "shared"}, "acompletion")
+    assert failure.value.status_code == status
+
+
+@pytest.mark.asyncio
+async def test_explicit_null_policy_cannot_be_treated_as_an_unrestricted_administrator_key() -> None:
+    admin: Final = UserAPIKeyAuth(
+        user_id="owner", user_role=LitellmUserRoles.PROXY_ADMIN, metadata={"retail_resource_policy": None},
+    )
+    callback: Final = RetailBilling()
+    with pytest.raises(HTTPException) as inference:
+        await callback.async_pre_call_hook(admin, None, {"model": "shared"}, "acompletion")
+    with pytest.raises(HTTPException) as discovery:
+        await callback.async_filter_listed_models(admin, ("shared",))
+    assert inference.value.status_code == discovery.value.status_code == 403

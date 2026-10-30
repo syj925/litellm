@@ -35,6 +35,30 @@ const logEntry = (overrides: Partial<LogEntry>): LogEntry => ({
 
 const noopDeps = { onKeyHashClick: vi.fn(), onSessionClick: vi.fn() };
 
+describe("Recorded resource source", () => {
+  it("shows the recorded AWS pool independently of the Anthropic integration logo", () => {
+    renderRows([
+      logEntry({
+        custom_llm_provider: "anthropic",
+        metadata: {
+          retail_resource_pool_id: "aws",
+          retail_resource_pool_name: "AWS Bedrock Claude",
+          retail_resource_source_kind: "bedrock",
+        },
+      }),
+    ]);
+    expect(screen.getByText("AWS Bedrock Claude")).toBeInTheDocument();
+    expect(screen.getByText("AWS Bedrock")).toBeInTheDocument();
+    expect(screen.getByTitle("API integration: anthropic")).toBeInTheDocument();
+  });
+
+  it("does not infer an old log's resource pool from its API provider", () => {
+    renderRows([logEntry({ custom_llm_provider: "anthropic" })]);
+    expect(screen.getByText("Not recorded")).toBeInTheDocument();
+    expect(screen.queryByText("AWS Bedrock Claude")).not.toBeInTheDocument();
+  });
+});
+
 function renderRows(rows: LogEntry[], deps = noopDeps) {
   render(
     <DataTable

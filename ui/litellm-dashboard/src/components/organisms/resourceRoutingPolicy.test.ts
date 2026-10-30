@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { KeyResourcePool, readResourcePolicy, resourcePolicyError, withResourcePolicy } from "./resourceRoutingPolicy";
+import {
+  KeyResourcePool,
+  readResourcePolicy,
+  resourcePolicyError,
+  withResourcePolicy,
+  resourcePolicyModels,
+  resourcePolicyPoolModels,
+} from "./resourceRoutingPolicy";
 
 const pools: KeyResourcePool[] = [
   { id: "pool-a", name: "Pool A", enabled: true, models: ["alpha", "beta"], allowed_models: ["alpha"] },
@@ -8,6 +15,24 @@ const pools: KeyResourcePool[] = [
 ];
 
 describe("key resource routing", () => {
+  it("limits fixed, custom and automatic model lists to live account-authorized pool pairs", () => {
+    expect(resourcePolicyModels({ mode: "fixed", pool_id: "pool-a" }, pools)).toEqual(["alpha"]);
+    expect(resourcePolicyModels({ mode: "fixed", pool_id: "disabled" }, pools)).toEqual([]);
+    expect(resourcePolicyModels({ mode: "auto" }, pools)).toEqual(["alpha", "beta"]);
+    expect(
+      resourcePolicyPoolModels(
+        {
+          mode: "custom",
+          grants: [
+            { pool_id: "pool-a", models: ["beta"] },
+            { pool_id: "pool-b", models: "*" },
+          ],
+        },
+        pools,
+      ),
+    ).toEqual([{ pool: pools[1], models: ["beta"] }]);
+    expect(resourcePolicyModels(null, pools)).toEqual([]);
+  });
   it("retains exact pool-model pairs instead of expanding their Cartesian product", () => {
     const policy = {
       mode: "custom" as const,

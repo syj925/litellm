@@ -13,6 +13,7 @@ import {
   vectorStoreListCall,
 } from "../networking";
 import { KeyEditView } from "./key_edit_view";
+import { retailRequest } from "../retail/api";
 
 vi.mock("../retail/api", async (original) => ({
   ...(await original<typeof import("../retail/api")>()),
@@ -256,6 +257,52 @@ describe("KeyEditView", () => {
     last_rotation_at: undefined,
     key_rotation_at: undefined,
   };
+  it("edits fixed-pool keys using only the pool models instead of the global model catalog", async () => {
+    testQueryClient.removeQueries({ queryKey: ["retail", "key-resource-pools"] });
+    vi.mocked(retailRequest).mockResolvedValue({
+      routing_enabled: false,
+      items: [
+        {
+          id: "aws",
+          name: "AWS Bedrock Claude",
+          source_kind: "aws_bedrock",
+          enabled: true,
+          models: ["claude-model"],
+          allowed_models: ["claude-model"],
+        },
+      ],
+    });
+    vi.mocked(modelAvailableCall).mockResolvedValue({ data: [{ id: "gpt-model" }, { id: "claude-model" }] });
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderWithProviders(
+      <KeyEditView
+        keyData={{
+          ...MOCK_KEY_DATA,
+          models: ["gpt-model"],
+          metadata: { retail_resource_policy: { mode: "fixed", pool_id: "aws" } },
+        }}
+        onCancel={() => {}}
+        onSubmit={onSubmit}
+        accessToken="test-token"
+        userID="test-user"
+        userRole="proxy_admin"
+      />,
+    );
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Select models" })).toBeEnabled());
+    await user.click(screen.getByRole("combobox", { name: "Select models" }));
+    expect(screen.queryByRole("option", { name: "gpt-model" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "All Proxy Models" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: "claude-model" }));
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByText("Save Changes"));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0].models).toEqual(["claude-model"]);
+    expect(JSON.parse(onSubmit.mock.calls[0][0].metadata).retail_resource_policy).toEqual({
+      mode: "fixed",
+      pool_id: "aws",
+    });
+  });
   describe("router settings", () => {
     const UNSUPPORTED_STORED_FIELD = { tag_routing_prefix: "team-" };
     const STORED_ROUTER_SETTINGS = {
@@ -297,6 +344,7 @@ describe("KeyEditView", () => {
       renderWithRouterSettings(onSubmit);
       routerSettingsMocks.editedValue = { num_retries: 2, fallbacks: [{ "gpt-4": ["gpt-4o", "gpt-4o-mini"] }] };
 
+      await waitFor(() => expect(screen.getByText("Save Changes")).toBeEnabled());
       fireEvent.click(screen.getByText("Save Changes"));
 
       await waitFor(() => {
@@ -318,6 +366,7 @@ describe("KeyEditView", () => {
       renderWithRouterSettings(onSubmit);
       routerSettingsMocks.editedValue = { num_retries: null, fallbacks: null };
 
+      await waitFor(() => expect(screen.getByText("Save Changes")).toBeEnabled());
       fireEvent.click(screen.getByText("Save Changes"));
 
       await waitFor(() => {
@@ -392,6 +441,9 @@ describe("KeyEditView", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(retailRequest).mockResolvedValue({ routing_enabled: false, items: [] });
+    testQueryClient.removeQueries({ queryKey: ["retail", "key-resource-pools"] });
+    vi.mocked(modelAvailableCall).mockResolvedValue({ data: [{ id: "gpt-4" }, { id: "gpt-3.5-turbo" }] });
     can.mockReturnValue(true);
     vi.mocked(getUiSettings).mockResolvedValue({ values: { enable_projects_ui: false } });
     testQueryClient.removeQueries({ queryKey: ["uiSettings"] });
@@ -1525,8 +1577,8 @@ describe("KeyEditView", () => {
           keyData={{ ...MOCK_KEY_DATA, organization_id: "org-1", team_id: "group-maple" }}
           onCancel={() => {}}
           onSubmit={onSubmit}
-          accessToken=""
-          userID=""
+          accessToken="test-token"
+          userID="user-123"
           userRole="Admin"
           premiumUser={false}
         />,
@@ -1567,7 +1619,7 @@ describe("KeyEditView", () => {
           teams={[editorTeam]}
           onCancel={onCancel}
           onSubmit={onSubmit}
-          accessToken=""
+          accessToken="test-token"
           userID="user-orbit"
           userRole={role}
           premiumUser={false}
@@ -1613,8 +1665,8 @@ describe("KeyEditView", () => {
           keyData={{ ...MOCK_KEY_DATA, organization_id: "org-1", team_id: "group-maple", project_id: "project-orbit" }}
           onCancel={() => {}}
           onSubmit={onSubmit}
-          accessToken=""
-          userID=""
+          accessToken="test-token"
+          userID="user-123"
           userRole="Admin"
           premiumUser={false}
         />,
