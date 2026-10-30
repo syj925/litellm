@@ -89,6 +89,17 @@ function capabilitySupport(value: boolean | null): string {
   return value === false ? "Not supported" : "Not specified";
 }
 
+function integrationAccessNote(model: CatalogModel, publicView: boolean): string {
+  if (!model.offers.length) {
+    return "No resource pool is published for this model yet. You can still explore its integration reference.";
+  }
+  if (publicView) return "Sign in to check your resource pool access and create an API key.";
+  if (model.available_to_me) {
+    return "Choose the resource pools your API key can use. Its permissions determine available models.";
+  }
+  return "Resource pool access is required before calling this model. Contact your administrator to enable it.";
+}
+
 function Availability({ available }: { available: boolean }) {
   return (
     <Badge variant="outline" className={available ? "gap-1 text-success" : "gap-1 text-muted-foreground"}>
@@ -107,9 +118,14 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CatalogOverview({ model, publicView }: ModelSectionProps) {
+function CatalogOverview({
+  model,
+  publicView,
+  onTabChange,
+}: ModelSectionProps & { onTabChange: (tab: CatalogDetailTab) => void }) {
   const referenceInput = modelPrice(model, "reference", "input");
   const referenceOutput = modelPrice(model, "reference", "output");
+  const protocols = catalogApiProtocols(model);
   return (
     <div className="grid gap-8 pt-5 lg:grid-cols-[minmax(0,1fr)_280px]">
       <div className="min-w-0 space-y-7">
@@ -145,7 +161,59 @@ function CatalogOverview({ model, publicView }: ModelSectionProps) {
         <p className="text-xs leading-6 text-muted-foreground">
           Not specified means this information has not been published, rather than that the feature is unsupported.
         </p>
-        <MetadataSourceDetails model={model} />
+        <section className="rounded-lg border p-5" aria-labelledby="catalog-integration-title">
+          <div className="flex items-start gap-3">
+            <div className="rounded-md bg-muted p-2 text-muted-foreground">
+              <Code2 className="size-4" />
+            </div>
+            <div>
+              <h2 id="catalog-integration-title" className="font-semibold">
+                Integrate this model
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                Use the exact model ID in your requests. Explore examples for your preferred SDK.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-md bg-muted/40 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Request model ID</p>
+              <code className="mt-1 block break-all text-sm">{model.id}</code>
+            </div>
+            <CopyButton value={model.id} label="Copy request model ID" />
+          </div>
+          {protocols.length > 0 && (
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+              <span className="mr-1 text-muted-foreground">API example formats</span>
+              {protocols.map((protocol) => (
+                <Badge key={protocol} variant="outline">
+                  {protocol === "anthropic" ? "Anthropic Messages" : "OpenAI compatible"}
+                </Badge>
+              ))}
+            </div>
+          )}
+          <p className="mt-4 text-xs leading-6 text-muted-foreground">
+            {integrationAccessNote(model, publicView)}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => onTabChange("api")}>
+              {protocols.length ? "View API examples" : "View integration reference"} <ArrowUpRight />
+            </Button>
+            {model.offers.length > 0 && (
+              <Button size="sm" variant="outline" onClick={() => onTabChange("resources")}>
+                <Layers /> View resource pools
+              </Button>
+            )}
+          </div>
+        </section>
+        <details className="text-xs text-muted-foreground">
+          <summary className="w-fit cursor-pointer rounded-sm hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">
+            View data sources
+          </summary>
+          <div className="mt-3">
+            <MetadataSourceDetails model={model} />
+          </div>
+        </details>
       </div>
       <aside className="space-y-5">
         <section className="rounded-lg border" aria-labelledby="catalog-specifications-title">
@@ -511,7 +579,7 @@ export default function CatalogModelDetail({
           ))}
         </TabsList>
         <TabsContent value="overview">
-          <CatalogOverview model={model} publicView={publicView} />
+          <CatalogOverview model={model} publicView={publicView} onTabChange={onTabChange} />
         </TabsContent>
         <TabsContent value="resources">
           <CatalogResources model={model} publicView={publicView} />

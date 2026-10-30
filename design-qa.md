@@ -1,3 +1,19 @@
+# Model overview integration card QA
+
+final result: passed for the reviewed desktop state on 2026-10-30
+
+The expanded Data sources block is replaced by an Integrate this model card. It provides the exact request model ID with copy, API example-format labels, an API-example action and a resource-pool action when pools exist. Published resources and account access remain separate. Unknown model modes do not gain guessed API formats
+
+Source records, synchronization dates and conflict notes remain available behind a collapsed View data sources disclosure. They no longer occupy the main overview by default. The card retains the dashboard's existing borders, spacing, buttons and icons
+
+Before: C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/model-integration-before.png
+
+After: C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/model-integration-card-proof.png
+
+The actual local browser showed the collapsed state, expanded source fields on request and entered the correct API tab from the new action, preserving the selected model in the URL. The request code retained the exact model ID and credential placeholder. Browser error and warning collections were empty. Eleven scoped integration checks, scoped ESLint, production TypeScript and the webpack build passed. No backend, source synchronization, permission, price or billing change was required. Mobile and dark-theme visual acceptance were not performed
+
+---
+
 # Model performance, specification and benchmark charts QA
 
 final result: passed for the reviewed desktop states on 2026-10-30

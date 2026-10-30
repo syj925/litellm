@@ -88,6 +88,46 @@ function Detail({
 }
 
 describe("catalog model details", () => {
+  it("prioritizes integration actions and keeps source attribution collapsed until requested", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Detail publicView />);
+    const integration = screen.getByRole("region", { name: "Integrate this model" });
+    expect(within(integration).getByText(model.id)).toBeInTheDocument();
+    expect(within(integration).getByText("OpenAI compatible")).toBeInTheDocument();
+    expect(within(integration).getByText("Anthropic Messages")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Data sources" })).not.toBeVisible();
+    await user.click(screen.getByText("View data sources"));
+    expect(screen.getByRole("heading", { name: "Data sources" })).toBeVisible();
+    await user.click(within(integration).getByRole("button", { name: "Copy request model ID" }));
+    expect(await navigator.clipboard.readText()).toBe(model.id);
+    await user.click(within(integration).getByRole("button", { name: "View API examples" }));
+    expect(screen.getByRole("tab", { name: "API" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("region", { name: "Request code" })).toHaveTextContent(JSON.stringify(model.id));
+  });
+
+  it("opens the model's resource pools from the overview without granting access", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Detail data={{ ...model, available_to_me: false }} />);
+    const integration = screen.getByRole("region", { name: "Integrate this model" });
+    expect(within(integration).getByText(/Resource pool access is required/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Open playground/ })).not.toBeInTheDocument();
+    await user.click(within(integration).getByRole("button", { name: "View resource pools" }));
+    expect(screen.getByRole("tab", { name: /Resources/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText(model.offers[0].pool_name)).toBeInTheDocument();
+  });
+
+  it("keeps unpublished resources and unknown API formats explicit in the integration card", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Detail data={{ ...model, mode: null, offers: [], available_to_me: false }} publicView />);
+    const integration = screen.getByRole("region", { name: "Integrate this model" });
+    expect(within(integration).getByText(/No resource pool is published/)).toBeInTheDocument();
+    expect(within(integration).queryByText("API example formats")).not.toBeInTheDocument();
+    expect(within(integration).queryByRole("button", { name: "View resource pools" })).not.toBeInTheDocument();
+    await user.click(within(integration).getByRole("button", { name: "View integration reference" }));
+    expect(screen.getByText(/A request format has not been published/)).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Request code" })).not.toBeInTheDocument();
+  });
+
   it("keeps the public introduction separate from personal availability and pricing", async () => {
     const user = userEvent.setup();
     renderWithProviders(<Detail publicView />);
