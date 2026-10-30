@@ -23,11 +23,13 @@ from pydantic import (
     model_validator,
 )
 
+from litellm.litellm_core_utils.get_model_cost_map import GetModelCostMap
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.network import TrustedProxyConfig, resolve_client_ip
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.utils import hash_password
 
+from .model_price_catalog import PricingCatalogPage, PricingCatalogPrice, build_pricing_catalog
 from .models import (
     IdempotencyConflict,
     InsufficientFunds,
@@ -40,7 +42,7 @@ from .models import (
     amount_to_nanos,
     parse_discount,
 )
-from .pricing import as_mapping, catalog_candidates, validated_cache_write_tiers
+from .pricing import as_mapping, catalog_candidates, catalog_source_label, validated_cache_write_tiers
 from .store import WalletStore, get_store
 
 router: Final = APIRouter(prefix="/retail", tags=["Retail accounts"])
@@ -141,6 +143,7 @@ class ModelPriceRequest(BaseModel):
     cache_read_per_million: str = Field(min_length=1, max_length=40)
     cache_write_per_million: str = Field(min_length=1, max_length=40)
     cache_write_tiers: dict[str, str] = Field(default_factory=dict, max_length=16)
+    cache_write_price_published: bool | None = Field(default=None, strict=True)
 
     @field_validator("cache_write_tiers")
     @classmethod
@@ -750,6 +753,23 @@ async def admin_model_prices(admin: Admin, store: Store) -> dict[str, JsonValue]
     return {"items": [_model_price_view(card) for card in cards]}
 
 
+@router.get("/admin/pricing-catalog", response_model=PricingCatalogPage)
+async def admin_pricing_catalog(admin: Admin, store: Store) -> PricingCatalogPage:
+    from litellm.proxy.proxy_server import llm_router
+
+    page: Final = await _execute(store.list_model_prices())
+    cards: Final = TypeAdapter(tuple[_StoredModelPrice, ...]).validate_python(page["items"])
+    configured: Final = {
+        model: tuple(llm_router.get_model_list(model) or ()) for model in sorted(llm_router.model_names)
+    } if llm_router is not None else {}
+    return build_pricing_catalog(
+        configured,
+        tuple(PricingCatalogPrice.model_validate(_model_price_view(card)) for card in cards),
+        GetModelCostMap.loaded_model_cost_map(),
+        catalog_source_label(),
+    )
+
+
 @router.post("/admin/model-prices")
 async def admin_save_model_price(data: ModelPriceRequest, admin: Admin, store: Store) -> dict[str, JsonValue]:
     try:
@@ -761,6 +781,7 @@ async def admin_save_model_price(data: ModelPriceRequest, admin: Admin, store: S
             "cache_write_tiers": {
                 key: _per_token_price(value) for key, value in data.cache_write_tiers.items()
             },
+            "cache_write_price_published": data.cache_write_price_published,
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

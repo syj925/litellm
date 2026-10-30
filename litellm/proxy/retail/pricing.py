@@ -216,6 +216,16 @@ def _catalog_card(name: str, rates: Mapping[str, object]) -> dict[str, JsonValue
     }
 
 
+def _published_reference_card(
+    card: Mapping[str, object], catalog: Mapping[str, Mapping[str, object]],
+) -> Mapping[str, object]:
+    if card.get("cache_write_price_published") is not None or card.get("source") != "catalog":
+        return card
+    name: Final = card.get("catalog_model")
+    reference: Final = catalog.get(name, {}) if isinstance(name, str) else {}
+    return {**card, "cache_write_price_published": reference.get("cache_creation_input_token_cost") is not None}
+
+
 def catalog_snapshot(
     model: str,
     deployments: Sequence[Mapping[str, object]],

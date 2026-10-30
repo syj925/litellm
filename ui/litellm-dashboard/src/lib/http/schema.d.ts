@@ -15029,6 +15029,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/pricing-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Pricing Catalog */
+        get: operations["admin_pricing_catalog_retail_admin_pricing_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/reference-prices": {
         parameters: {
             query?: never;
@@ -40927,6 +40944,8 @@ export interface components {
             cache_read_per_million: string;
             /** Cache Write Per Million */
             cache_write_per_million: string;
+            /** Cache Write Price Published */
+            cache_write_price_published?: boolean | null;
             /** Cache Write Tiers */
             cache_write_tiers?: {
                 [key: string]: string;
@@ -44078,6 +44097,82 @@ export interface components {
             policy?: components["schemas"]["ResourcePolicy"];
             /** User Id */
             user_id?: string | null;
+        };
+        /** PricingCatalogEntry */
+        PricingCatalogEntry: {
+            /** Candidates */
+            candidates: components["schemas"]["PricingCatalogPrice"][];
+            /** Configured */
+            configured: boolean;
+            /** Model */
+            model: string;
+            /** Modes */
+            modes: string[];
+            price: components["schemas"]["PricingCatalogPrice"] | null;
+            /** Providers */
+            providers: string[];
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Review References
+             * @default []
+             */
+            review_references: components["schemas"]["PricingReviewReference"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "custom" | "catalog" | "default" | "ambiguous" | "unavailable";
+        };
+        /** PricingCatalogPage */
+        PricingCatalogPage: {
+            /** Items */
+            items: components["schemas"]["PricingCatalogEntry"][];
+        };
+        /** PricingCatalogPrice */
+        PricingCatalogPrice: {
+            /** Cache Read Per Million */
+            cache_read_per_million: string;
+            /** Cache Write Per Million */
+            cache_write_per_million: string;
+            /** Cache Write Price Published */
+            cache_write_price_published?: boolean | null;
+            /** Cache Write Tiers */
+            cache_write_tiers?: {
+                [key: string]: string;
+            };
+            /** Catalog Model */
+            catalog_model?: string | null;
+            /** Input Per Million */
+            input_per_million: string;
+            /** Model */
+            model: string;
+            /** Output Per Million */
+            output_per_million: string;
+            /**
+             * Source
+             * @default catalog
+             * @enum {string}
+             */
+            source: "manual" | "catalog" | "legacy";
+            /** Source Label */
+            source_label: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Version */
+            version?: number | null;
+        };
+        /** PricingReviewReference */
+        PricingReviewReference: {
+            base_price: components["schemas"]["PricingCatalogPrice"] | null;
+            /** Catalog Model */
+            catalog_model: string;
+            /** Rates */
+            rates: {
+                [key: string]: string;
+            };
+            /** Source Label */
+            source_label: string;
         };
         /** Progress */
         Progress: {
@@ -74858,6 +74953,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_pricing_catalog_retail_admin_pricing_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingCatalogPage"];
                 };
             };
         };

@@ -1,12 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CircleAlert, Download, Plus, RefreshCw, Tags, Trash2 } from "lucide-react";
+import { CircleAlert, Plus, Trash2 } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/shared/Alert";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { StateMessage } from "@/components/shared/StateMessage";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -23,6 +21,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/lib/toast";
 import { formatMoney, retailRequest } from "./api";
+import ModelPriceCatalogTable from "./ModelPriceCatalogTable";
+import type { SalesPrice } from "./modelPriceCatalog";
 import {
   cacheDurationLabel,
   cacheTierEntries,
@@ -30,15 +30,6 @@ import {
   validateCacheTierDrafts,
   type CacheTierDraft,
 } from "./cachePricing";
-
-interface SalesPrice {
-  model: string;
-  input_per_million: string;
-  output_per_million: string;
-  cache_read_per_million: string;
-  cache_write_per_million: string;
-  cache_write_tiers?: Record<string, string>;
-}
 
 interface SavedSalesPrice extends SalesPrice {
   version: number;
@@ -64,7 +55,6 @@ const rateFields = [
   { key: "cache_read_per_million", label: "Cache read" },
   { key: "cache_write_per_million", label: "Cache write (default)" },
 ] as const;
-const baseRateFields = rateFields.filter(({ key }) => key !== "cache_write_per_million");
 const emptyPrice: SalesPrice = {
   model: "",
   input_per_million: "",
@@ -72,11 +62,6 @@ const emptyPrice: SalesPrice = {
   cache_read_per_million: "0",
   cache_write_per_million: "0",
 };
-
-function referenceKind(source: SavedSalesPrice["source"]): string {
-  if (source === "catalog") return "Catalog reference";
-  return source === "manual" ? "Custom price" : "Legacy, unverified";
-}
 
 export default function ModelPrices({ accessToken, enabled }: { accessToken: string | null; enabled: boolean }) {
   const client = useQueryClient();
@@ -87,11 +72,6 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
   const [importing, setImporting] = useState(false);
   const [selected, setSelected] = useState<Record<string, { catalog_model: string; source_label: string }>>({});
   const [catalogSearch, setCatalogSearch] = useState("");
-  const prices = useQuery({
-    queryKey: ["retail", "model-prices"],
-    queryFn: () => retailRequest<{ items: SavedSalesPrice[] }>("/admin/model-prices", accessToken),
-    enabled: enabled && Boolean(accessToken),
-  });
   const mutation = useMutation({
     mutationFn: () =>
       retailRequest<SavedSalesPrice>("/admin/model-prices", accessToken, {
@@ -104,6 +84,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
       }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["retail", "model-prices"] });
+      void client.invalidateQueries({ queryKey: ["retail", "pricing-catalog"] });
       setEditing(false);
       toast.success("Custom base price saved");
     },
@@ -128,6 +109,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
       }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["retail", "model-prices"] });
+      void client.invalidateQueries({ queryKey: ["retail", "pricing-catalog"] });
       setImporting(false);
       toast.success("Selected base prices imported");
     },
@@ -157,6 +139,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
       output_per_million: price.output_per_million,
       cache_read_per_million: price.cache_read_per_million,
       cache_write_per_million: price.cache_write_per_million,
+      cache_write_price_published: price.cache_write_price_published,
     });
     setCacheTiers(cacheTierEntries(price.cache_write_tiers).map(([ttl_seconds, price]) => ({ ttl_seconds, price })));
     setValidation(null);
@@ -184,129 +167,17 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
     importMutation.reset();
     setImporting(true);
   };
-  const showPrices = !prices.isPending && !prices.error && prices.data?.items.length !== 0;
   const showCatalog = !catalog.isPending && !catalog.error;
 
   return (
     <>
-      <section className="overflow-hidden rounded-xl border" aria-labelledby="base-prices-title">
-        <div className="flex items-center justify-between gap-3 px-5 py-4">
-          <h2 id="base-prices-title" className="text-base font-semibold">
-            Base prices{" "}
-            <Badge variant="secondary" className="ml-2">
-              {prices.data?.items.length ?? "..."} configured
-            </Badge>
-          </h2>
-        </div>
-        <div className="border-t">
-          <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
-            <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-              Manage site-wide base rates for each public model. Review catalog references before importing them, or set
-              custom rates. Existing bills keep their saved prices.
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={prices.isFetching}
-                aria-label="Refresh base prices"
-                onClick={() => void prices.refetch()}
-              >
-                <RefreshCw className={prices.isFetching ? "animate-spin" : ""} />
-              </Button>
-              <Button variant="outline" size="sm" onClick={openImport}>
-                <Download />
-                Import catalog prices
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => editPrice(emptyPrice)}>
-                <Plus />
-                Add base price
-              </Button>
-            </div>
-          </div>
-          {prices.isPending && (
-            <LoadingState title="Loading model prices" description="Retrieving configured base rates." />
-          )}
-          {!prices.isPending && prices.error && (
-            <StateMessage
-              role="alert"
-              tone="destructive"
-              icon={<CircleAlert className="size-5" />}
-              title="Unable to load base prices"
-              description={prices.error.message}
-            />
-          )}
-          {!prices.isPending && !prices.error && prices.data?.items.length === 0 && (
-            <StateMessage
-              role="status"
-              icon={<Tags className="size-5" />}
-              title="No custom base prices configured"
-              description="Models can use catalog defaults without a saved base price here. Import catalog rates to review and customize them, or add a base price for a public model. This count does not indicate model availability."
-            />
-          )}
-          {showPrices && (
-            <Table>
-              <TableHeader className="bg-muted/40">
-                <TableRow>
-                  <TableHead className="pl-5">Model</TableHead>
-                  {baseRateFields.map(({ key, label }) => (
-                    <TableHead key={key} className="text-right">
-                      {label} / 1M tokens
-                    </TableHead>
-                  ))}
-                  <TableHead>Cache write / 1M tokens</TableHead>
-                  <TableHead>Version</TableHead>
-                  <TableHead>Price source</TableHead>
-                  <TableHead>Updated</TableHead>
-                  <TableHead className="pr-5 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {prices.data?.items.map((price) => (
-                  <TableRow key={price.model}>
-                    <TableCell className="pl-5 font-medium">{price.model}</TableCell>
-                    {baseRateFields.map(({ key }) => (
-                      <TableCell key={key} className="text-right tabular-nums">
-                        {formatMoney(price[key])}
-                      </TableCell>
-                    ))}
-                    <TableCell className="min-w-40 text-xs tabular-nums">
-                      <dl className="space-y-1">
-                        {cacheWritePriceRows(price.cache_write_per_million, price.cache_write_tiers).map(
-                          ({ key, label, amount }) => (
-                            <div key={key} className="flex justify-between gap-4">
-                              <dt>{label}</dt>
-                              <dd>{formatMoney(amount ?? "")}</dd>
-                            </div>
-                          ),
-                        )}
-                      </dl>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">v{price.version}</Badge>
-                    </TableCell>
-                    <TableCell className="max-w-64 text-xs text-muted-foreground">
-                      <Badge variant="outline">{referenceKind(price.source)}</Badge>
-                      <p className="mt-1 break-words">
-                        {price.source_label ?? "Existing base price, review before publishing it to customers"}
-                      </p>
-                      {price.catalog_model && <p className="mt-1 break-all font-mono">{price.catalog_model}</p>}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {new Date(price.updated_at).toLocaleString("en-US")}
-                    </TableCell>
-                    <TableCell className="pr-5 text-right">
-                      <Button variant="ghost" size="xs" onClick={() => editPrice(price)}>
-                        Edit price
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </div>
-      </section>
+      <ModelPriceCatalogTable
+        accessToken={accessToken}
+        enabled={enabled}
+        onEdit={editPrice}
+        onAdd={() => editPrice(emptyPrice)}
+        onImport={openImport}
+      />
       <Dialog
         open={editing}
         onOpenChange={(open) => {
@@ -341,12 +212,24 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                     <Input
                       id={`sales-${key}`}
                       value={values[key]}
-                      onChange={(event) => setValues({ ...values, [key]: event.target.value })}
+                      onChange={(event) =>
+                        setValues({
+                          ...values,
+                          [key]: event.target.value,
+                          ...(key === "cache_write_per_million" ? { cache_write_price_published: true } : {}),
+                        })
+                      }
                       inputMode="decimal"
                       required
                       disabled={mutation.isPending}
                       placeholder="0.00"
                     />
+                    {key === "cache_write_per_million" && values.cache_write_price_published === false && (
+                      <p className="text-xs leading-5 text-muted-foreground">
+                        This unpublished rate is an internal billing fallback. Editing it publishes a default cache
+                        write price.
+                      </p>
+                    )}
                   </Field>
                 ))}
               </div>
@@ -633,13 +516,14 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                           <TableCell className="text-right text-xs tabular-nums">
                             {chosen ? (
                               <div className="space-y-1">
-                                {cacheWritePriceRows(chosen.cache_write_per_million, chosen.cache_write_tiers).map(
-                                  ({ key, label, amount }) => (
-                                    <p key={key}>
-                                      {label}: {formatMoney(amount ?? "")}
-                                    </p>
-                                  ),
-                                )}
+                                {cacheWritePriceRows(
+                                  chosen.cache_write_price_published === false ? null : chosen.cache_write_per_million,
+                                  chosen.cache_write_tiers,
+                                ).map(({ key, label, amount }) => (
+                                  <p key={key}>
+                                    {label}: {amount === null ? "Not listed" : formatMoney(amount)}
+                                  </p>
+                                ))}
                               </div>
                             ) : (
                               "Choose reference"

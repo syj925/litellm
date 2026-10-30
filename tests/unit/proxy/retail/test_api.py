@@ -18,8 +18,8 @@ from litellm.proxy.retail.api import (
     SignupRequest,
     _model_price_view,
     _per_token_price,
-    _PublicLedgerPage,
     _public_ledger_details,
+    _PublicLedgerPage,
     _select_references,
     _source_hash,
     _StoredModelPrice,
@@ -41,12 +41,24 @@ def test_custom_cache_duration_prices_keep_per_million_units_and_zero_rates() ->
     assert _per_token_price(request.cache_write_tiers["3600"]) == "0.000004"
 
 
-def test_manual_price_requests_cannot_override_catalog_publication_evidence() -> None:
+@pytest.mark.parametrize("published", (None, False, True))
+def test_admin_price_edits_can_preserve_unpublished_cache_defaults_or_publish_an_explicit_zero(published: bool | None) -> None:
+    request: Final = ModelPriceRequest.model_validate({
+        "model": "fixture", "input_per_million": "1", "output_per_million": "2",
+        "cache_read_per_million": "0.1", "cache_write_per_million": "0",
+        "cache_write_price_published": published,
+    })
+    assert request.cache_write_price_published is published
+    assert request.cache_write_per_million == "0"
+
+
+@pytest.mark.parametrize("published", ("false", 0, 1, [], {}))
+def test_admin_price_edit_publication_flags_are_strict_booleans(published: object) -> None:
     with pytest.raises(ValidationError, match="cache_write_price_published"):
         ModelPriceRequest.model_validate({
             "model": "fixture", "input_per_million": "1", "output_per_million": "2",
             "cache_read_per_million": "0.1", "cache_write_per_million": "0",
-            "cache_write_price_published": False,
+            "cache_write_price_published": published,
         })
 
 
@@ -253,7 +265,8 @@ def test_signup_preserves_the_password_and_hides_it_in_model_representation(leng
     "role",
     (LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY),
 )
-async def test_non_administrators_cannot_access_administrator_routes(role: LitellmUserRoles) -> None:
+@pytest.mark.parametrize("path", ("/retail/admin/wallets", "/retail/admin/pricing-catalog"))
+async def test_non_administrators_cannot_access_administrator_routes(role: LitellmUserRoles, path: str) -> None:
     async def authenticated_user() -> UserAPIKeyAuth:
         return UserAPIKeyAuth(user_id="reader", user_role=role)
 
@@ -261,7 +274,7 @@ async def test_non_administrators_cannot_access_administrator_routes(role: Litel
     app.include_router(router)
     app.dependency_overrides[user_api_key_auth] = authenticated_user
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://retail.test") as client:
-        response: Final = await client.get("/retail/admin/wallets")
+        response: Final = await client.get(path)
     assert response.status_code == 403
     assert "administrator" in response.json()["detail"]
 

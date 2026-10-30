@@ -137,12 +137,14 @@ def test_removing_one_model_override_inherits_its_plan_without_changing_another_
 
 
 @pytest.mark.parametrize("value", (None, False, True))
-def test_publication_provenance_keeps_catalog_evidence_and_treats_manual_prices_as_explicit(value: bool | None) -> None:
+def test_publication_provenance_keeps_explicit_flags_and_preserves_legacy_manual_defaults(value: bool | None) -> None:
     assert _model_price_published({"cache_write_price_published": value}, "catalog") is value
-    assert _model_price_published({"cache_write_price_published": value}, "manual") is True
+    assert _model_price_published({"cache_write_price_published": value}, "manual") is (True if value is None else value)
+    assert _model_price_published({}, "manual") is True
 
 
 @pytest.mark.parametrize("value", ("false", 0, [], {}))
-def test_publication_provenance_does_not_coerce_unknown_values_into_price_evidence(value: JsonValue) -> None:
+@pytest.mark.parametrize("source", ("catalog", "manual"))
+def test_publication_provenance_does_not_coerce_unknown_values_into_price_evidence(value: JsonValue, source: str) -> None:
     with pytest.raises(InvalidAmount, match="Published cache write"):
-        _model_price_published({"cache_write_price_published": value}, "catalog")
+        _model_price_published({"cache_write_price_published": value}, source)

@@ -1,3 +1,25 @@
+# Searchable model price configuration QA
+
+final result: passed for the reviewed local desktop states on 2026-10-30
+
+Model Pricing now automatically reads the site's configured public model names and their loaded default prices, together with saved overrides. The page supports model and reference-name search, provider, model type and price-source filters, URL-backed pagination and direct row editing. Provider icons identify each row. Edit actions stay visible while a wide table scrolls horizontally
+
+Before: C:/Users/26933/AppData/Local/Temp/codex-clipboard-6d0e8940-778a-43b6-a3eb-916a5a5ed72b.png
+
+After: C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/model-pricing-catalog-proof.png
+
+Search: C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/model-pricing-catalog-search-proof.png
+
+The authenticated local page displayed forty-four public model names, independently matching fifty-six deployment rows grouped by model name. Twenty-four safe built-in defaults and eleven base reference previews were available. Forty-two models had original numeric configuration fields to review, including context thresholds and service tiers. Non-token units stay in their original fields. Unknown entries remain visible without invented rates. Reference-only previews do not change which rate is effective
+
+Actual browser checks covered provider filtering, seven image models under type filtering, model-name search, pagination, Claude 5m/1h form autofill and OpenAI 30m/12h configuration review followed by form autofill. Reviewing or editing required no copied model name. No form was saved during browser QA. The user's existing tab was left untouched. Captured browser warnings and errors were empty. Desktop states were reviewed at the available browser sizes; mobile and dark theme were not reviewed
+
+The new administrator-only read endpoint excludes channel URLs, credentials and procurement rates. Default eligibility uses the same complete deployment-consensus check as request pricing. Saved overrides take precedence, including saved-only model names. A direct edit preserves an unpublished internal cache-write fallback when another field changes, while an explicitly edited zero write price remains publishable
+
+The final backend run passed 172 scoped tests, including a real isolated PostgreSQL and ASGI save/read test. Twenty-nine scoped frontend tests, production TypeScript, regenerated OpenAPI declarations and the webpack build passed. Changed-file lint had no errors; four existing ModelPrices warning categories remain, and new table and review components were clean. Live read-only API checks reconciled effective prices and duration maps with reference and saved-price endpoints. Business fingerprints for channels, deployments, pool bindings, saved prices and wallets matched before and after. The local service returned healthy after restart
+
+---
+
 # Dedicated model pricing page QA
 
 final result: passed for the reviewed local desktop state on 2026-10-30

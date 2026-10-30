@@ -24,7 +24,7 @@ from .pool_store import (
     effective_account_grants,
     router_deployments,
 )
-from .pricing import _catalog_model, as_mapping, catalog_cache_write_tiers, catalog_snapshot
+from .pricing import _catalog_model, _published_reference_card, as_mapping, catalog_cache_write_tiers, catalog_snapshot
 from .store import WalletStore, _many, _ModelPriceRow
 
 router: Final = APIRouter(tags=["Model catalog"])
@@ -295,16 +295,6 @@ def _reference_card(
         return catalog_snapshot(model, deployments, "1", catalog)
     except ValueError:
         return None
-
-
-def _published_reference_card(
-    card: Mapping[str, object], catalog: Mapping[str, Mapping[str, object]],
-) -> Mapping[str, object]:
-    if card.get("cache_write_price_published") is not None or card.get("source") != "catalog":
-        return card
-    name: Final = card.get("catalog_model")
-    reference: Final = catalog.get(name, {}) if isinstance(name, str) else {}
-    return {**card, "cache_write_price_published": reference.get("cache_creation_input_token_cost") is not None}
 
 
 def _reference_rates(

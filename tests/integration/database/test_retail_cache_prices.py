@@ -3,11 +3,16 @@ from decimal import Decimal
 from typing import Final
 from uuid import uuid4
 
+import httpx
 import psycopg
 import pytest
+from fastapi import FastAPI
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
+from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
+from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+from litellm.proxy.retail.api import retail_store, router
 from litellm.proxy.retail.catalog import build_model_catalog
 from litellm.proxy.retail.models import IdempotencyConflict
 from litellm.proxy.retail.pool_store import PoolAccess
@@ -96,6 +101,7 @@ async def _assert_frozen_cache_prices(database_url: str) -> None:
         await store.settle("request", "0", details)
     await _assert_default_duration_prices_are_frozen(store)
     await _assert_catalog_cache_write_provenance(store)
+    await _assert_administrator_price_edits(store)
 
 
 async def _assert_default_duration_prices_are_frozen(store: WalletStore) -> None:
@@ -167,19 +173,56 @@ async def _assert_catalog_cache_write_provenance(store: WalletStore) -> None:
         pricing: Final = page.items[0].reference_pricing
         assert pricing is not None and pricing.cache_write is None
         assert await store.get_model_price(model) == saved
-    for amount in ("0.000002", "0"):
+    for amount, published in (("0.000002", False), ("0", True), ("0.000003", None)):
         manual_model: Final = "manual-" + amount
         manual_saved: Final = await store.save_model_price(manual_model, {
             "input_cost_per_token": "0.000002", "output_cost_per_token": "0.000006",
             "cache_read_input_token_cost": "0.0000002", "cache_creation_input_token_cost": amount,
-            "cache_write_price_published": False,
+            "cache_write_price_published": published,
         })
-        assert manual_saved["cache_write_price_published"] is True
+        assert manual_saved["cache_write_price_published"] is (True if published is None else published)
         manual_page: Final = build_model_catalog(
             (), (), PoolAccess(), ({"model_name": manual_model, "model_info": {"id": manual_model},
                                    "litellm_params": {"model": "gemini/catalog-fixture"}},),
             (manual_saved,), (), catalog, mode="public",
         )
         manual_pricing: Final = manual_page.items[0].reference_pricing
-        assert manual_pricing is not None and manual_pricing.cache_write is not None
-        assert Decimal(manual_pricing.cache_write) == Decimal(amount) * 1_000_000
+        assert manual_pricing is not None
+        displayed: Final = Decimal(manual_pricing.cache_write) if manual_pricing.cache_write is not None else None
+        assert displayed == (None if published is False else Decimal(amount) * 1_000_000)
+
+
+async def _assert_administrator_price_edits(store: WalletStore) -> None:
+    async def isolated_store() -> WalletStore:
+        return store
+
+    async def administrator() -> UserAPIKeyAuth:
+        return UserAPIKeyAuth(user_id="fixture-admin", user_role=LitellmUserRoles.PROXY_ADMIN)
+
+    app: Final = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[retail_store] = isolated_store
+    app.dependency_overrides[user_api_key_auth] = administrator
+    payload: Final = {
+        "model": "api-public-model", "input_per_million": "2", "output_per_million": "6",
+        "cache_read_per_million": "0.2", "cache_write_per_million": "2",
+        "cache_write_tiers": {"75": "0"}, "cache_write_price_published": False,
+    }
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://retail.test") as client:
+        preserved: Final = await client.post("/retail/admin/model-prices", json=payload)
+        assert preserved.status_code == 200, preserved.text
+        assert preserved.json()["cache_write_price_published"] is False
+        assert Decimal(preserved.json()["output_per_million"]) == Decimal(payload["output_per_million"])
+        listing: Final = await client.get("/retail/admin/pricing-catalog")
+        assert listing.status_code == 200, listing.text
+        row: Final = next(item for item in listing.json()["items"] if item["model"] == payload["model"])
+        assert row["status"] == "custom"
+        assert row["price"]["cache_write_price_published"] is False
+        assert row["price"]["cache_write_tiers"] == payload["cache_write_tiers"]
+        published: Final = await client.post("/retail/admin/model-prices", json={
+            **payload, "cache_write_per_million": "0", "cache_write_price_published": True,
+        })
+        assert published.status_code == 200, published.text
+        assert published.json()["cache_write_price_published"] is True
+        assert Decimal(published.json()["cache_write_per_million"]) == 0
+        assert published.json()["version"] == preserved.json()["version"] + 1

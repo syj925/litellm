@@ -295,12 +295,10 @@ def _model_price_tiers(rates: Mapping[str, JsonValue]) -> dict[str, str]:
 
 
 def _model_price_published(rates: Mapping[str, JsonValue], source: str) -> bool | None:
-    if source == "manual":
-        return True
     value: Final = rates.get("cache_write_price_published")
     if value is not None and not isinstance(value, bool):
         raise InvalidAmount("Published cache write pricing must be a boolean or unknown")
-    return value
+    return True if source == "manual" and value is None else value
 
 
 def model_discount_view(
