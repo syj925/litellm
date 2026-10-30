@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
-from litellm.proxy.retail.billing import RetailBilling, price_snapshot, reservation_id
+from litellm.proxy.retail.billing import RetailBilling, _request_output_limit, price_snapshot, reservation_id
 from litellm.proxy.retail.pool_routing import filter_pool_deployments, guard_pool_deployment, reset_pool_routing
 from litellm.proxy.retail.pool_store import (
     PoolAccess,
@@ -90,7 +90,7 @@ async def test_disabled_retail_billing_preserves_native_requests(monkeypatch: py
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("call_type", ("aimage_generation", "atranscription", "afine_tuning", "unknown_endpoint"))
+@pytest.mark.parametrize("call_type", ("afine_tuning", "unknown_endpoint", "_arealtime"))
 async def test_unpriced_endpoint_types_fail_before_wallet_or_provider_access(
     call_type: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -160,6 +160,41 @@ def test_pricing_snapshot_keeps_the_model_and_plan_from_the_same_discount_decisi
     assert charge_for_usage(saved, UsageFacts(input_tokens=10, output_tokens=1)) == "0.000021000"
     assert charge_for_usage(current, UsageFacts(input_tokens=10, output_tokens=1)) == "0.000024000"
     assert saved["discount"] == "0.7"
+
+
+@pytest.mark.parametrize(("call_type", "field"), (("acompletion", "max_tokens"),
+                                                 ("acompletion", "max_completion_tokens"),
+                                                 ("aresponses", "max_output_tokens")))
+def test_expression_output_limit_rejects_request_above_frozen_capacity(call_type: str, field: str) -> None:
+    snapshot: Final = {"version": "expression-v1", "expression_limits": {"output_tokens": 512}}
+    with pytest.raises(HTTPException, match="frozen expression capacity") as failure:
+        _request_output_limit(snapshot, {field: 513}, call_type)
+    assert failure.value.status_code == 400
+    assert _request_output_limit(snapshot, {field: 512}, call_type) == 512
+
+
+@pytest.mark.parametrize("call_type", ("acompletion", "aresponses"))
+def test_expression_default_output_fits_frozen_capacity_while_explicit_smaller_limit_is_preserved(call_type: str) -> None:
+    snapshot: Final = {"version": "expression-v1", "expression_limits": {"output_tokens": 512}}
+    field: Final = "max_output_tokens" if call_type == "aresponses" else "max_tokens"
+    assert _request_output_limit(snapshot, {}, call_type) == 512
+    assert _request_output_limit(snapshot, {field: None}, call_type) == 512
+    assert _request_output_limit(snapshot, {field: 128}, call_type) == 128
+
+
+@pytest.mark.parametrize("call_type", ("aimage_generation", "aimage_edit", "atranscription", "aspeech"))
+def test_media_quote_uses_frozen_output_capacity_instead_of_text_default_or_requested_limit(call_type: str) -> None:
+    snapshot: Final = {"version": "expression-v1", "expression_limits": {"output_tokens": 2048}}
+    assert _request_output_limit(snapshot, {}, call_type) == 2048
+    assert _request_output_limit(snapshot, {"max_tokens": 100}, call_type) == 2048
+
+
+def test_legacy_output_defaults_and_embedding_zero_limit_are_preserved() -> None:
+    legacy: Final = {"version": "token-v3"}
+    assert _request_output_limit(legacy, {}, "acompletion") == 1024
+    assert _request_output_limit(legacy, {"max_tokens": 500000}, "acompletion") == 500000
+    assert _request_output_limit({"version": "expression-v1", "expression_limits": {"output_tokens": 512}},
+                                 {}, "aembedding") == 0
 
 
 @pytest.mark.asyncio

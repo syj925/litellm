@@ -6,7 +6,7 @@ from typing import Final, Literal
 
 import psycopg
 from fastapi import APIRouter, HTTPException, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from litellm.litellm_core_utils.get_model_cost_map import GetModelCostMap
 
@@ -14,6 +14,7 @@ from .api import Store, User
 from .catalog_enrichment import MetadataSource, resolve_metadata
 from .catalog_source_data import BenchmarkRecord
 from .catalog_sources import ExternalMetadataRecord, read_records
+from .expression_pricing import validate_expression_policy
 from .pool_pricing import _PoolFactors, pool_discount_view
 from .pool_store import (
     PoolAccess,
@@ -51,6 +52,7 @@ class CatalogPricing(BaseModel):
     source_label: str | None = None
     version: int | None = None
     updated_at: str | None = None
+    expression_policy: dict[str, JsonValue] | None = None
 
 
 class CatalogOffer(BaseModel):
@@ -95,6 +97,7 @@ class CatalogModel(BaseModel):
     metadata_conflicts: tuple[str, ...] = ()
     benchmarks: tuple[BenchmarkRecord, ...] = ()
     reference_pricing: CatalogRates | None = None
+    expression_policy: dict[str, JsonValue] | None = None
     available_to_me: bool
     offers: tuple[CatalogOffer, ...]
 
@@ -246,7 +249,7 @@ def _per_million(value: object) -> str | None:
 
 
 def _rates(card: Mapping[str, object] | None, catalog_name: str | None = None) -> CatalogRates | None:
-    if card is None:
+    if card is None or card.get("expression_policy") is not None:
         return None
     values: Final = {
         field: None if field == "cache_write" and card.get("cache_write_price_published") is False
@@ -303,6 +306,9 @@ def _reference_rates(
     stored_prices: Mapping[str, Mapping[str, object]],
     catalog: Mapping[str, Mapping[str, object]],
 ) -> CatalogRates | None:
+    card: Final = _reference_card(model, deployments, stored_prices, catalog)
+    if card is not None and card.get("expression_policy") is not None:
+        return None
     if model in stored_prices:
         return _rates(_published_reference_card(stored_prices[model], catalog))
     if model in catalog:
@@ -343,6 +349,10 @@ def _offer(
             else None,
             version=_integer(card.get("version")) if card else None,
             updated_at=_string(card.get("updated_at")) if card else None,
+            expression_policy=(
+                validate_expression_policy(card["expression_policy"]).model_dump(mode="json")
+                if card is not None and card.get("expression_policy") is not None else None
+            ),
         ),
     )
 
@@ -391,6 +401,10 @@ def _model_entry(
         metadata_conflicts=resolution.conflicts,
         benchmarks=resolution.benchmarks,
         reference_pricing=reference_rates,
+        expression_policy=(
+            validate_expression_policy(card["expression_policy"]).model_dump(mode="json")
+            if card is not None and card.get("expression_policy") is not None else None
+        ),
         available_to_me=any(offer.available_to_me for offer in offers),
         offers=offers,
     )

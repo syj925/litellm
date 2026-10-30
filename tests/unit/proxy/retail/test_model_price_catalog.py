@@ -6,6 +6,58 @@ from litellm.proxy.retail.model_price_catalog import PricingCatalogPrice, build_
 from litellm.proxy.retail.pricing import catalog_snapshot
 
 
+def test_saved_expression_policy_is_the_active_price_in_the_admin_catalog() -> None:
+    policy: Final = {"version": "expression-v1", "expression": "p * 2 + c * 6", "timezone": "UTC", "usage_bounds": {}}
+    saved: Final = PricingCatalogPrice(
+        model="dynamic", input_per_million="9", output_per_million="9", cache_read_per_million="9",
+        cache_write_per_million="9", source="manual", source_label="Reviewed expression", expression_policy=policy,
+    )
+    row: Final = build_pricing_catalog({}, (saved,), {}, "Catalog fixture").items[0]
+    assert row.status == "expression"
+    assert row.price == saved
+    assert row.price.expression_policy == policy
+
+
+@pytest.mark.parametrize(("provider", "extra", "expected"), (
+    ("openai", {"regional_processing_uplift_multiplier_eu": "1.1"}, ("regional_processing_uplift_multiplier_eu",)),
+    ("anthropic", {"provider_specific_entry": {"us": "1.1"}}, ("provider_specific_entry",)),
+))
+def test_unmapped_catalog_dimensions_name_the_exact_fields_without_offering_a_partial_policy(
+    provider: str, extra: dict[str, object], expected: tuple[str, ...],
+) -> None:
+    metadata: Final = {
+        "mode": "chat", "litellm_provider": provider,
+        "input_cost_per_token": "0.000002", "output_cost_per_token": "0.000006",
+        "search_context_cost_per_query": {
+            "search_context_size_low": "0.0123456789", "search_context_size_medium": "0.0123456789",
+            "search_context_size_high": "0.0123456789",
+        }, **extra,
+    }
+    row: Final = build_pricing_catalog(
+        {"public-model": ({"litellm_params": {"model": "fixture"}},)}, (), {"fixture": metadata}, "Catalog fixture",
+    ).items[0]
+    assert row.status == "unavailable" and row.price is None
+    assert row.reason == "Manual pricing is required for unresolved catalog fields: " + ", ".join(expected)
+    assert row.review_references[0].expression_policy is None
+    assert "0.0123456789" not in row.reason and "1.1" not in row.reason
+
+
+def test_manual_review_reasons_bound_field_counts_and_never_copy_urls_or_values() -> None:
+    fields: Final = {f"unsupported_fee_field_{index:02d}": "https://private.invalid/value" for index in range(20)}
+    metadata: Final = {
+        "mode": "chat", "input_cost_per_token": "0.000002", "output_cost_per_token": "0.000006", **fields,
+        "https://private.invalid/pricing": "private-value",
+    }
+    row: Final = build_pricing_catalog(
+        {"public-model": ({"litellm_params": {"model": "fixture"}},)}, (), {"fixture": metadata}, "Catalog fixture",
+    ).items[0]
+    assert row.reason is not None and len(row.reason) <= 2048
+    assert "unsupported_fee_field_00" in row.reason and "unsupported_fee_field_15" in row.reason
+    assert "4 more fields" in row.reason
+    assert "unsupported_fee_field_16" not in row.reason
+    assert "https" not in row.reason and "private" not in row.reason
+
+
 def test_configured_models_show_catalog_defaults_without_saving_or_exposing_channel_configuration() -> None:
     catalog: Final = {
         "anthropic/fixture": {
@@ -78,7 +130,7 @@ def test_ambiguous_or_partially_unresolved_deployments_have_no_active_price(seco
     assert row.reason is not None and "Choose a reference" in row.reason
 
 
-def test_unsupported_and_unknown_prices_remain_visible_without_fabricated_flat_rates() -> None:
+def test_supported_context_tiers_get_an_expression_while_unsupported_prices_have_no_active_rates() -> None:
     catalog: Final = {
         "image": {"litellm_provider": "vendor", "mode": "image_generation", "input_cost_per_pixel": "0.1"},
         "tiered": {
@@ -91,9 +143,13 @@ def test_unsupported_and_unknown_prices_remain_visible_without_fabricated_flat_r
     }
     page: Final = build_pricing_catalog(configured, (), catalog, "Catalog fixture")
     assert tuple(row.model for row in page.items) == ("image", "missing", "tiered")
-    assert all(row.status == "unavailable" and row.price is None and row.candidates == () for row in page.items)
+    assert all(row.status == "unavailable" and row.price is None and row.candidates == () for row in page.items[:2])
     assert page.items[0].modes == ("image_generation",)
     assert page.items[1].providers == ("vendor",)
+    dynamic: Final = page.items[2]
+    assert dynamic.status == "expression"
+    assert dynamic.price is not None and dynamic.price.expression_policy is not None
+    assert dynamic.review_references[0].expression_policy == dynamic.price.expression_policy
 
 
 def test_internal_fallback_write_price_retains_its_unpublished_flag() -> None:

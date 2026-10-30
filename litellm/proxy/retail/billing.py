@@ -2,7 +2,8 @@ import json
 import os
 from collections.abc import Callable, Mapping, Sequence
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Final
 from uuid import uuid4
 
@@ -14,6 +15,9 @@ from litellm.integrations.custom_logger import CustomLogger
 from litellm.proxy._types import UserAPIKeyAuth
 
 from .customer_access import customer_resource_policy
+from .expression_billing import expression_settlement, expression_token_limits
+from .expression_pricing import expression_usage_keys, freeze_expression_context, validate_expression_policy
+from .expression_usage import request_usage_evidence
 from .models import InsufficientFunds, ParallelLimitExceeded
 from .pool_routing import (
     bind_pool_routing,
@@ -54,6 +58,10 @@ _SUPPORTED: Final = frozenset(
     }
 )
 _active_reservation: Final[ContextVar[str | None]] = ContextVar("retail_active_reservation", default=None)
+_EXPRESSION_MEDIA: Final = frozenset({
+    "image_generation", "aimage_generation", "image_edit", "aimage_edit", "transcription", "atranscription",
+    "speech", "aspeech",
+})
 
 
 def reservation_id(data: Mapping[str, object]) -> str | None:
@@ -66,22 +74,60 @@ def reservation_id(data: Mapping[str, object]) -> str | None:
     return None
 
 
+def _request_output_limit(snapshot: Mapping[str, object], data: Mapping[str, object], call_type: str) -> int:
+    limit_key: Final = "max_output_tokens" if call_type in {"responses", "aresponses"} else "max_tokens"
+    provided: Final = tuple(
+        data[key] for key in ("max_tokens", "max_completion_tokens", "max_output_tokens") if data.get(key) is not None
+    )
+    if len(provided) > 1:
+        raise HTTPException(400, "Send only one output token limit")
+    if (
+        limit_key == "max_output_tokens"
+        and any(data.get(key) is not None for key in ("max_tokens", "max_completion_tokens"))
+    ) or (limit_key == "max_tokens" and data.get("max_output_tokens") is not None):
+        raise HTTPException(400, "This output token limit is not valid for the requested endpoint")
+    capacity: Final = (
+        int(as_mapping(snapshot.get("expression_limits")).get("output_tokens", 1_000_000))
+        if snapshot.get("version") == "expression-v1" else 1_000_000
+    )
+    requested: Final = provided[0] if provided else min(1024, capacity)
+    if not isinstance(requested, int) or isinstance(requested, bool) or not 1 <= requested <= 1_000_000:
+        raise HTTPException(400, "Output token limit must be an integer between 1 and 1000000")
+    if requested > capacity:
+        raise HTTPException(400, "Requested output token limit exceeds the frozen expression capacity")
+    if call_type in {"embedding", "aembedding"}:
+        return 0
+    return capacity if call_type in _EXPRESSION_MEDIA else requested
+
+
 def price_snapshot(
     card: Mapping[str, JsonValue],
     discount: Mapping[str, JsonValue],
     call_type: str,
     pool: PoolRouteDecision | None = None,
+    request_data: Mapping[str, object] | None = None,
+    started_at: datetime | None = None,
 ) -> dict[str, JsonValue]:
+    policy: Final = validate_expression_policy(card["expression_policy"]) if card.get("expression_policy") else None
+    expression_context: Final = (
+        freeze_expression_context(policy, request_data or {}, started_at or datetime.now(timezone.utc)) if policy else {}
+    )
     return {
         **card,
-        "version": "token-v3",
+        "version": "expression-v1" if policy else "token-v3",
         "price_version": card.get("version"),
         "multiplier": str(discount["discount"]),
         "discount": str(discount["discount"]),
         "discount_source": discount["discount_source"],
         "discount_model": discount["model"],
         "plan_id": discount["plan_id"],
-        "billing_mode": "embedding" if call_type in {"embedding", "aembedding"} else "text",
+        "billing_mode": "embedding" if call_type in {"embedding", "aembedding"} else "media" if call_type in _EXPRESSION_MEDIA else "text",
+        **({
+            "expression_policy": policy.model_dump(mode="json"),
+            "expression_context": expression_context,
+            "expression_usage_evidence": request_usage_evidence(request_data or {}, call_type),
+            "expression_limits": expression_token_limits(card),
+        } if policy else {}),
         **(
             {
                 "resource_pool_id": pool.pool_id,
@@ -181,33 +227,42 @@ class RetailBilling(CustomLogger):
         user_id: Final = user_api_key_dict.user_id
         if not user_id:
             raise HTTPException(403, "Wallet billing requires an API key owned by a user")
-        if call_type not in _SUPPORTED:
+        if call_type not in _SUPPORTED and call_type not in _EXPRESSION_MEDIA:
             raise HTTPException(403, "This API endpoint is not enabled for prepaid wallets yet")
         if data.get("background") or data.get("batch"):
             raise HTTPException(400, "Background and batch requests are not enabled for prepaid wallets yet")
+        image_call: Final = call_type in {"image_generation", "aimage_generation", "image_edit", "aimage_edit"}
+        if image_call and (
+            not isinstance(data.get("n", 1), int) or isinstance(data.get("n", 1), bool)
+            or not 1 <= data.get("n", 1) <= 16
+        ):
+            raise HTTPException(400, "Image count must be an integer between 1 and 16")
         if any(
             data.get(key) is not None
             and (not isinstance(data[key], int) or isinstance(data[key], bool) or data[key] != 1)
-            for key in ("n", "best_of")
+            for key in (("best_of",) if image_call else ("n", "best_of"))
         ):
             raise HTTPException(400, "Prepaid requests currently support one generated candidate only")
         prompt: Final = data.get("prompt")
         if isinstance(prompt, list) and len(prompt) > 1 and any(isinstance(item, (str, list)) for item in prompt):
             raise HTTPException(400, "Send one text completion prompt per prepaid request")
         tools: Final = data.get("tools")
-        if isinstance(tools, list) and any(as_mapping(tool).get("type") not in {"function", "mcp"} for tool in tools):
-            raise HTTPException(
-                400, "Server-priced tools need a separate price card before they can use a prepaid wallet"
-            )
+        priced_tools: Final = tuple(
+            as_mapping(tool) for tool in tools if as_mapping(tool).get("type") not in {"function", "mcp"}
+        ) if isinstance(tools, list) else ()
+        if priced_tools and not all(
+            item.get("type") in {"web_search", "web_search_preview", "google_search"}
+            or "googleSearch" in item or "google_search" in item for item in priced_tools
+        ):
+            raise HTTPException(400, "This server-priced tool has no supported reported billing quantity")
         store: Final = self._store()
-        await store.initialize()
-        await store.get_wallet(user_id, create=True)
         from litellm.proxy.proxy_server import llm_router
 
         model: Final = str(data.get("model", ""))
         deployments: Final = llm_router.get_model_list(model, team_id=user_api_key_dict.team_id) if llm_router else ()
         if not deployments:
             raise HTTPException(400, "No configured deployment is available for this model")
+        await store.initialize()
         pool: Final = await self._pools().resolve_route(user_id, model, policy, deployments)
         bind_pool_routing(model, pool, data)
         priced_deployments: Final = (
@@ -227,39 +282,41 @@ class RetailBilling(CustomLogger):
             raise HTTPException(422, str(exc)) from exc
         if card is None:
             raise HTTPException(422, "A model sales price is required")
+        if priced_tools and (
+            not card.get("expression_policy") or "web_search_requests" not in expression_usage_keys(
+                validate_expression_policy(card["expression_policy"])
+            )
+        ):
+            raise HTTPException(400, "Server-priced search requires an expression with reported web_search_requests")
+        if call_type in _EXPRESSION_MEDIA and not card.get("expression_policy"):
+            raise HTTPException(422, "This media endpoint requires an explicit expression price with reported billing quantities")
+        await store.get_wallet(user_id, create=True)
         discount: Final = (
             await store.get_model_discount(user_id, model, pool_id=pool.pool_id)
             if pool is not None
             else await store.get_model_discount(user_id, model)
         )
-        snapshot: Final = price_snapshot(card, discount, call_type, pool)
         try:
+            snapshot: Final = price_snapshot(card, discount, call_type, pool, data)
+            if call_type in _EXPRESSION_MEDIA and snapshot["version"] != "expression-v1":
+                raise ValueError("This media endpoint requires an explicit expression price with reported billing quantities")
+            if priced_tools and (
+                snapshot["version"] != "expression-v1" or "web_search_requests" not in expression_usage_keys(
+                    validate_expression_policy(snapshot["expression_policy"])
+                )
+            ):
+                raise ValueError("Server-priced search requires an expression with reported web_search_requests")
+            if image_call and snapshot["version"] == "expression-v1":
+                policy: Final = validate_expression_policy(snapshot["expression_policy"])
+                image_bound: Final = policy.usage_bounds.get("images", policy.usage_bounds.get("image_count"))
+                if image_bound is not None and data.get("n", 1) > Decimal(image_bound):
+                    raise ValueError("Requested image count exceeds the expression's configured usage bound")
             validate_requested_cache_ttls(snapshot, data)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         embedding: Final = call_type in {"embedding", "aembedding"}
         limit_key: Final = "max_output_tokens" if call_type in {"responses", "aresponses"} else "max_tokens"
-        if (
-            sum(
-                key in data and data[key] is not None
-                for key in ("max_tokens", "max_completion_tokens", "max_output_tokens")
-            )
-            > 1
-        ):
-            raise HTTPException(400, "Send only one output token limit")
-        if (
-            limit_key == "max_output_tokens"
-            and any(data.get(key) is not None for key in ("max_tokens", "max_completion_tokens"))
-        ) or (limit_key == "max_tokens" and data.get("max_output_tokens") is not None):
-            raise HTTPException(400, "This output token limit is not valid for the requested endpoint")
-        requested_limit: Final = data.get("max_completion_tokens", data.get(limit_key, 1024))
-        if (
-            not isinstance(requested_limit, int)
-            or isinstance(requested_limit, bool)
-            or not 1 <= requested_limit <= 1_000_000
-        ):
-            raise HTTPException(400, "Output token limit must be an integer between 1 and 1000000")
-        output_limit: Final = 0 if embedding else requested_limit
+        output_limit: Final = _request_output_limit(snapshot, data, call_type)
         request_id: Final = str(uuid4())
         opaque_input: Final = any(
             data.get(key) for key in ("previous_response_id", "conversation", "file", "attachments")
@@ -276,9 +333,12 @@ class RetailBilling(CustomLogger):
                 '"audio"',
             )
         )
-        quote: Final = reserve_quote(
-            snapshot, data, output_limit, minimum_input_tokens=1_000_000 if opaque_input else 0
-        )
+        try:
+            quote: Final = reserve_quote(
+                snapshot, data, output_limit, minimum_input_tokens=1_000_000 if opaque_input else 0
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
         try:
             await store.reserve(
                 user_id, request_id, model, quote, snapshot, max_parallel=int(os.getenv("RETAIL_MAX_PARALLEL", "10"))
@@ -290,7 +350,7 @@ class RetailBilling(CustomLogger):
         except ParallelLimitExceeded as exc:
             raise HTTPException(429, "Your wallet has reached its concurrent request limit") from exc
         _active_reservation.set(request_id)
-        limit: Final = {} if embedding or "max_completion_tokens" in data else {limit_key: output_limit}
+        limit: Final = {} if embedding or call_type in _EXPRESSION_MEDIA or data.get("max_completion_tokens") is not None else {limit_key: output_limit}
         return {**_pool_request_data(data, user_id, pool, request_id), **limit}
 
     async def async_filter_deployments(
@@ -324,6 +384,18 @@ class RetailBilling(CustomLogger):
         if reservation is None:
             return
         snapshot: Final = as_mapping(reservation["price_snapshot"])
+        if snapshot.get("version") == "expression-v1":
+            try:
+                expression_amount, expression_details = expression_settlement(snapshot, response)
+            except ValueError as exc:
+                await store.record_pending_usage(request_id, {"billing_error": str(exc)})
+                return
+            await store.settle(request_id, expression_amount, {
+                **expression_details,
+                "provider_cost": str(provider_cost) if provider_cost is not None else None,
+                "gateway_call_id": str(data.get("litellm_call_id", "")),
+            })
+            return
         facts: Final = usage_facts(response, allow_input_only=snapshot.get("billing_mode") == "embedding")
         if facts is None:
             await store.record_pending_usage(

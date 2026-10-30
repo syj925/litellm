@@ -88,6 +88,33 @@ function Detail({
 }
 
 describe("catalog model details", () => {
+  it("shows the public expression and timezone instead of fixed token quotations", () => {
+    const expression_policy = {
+      version: "expression-v1" as const,
+      expression: "hour() >= 9 ? tier('peak', p * 3 + c * 12) : tier('off-peak', p * 2 + c * 8)",
+      timezone: "Asia/Shanghai",
+      usage_bounds: {},
+    };
+    renderWithProviders(
+      <Detail
+        initialTab="pricing"
+        publicView
+        data={{
+          ...model,
+          expression_policy,
+          offers: model.offers.map((offer) => ({ ...offer, pricing: { ...offer.pricing, expression_policy } })),
+        }}
+      />,
+    );
+    const rules = screen.getAllByRole("region", { name: "Dynamic pricing rule" });
+    expect(rules).toHaveLength(model.offers.length);
+    expect(rules[0]).toHaveTextContent(expression_policy.expression);
+    expect(rules[0]).toHaveTextContent("Timezone: Asia/Shanghai");
+    expect(screen.queryByRole("table", { name: "Pricing for AWS fixture pool" })).not.toBeInTheDocument();
+    expect(screen.queryByText("$12.00")).not.toBeInTheDocument();
+    expect(screen.queryByText("Must stay private")).not.toBeInTheDocument();
+  });
+
   it("shows duration reference prices and keeps unauthorized duration quotes private", () => {
     renderWithProviders(
       <Detail
@@ -98,7 +125,11 @@ describe("catalog model details", () => {
             ...offer,
             pricing: {
               ...offer.pricing,
-              reference: { ...offer.pricing.reference!, cache_write: "99", cache_write_tiers: { "300": "2.5", "3600": "4" } },
+              reference: {
+                ...offer.pricing.reference!,
+                cache_write: "99",
+                cache_write_tiers: { "300": "2.5", "3600": "4" },
+              },
               customer: {
                 ...offer.pricing.customer!,
                 cache_write_tiers: { "300": index ? "999" : "1.25", "3600": index ? "999" : "2" },

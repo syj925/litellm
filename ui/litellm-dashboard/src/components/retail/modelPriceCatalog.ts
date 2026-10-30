@@ -1,3 +1,5 @@
+import type { ExpressionPolicy } from "./expressionPricing";
+
 export interface SalesPrice {
   model: string;
   input_per_million: string;
@@ -6,6 +8,7 @@ export interface SalesPrice {
   cache_write_per_million: string;
   cache_write_tiers?: Record<string, string>;
   cache_write_price_published?: boolean | null;
+  expression_policy?: ExpressionPolicy | null;
 }
 
 export interface CatalogPrice extends SalesPrice {
@@ -23,6 +26,7 @@ export const pricingStatusLabels = {
   catalog: "Imported price",
   ambiguous: "Choose reference",
   unavailable: "Needs review",
+  expression: "Dynamic pricing",
 } as const;
 
 export type PricingStatus = keyof typeof pricingStatusLabels;
@@ -32,6 +36,7 @@ export interface PriceConfiguration {
   source_label: string;
   rates: Record<string, string>;
   base_price: CatalogPrice | null;
+  expression_policy?: ExpressionPolicy | null;
 }
 
 export interface ModelPriceCatalogEntry {

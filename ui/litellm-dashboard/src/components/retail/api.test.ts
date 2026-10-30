@@ -13,10 +13,28 @@ import {
   ledgerEntriesCsv,
   ledgerReceiptSections,
   percentToDiscount,
+  retailRequest,
   usdPerTokenToPerMillion,
 } from "./api";
 
 describe("wallet amounts", () => {
+  it("shows the billing compiler validation message without echoing rejected request data", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          detail: [{ msg: "Value error, unknown pricing variable", input: { secret: "never display" } }],
+        }),
+        { status: 422 },
+      ),
+    );
+    try {
+      await expect(retailRequest("/admin/pricing-preview", "fixture")).rejects.toMatchObject({
+        message: "Value error, unknown pricing variable",
+      });
+    } finally {
+      request.mockRestore();
+    }
+  });
   it("preserves the smallest billable amount instead of displaying a zero charge", () => {
     expect(formatMoney("0.000000001")).toBe("$0.000000001");
     expect(formatMoney("-0.000000001")).toBe("-$0.000000001");
@@ -42,6 +60,62 @@ describe("wallet amounts", () => {
 });
 
 describe("customer billing receipts", () => {
+  it("exports the actual expression charge, branch, timestamp and evaluated usage without fallback flat prices", () => {
+    const details = {
+      price_snapshot: {
+        input_cost_per_token: "0.000099",
+        discount: "0.5",
+        pool_name: "Fixture pool",
+        pool_id: "fixture",
+      },
+      expression_pricing: {
+        version: "expression-v1" as const,
+        expression_hash: "a".repeat(64),
+        expression: "tier('peak', p * 3 + fixed(u('images') * 0.04))",
+        timezone: "Asia/Shanghai",
+        started_at: "2026-01-05T10:00:00+08:00",
+        tiers: ["peak"],
+        variables: { p: "1000", len: "200001" },
+        usage: { images: "2" },
+        undiscounted_amount: "0.083",
+        discount: "0.5",
+        amount: "0.0415",
+      },
+    };
+    const sections = ledgerReceiptSections(details);
+    const rule = sections.find(({ title }) => title === "Dynamic pricing receipt");
+    expect(rule?.rows).toEqual(
+      expect.arrayContaining([
+        { label: "Pricing expression", value: details.expression_pricing.expression },
+        { label: "Applied pricing branches", value: "peak" },
+        { label: "Request start for pricing", value: details.expression_pricing.started_at },
+        { label: "Expression charge before discount", value: "$0.083 USD" },
+        { label: "Expression settled charge", value: "$0.0415 USD" },
+      ]),
+    );
+    expect(sections.find(({ title }) => title === "Evaluated pricing usage")?.rows).toContainEqual({
+      label: "Expression usage · images",
+      value: "2",
+    });
+    expect(sections.flatMap(({ rows }) => rows).map(({ label }) => label)).not.toContain("Input base price / 1M");
+    const csv = ledgerEntriesCsv([
+      {
+        id: "charge",
+        kind: "charge",
+        amount: "-0.0415",
+        balance_after: "1",
+        request_id: "request",
+        model: "fixture",
+        created_at: details.expression_pricing.started_at,
+        description: "",
+        details,
+      },
+    ]);
+    expect(csv).toContain('"Expression settled charge"');
+    expect(csv).toContain('"$0.0415 USD"');
+    expect(csv).toContain('"peak"');
+  });
+
   it("preserves the selected resource pool and its negotiated pricing source in a receipt", () => {
     expect(
       ledgerReceiptSections({
@@ -209,29 +283,48 @@ describe("customer billing receipts", () => {
     expect(csv).toContain('"\'=unsafe()"');
   });
 
-  it.each(["0.0000025", "0"])("shows the frozen default %s applied to an observed duration without its own price", (price) => {
-    const sections = ledgerReceiptSections({
-      usage: { cache_write_tokens: 10, cache_write_ttl_tokens: { "300": 2, "43200": 8 } },
-      price_snapshot: {
-        version: "token-v3", source: "manual", discount: "0.5",
-        cache_creation_input_token_cost: price, cache_write_tiers: { "300": "0.000004" },
-      },
-    });
-    const prices = sections.find(({ title }) => title === "Pricing snapshot");
-    expect(prices?.rows).toEqual(expect.arrayContaining([
-      { label: "Cache write · 5m reference price / 1M", value: "$4.00 USD" },
-      { label: "Cache write · 12h (default) reference price / 1M", value: price === "0" ? "$0.00 USD" : "$2.50 USD" },
-      { label: "Cache write · 12h (default) customer price / 1M", value: price === "0" ? "$0.00 USD" : "$1.25 USD" },
-    ]));
-    expect(prices?.rows).not.toContainEqual(expect.objectContaining({ label: "Cache write · 5m (default) reference price / 1M" }));
-  });
+  it.each(["0.0000025", "0"])(
+    "shows the frozen default %s applied to an observed duration without its own price",
+    (price) => {
+      const sections = ledgerReceiptSections({
+        usage: { cache_write_tokens: 10, cache_write_ttl_tokens: { "300": 2, "43200": 8 } },
+        price_snapshot: {
+          version: "token-v3",
+          source: "manual",
+          discount: "0.5",
+          cache_creation_input_token_cost: price,
+          cache_write_tiers: { "300": "0.000004" },
+        },
+      });
+      const prices = sections.find(({ title }) => title === "Pricing snapshot");
+      expect(prices?.rows).toEqual(
+        expect.arrayContaining([
+          { label: "Cache write · 5m reference price / 1M", value: "$4.00 USD" },
+          {
+            label: "Cache write · 12h (default) reference price / 1M",
+            value: price === "0" ? "$0.00 USD" : "$2.50 USD",
+          },
+          {
+            label: "Cache write · 12h (default) customer price / 1M",
+            value: price === "0" ? "$0.00 USD" : "$1.25 USD",
+          },
+        ]),
+      );
+      expect(prices?.rows).not.toContainEqual(
+        expect.objectContaining({ label: "Cache write · 5m (default) reference price / 1M" }),
+      );
+    },
+  );
 
   it("does not apply the new default-duration policy to an older frozen price snapshot", () => {
     const sections = ledgerReceiptSections({
       usage: { cache_write_tokens: 2, cache_write_ttl_tokens: { "43200": 2 } },
       price_snapshot: {
-        version: "token-v2", source: "manual", discount: "0.5",
-        cache_creation_input_token_cost: "0.0000025", cache_write_tiers: { "300": "0.000004" },
+        version: "token-v2",
+        source: "manual",
+        discount: "0.5",
+        cache_creation_input_token_cost: "0.0000025",
+        cache_write_tiers: { "300": "0.000004" },
       },
     });
     expect(sections.find(({ title }) => title === "Pricing snapshot")?.rows).not.toContainEqual(

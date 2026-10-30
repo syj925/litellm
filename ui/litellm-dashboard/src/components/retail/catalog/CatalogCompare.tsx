@@ -10,6 +10,7 @@ import { formatContext, getModelIdentity } from "./modelIdentity";
 import {
   formatCatalogPrice,
   modelPrice,
+  modelUsesExpression,
   type CatalogModel,
   type CatalogPriceBasis,
   type CatalogTokenPrice,
@@ -35,11 +36,13 @@ const modalityLabel = (values: string[]): string =>
   values.length ? values.map((value) => value.charAt(0).toUpperCase() + value.slice(1)).join(", ") : "Not specified";
 
 function priceLabel(model: CatalogModel, basis: CatalogPriceBasis, field: "input" | "output"): string {
+  if (modelUsesExpression(model)) return "Dynamic pricing · See model rule";
   const price = modelPrice(model, basis, field);
   return price == null ? "Not listed" : `From ${formatCatalogPrice(String(price))}`;
 }
 
 function cachePriceCards(model: CatalogModel, basis: CatalogPriceBasis): CatalogTokenPrice[] {
+  if (modelUsesExpression(model)) return [];
   const prices = model.offers.flatMap((offer) => {
     const price = offer.pricing[basis];
     return price && (basis === "reference" || offer.available_to_me) ? [price] : [];
@@ -48,11 +51,13 @@ function cachePriceCards(model: CatalogModel, basis: CatalogPriceBasis): Catalog
 }
 
 function defaultCachePrice(model: CatalogModel, basis: CatalogPriceBasis): string | null {
-  const rates = cachePriceCards(model, basis).flatMap((price) =>
-    cacheTierEntries(price.cache_write_tiers).length || price.cache_write == null || price.cache_write.trim() === ""
-      ? []
-      : [Number(price.cache_write)],
-  ).filter((price) => Number.isFinite(price) && price >= 0);
+  const rates = cachePriceCards(model, basis)
+    .flatMap((price) =>
+      cacheTierEntries(price.cache_write_tiers).length || price.cache_write == null || price.cache_write.trim() === ""
+        ? []
+        : [Number(price.cache_write)],
+    )
+    .filter((price) => Number.isFinite(price) && price >= 0);
   return rates.length ? `From ${formatCatalogPrice(String(Math.min(...rates)))}` : null;
 }
 
@@ -101,11 +106,15 @@ export default function CatalogCompare({ models, open, onOpenChange, basis, publ
     .map((priceBasis) => ({
       label: `${priceBasis === "reference" ? "Reference" : "Your"} cache write / 1M tokens`,
       basis: priceBasis,
-      value: (model) => defaultCachePrice(model, priceBasis) ?? (
-        cachePriceCards(model, priceBasis).some((price) => cacheTierEntries(price.cache_write_tiers).length)
-          ? "See duration rates"
-          : "Not listed"
-      ),
+      value: (model) => {
+        if (modelUsesExpression(model)) return "Dynamic pricing";
+        return (
+          defaultCachePrice(model, priceBasis) ??
+          (cachePriceCards(model, priceBasis).some((price) => cacheTierEntries(price.cache_write_tiers).length)
+            ? "See duration rates"
+            : "Not listed")
+        );
+      },
     }));
   const durations = [
     ...new Set(
@@ -122,6 +131,7 @@ export default function CatalogCompare({ models, open, onOpenChange, basis, publ
       label: `${priceBasis === "reference" ? "Reference" : "Your"} cache write · ${cacheDurationLabel(ttl)} / 1M tokens`,
       basis: priceBasis,
       value: (model: CatalogModel) => {
+        if (modelUsesExpression(model)) return "Dynamic pricing";
         const rates: (string | undefined)[] = model.offers.flatMap((offer) =>
           priceBasis === "customer" && !offer.available_to_me
             ? []

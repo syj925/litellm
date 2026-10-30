@@ -14,6 +14,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from .expression_pricing import ExpressionPricingError, validate_expression_policy
 from .models import (
     IdempotencyConflict,
     InsufficientFunds,
@@ -129,6 +130,7 @@ class _ModelPriceRow(BaseModel):
     cache_creation_input_token_cost: Decimal
     cache_write_tiers: dict[str, str] = Field(default_factory=dict)
     cache_write_price_published: bool | None = None
+    expression_policy: dict[str, JsonValue] | None = None
     version: int
     updated_at: datetime
     source: str = "legacy"
@@ -163,8 +165,8 @@ _MODEL_PRICE_KEYS: Final = (
 _MODEL_PRICE_INSERT: Final = """
     INSERT INTO retail_model_prices(model,input_cost_per_token,output_cost_per_token,
            cache_read_input_token_cost,cache_creation_input_token_cost,source,catalog_model,source_label,cache_write_tiers,
-           cache_write_price_published)
-    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           cache_write_price_published,expression_policy)
+    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
 """
 
 
@@ -263,6 +265,7 @@ def _model_price_view(row: _ModelPriceRow) -> dict[str, JsonValue]:
         "cache_creation_input_token_cost": format(row.cache_creation_input_token_cost, "f"),
         "cache_write_tiers": {key: value for key, value in row.cache_write_tiers.items()},
         "cache_write_price_published": row.cache_write_price_published,
+        "expression_policy": row.expression_policy,
         "version": row.version,
         "updated_at": row.updated_at.isoformat(),
         "source": row.source,
@@ -299,6 +302,16 @@ def _model_price_published(rates: Mapping[str, JsonValue], source: str) -> bool 
     if value is not None and not isinstance(value, bool):
         raise InvalidAmount("Published cache write pricing must be a boolean or unknown")
     return True if source == "manual" and value is None else value
+
+
+def _model_expression_policy(rates: Mapping[str, JsonValue]) -> dict[str, JsonValue] | None:
+    raw: Final = rates.get("expression_policy")
+    if raw is None:
+        return None
+    try:
+        return validate_expression_policy(raw).model_dump(mode="json")
+    except ExpressionPricingError as exc:
+        raise InvalidAmount(str(exc)) from exc
 
 
 def model_discount_view(
@@ -732,6 +745,8 @@ class WalletStore:
                         initial_snapshot.get("source_label", "Existing reference, review required"),
                         Jsonb(_model_price_tiers(initial_snapshot)),
                         _model_price_published(initial_snapshot, str(initial_snapshot.get("source", "legacy"))),
+                        Jsonb(_model_expression_policy(initial_snapshot))
+                        if initial_snapshot.get("expression_policy") is not None else None,
                     ),
                 )
             row: Final = await _one(
@@ -758,6 +773,7 @@ class WalletStore:
         if not model or len(model) > 191:
             raise ValueError("A model name of at most 191 characters is required")
         parsed: Final = _model_price_rates(rates)
+        expression_policy: Final = _model_expression_policy(rates)
         async with self.transaction() as connection:
             return await self._save_model_price(
                 connection,
@@ -768,10 +784,11 @@ class WalletStore:
                 source_label,
                 _model_price_tiers(rates),
                 _model_price_published(rates, source),
+                expression_policy,
             )
 
     async def save_reference_prices(self, cards: Sequence[Mapping[str, JsonValue]]) -> dict[str, JsonValue]:
-        parsed: Final = tuple((card, _model_price_rates(card)) for card in cards)
+        parsed: Final = tuple((card, _model_price_rates(card), _model_expression_policy(card)) for card in cards)
         async with self.transaction() as connection:
             saved: Final = tuple(
                 [
@@ -784,8 +801,9 @@ class WalletStore:
                         str(card["source_label"]),
                         _model_price_tiers(card),
                         _model_price_published(card, "catalog"),
+                        expression_policy,
                     )
-                    for card, rates in parsed
+                    for card, rates, expression_policy in parsed
                 ]
             )
             return {"items": list(saved)}
@@ -800,6 +818,7 @@ class WalletStore:
         source_label: str,
         cache_write_tiers: Mapping[str, str],
         cache_write_price_published: bool | None,
+        expression_policy: Mapping[str, JsonValue] | None,
     ) -> dict[str, JsonValue]:
         if not model or len(model) > 191 or source not in {"manual", "catalog"}:
             raise ValueError("A configured model name and reference source are required")
@@ -813,10 +832,14 @@ class WalletStore:
                 cache_creation_input_token_cost=EXCLUDED.cache_creation_input_token_cost,
                 cache_write_tiers=EXCLUDED.cache_write_tiers,
                 cache_write_price_published=EXCLUDED.cache_write_price_published,
+                expression_policy=EXCLUDED.expression_policy,
                 source=EXCLUDED.source,catalog_model=EXCLUDED.catalog_model,source_label=EXCLUDED.source_label,
                 version=retail_model_prices.version+1,updated_at=now()
                 RETURNING *""",
-            (model, *rates, source, catalog_model, source_label, Jsonb(dict(cache_write_tiers)), cache_write_price_published),
+            (
+                model, *rates, source, catalog_model, source_label, Jsonb(dict(cache_write_tiers)),
+                cache_write_price_published, Jsonb(dict(expression_policy)) if expression_policy is not None else None,
+            ),
             _ModelPriceRow,
         )
         if row is None:

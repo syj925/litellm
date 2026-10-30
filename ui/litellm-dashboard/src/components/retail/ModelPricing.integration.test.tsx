@@ -88,12 +88,28 @@ function serveApi({
   entries?: ModelPriceCatalogEntry[];
 } = {}) {
   const writes: { path: string; body: unknown }[] = [];
+  const simulations: { path: string; body: unknown }[] = [];
   const requests: string[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string, options?: RequestInit) => {
       const path = new URL(input, "http://localhost").pathname;
       requests.push(path);
+      if (path.endsWith("/pricing-preview")) {
+        simulations.push({ path, body: JSON.parse(String(options?.body)) });
+        return new Response(
+          JSON.stringify({
+            amount: "0.123456789",
+            undiscounted_amount: "0.246913578",
+            discount: "0.5",
+            tiers: ["priority-peak"],
+            variables: { p: "1000", len: "210001" },
+            started_at: "2026-01-05T10:00:00+08:00",
+            timezone: "Asia/Shanghai",
+          }),
+          { status: 200 },
+        );
+      }
       if (options?.method && options.method !== "GET") {
         writes.push({ path, body: JSON.parse(String(options.body)) });
         return new Response(JSON.stringify(path.endsWith("import") ? { items: [] } : savedPrice), { status: 200 });
@@ -112,7 +128,7 @@ function serveApi({
       return new Response(JSON.stringify(data), { status: 200 });
     }),
   );
-  return { writes, requests };
+  return { writes, requests, simulations };
 }
 
 function renderPanel(options?: Parameters<typeof renderWithProviders>[1]) {
@@ -158,7 +174,7 @@ it("shows an editable built-in table even when no overrides have been saved", as
   const { requests, writes } = serveApi({ empty: true });
   renderPanel();
   const row = await screen.findByRole("row", { name: /public-one/ });
-  expect(screen.getByText("0 saved overrides · 1 built-in defaults")).toBeInTheDocument();
+  expect(screen.getByText("0 saved overrides · 1 built-in defaults · 0 dynamic rules")).toBeInTheDocument();
   expect(within(row).getByRole("button", { name: "Edit price" })).toBeEnabled();
   expect(screen.getByRole("combobox", { name: "Providers" })).toHaveTextContent("All providers");
   expect(screen.getByRole("combobox", { name: "Model types" })).toHaveTextContent("All model types");
@@ -302,6 +318,7 @@ it("combines provider and type filters with search and can clear them", async ()
   expect(screen.queryByRole("row", { name: /search-embed/ })).not.toBeInTheDocument();
   fireEvent.change(screen.getByRole("textbox", { name: "Search model prices" }), { target: { value: "missing" } });
   expect(await screen.findByText("No matching model prices")).toBeInTheDocument();
+  await waitFor(() => expect(onUrlUpdate.mock.lastCall?.[0].searchParams.get("search")).toBe("missing"));
   fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
   await screen.findByRole("row", { name: /public-one/ });
   await chooseSelectOption(user, screen.getByRole("combobox", { name: "Model types" }), "Embeddings");
@@ -317,11 +334,13 @@ it("paginates the catalog and returns to the first page when searching", async (
       priceEntry({ ...builtInPrice, model: `public-${String(index).padStart(2, "0")}` }, "default"),
     ),
   });
-  renderPanel();
+  const onUrlUpdate = vi.fn();
+  renderPanel({ onUrlUpdate });
   await screen.findByRole("row", { name: /public-00/ });
   expect(screen.queryByRole("row", { name: /public-25/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Next price page" }));
   expect(await screen.findByRole("row", { name: /public-25/ })).toBeInTheDocument();
+  await waitFor(() => expect(onUrlUpdate.mock.lastCall?.[0].searchParams.get("page")).toBe("2"));
   fireEvent.change(screen.getByRole("textbox", { name: "Search model prices" }), { target: { value: "public-00" } });
   expect(await screen.findByRole("row", { name: /public-00/ })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Previous price page" })).toBeDisabled();
@@ -442,4 +461,136 @@ it("saves independent cache duration rates and rejects duplicate durations witho
       },
     ]),
   );
+});
+
+it("edits an existing expression, retains the draft across pricing method changes and saves the policy", async () => {
+  const policy = {
+    version: "expression-v1" as const,
+    expression: "len > 200000 ? tier('long', p * 4 + c * 16) : tier('standard', p * 2 + c * 8)",
+    timezone: "Asia/Shanghai",
+    usage_bounds: {},
+  };
+  const price = { ...builtInPrice, expression_policy: policy };
+  const { writes } = serveApi({ entries: [priceEntry(price, "expression")] });
+  renderPanel();
+  const row = await screen.findByRole("row", { name: /public-one/ });
+  expect(within(row).getByText("Dynamic pricing")).toBeInTheDocument();
+  expect(screen.getByText("0 saved overrides · 0 built-in defaults · 1 dynamic rule")).toBeInTheDocument();
+  expect(within(row).queryByText("$2.00")).not.toBeInTheDocument();
+  fireEvent.click(within(row).getByRole("button", { name: "Edit dynamic pricing" }));
+  expect(screen.getByRole("textbox", { name: "Pricing expression" })).toHaveValue(policy.expression);
+  const edited = "tier('updated', p * 3 + c * 12)";
+  fireEvent.change(screen.getByRole("textbox", { name: "Pricing expression" }), { target: { value: edited } });
+  fireEvent.click(screen.getByRole("button", { name: "Fixed rates", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Expression", exact: true }));
+  expect(screen.getByRole("textbox", { name: "Pricing expression" })).toHaveValue(edited);
+  expect(writes).toEqual([]);
+  fireEvent.click(screen.getByRole("button", { name: "Save base price" }));
+  await waitFor(() =>
+    expect(writes).toEqual([
+      {
+        path: "/retail/admin/model-prices",
+        body: {
+          ...rate,
+          model: price.model,
+          cache_write_price_published: false,
+          cache_write_tiers: {},
+          expression_policy: { ...policy, expression: edited },
+        },
+      },
+    ]),
+  );
+});
+
+it("explicitly clears a saved expression when switching to fixed rates", async () => {
+  const expression_policy = {
+    version: "expression-v1" as const,
+    expression: "p * 3 + c * 12",
+    timezone: "UTC",
+    usage_bounds: {},
+  };
+  const { writes } = serveApi({ entries: [priceEntry({ ...builtInPrice, expression_policy }, "expression")] });
+  renderPanel();
+  fireEvent.click(
+    within(await screen.findByRole("row", { name: /public-one/ })).getByRole("button", {
+      name: "Edit dynamic pricing",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Fixed rates", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Save base price" }));
+  await waitFor(() =>
+    expect(writes[0]?.body).toMatchObject({ expression_policy: null, input_per_million: rate.input_per_million }),
+  );
+});
+
+it("simulates the local rule on the server with explicit time and service tier without saving prices", async () => {
+  const { writes, simulations } = serveApi();
+  renderPanel();
+  fireEvent.click(
+    within(await screen.findByRole("row", { name: /public-one/ })).getByRole("button", { name: "Edit price" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Expression", exact: true }));
+  expect(screen.getByRole("textbox", { name: "Pricing expression" })).toHaveValue(
+    "p * 2 + c * 10 + cr * 0.2 + cc * 2.5",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Peak / weekend", exact: true }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Request start (ISO timestamp with offset)" }), {
+    target: { value: "2026-01-05T10:00:00+08:00" },
+  });
+  fireEvent.change(screen.getByRole("textbox", { name: "Service tier", exact: true }), {
+    target: { value: "priority" },
+  });
+  fireEvent.change(screen.getByRole("textbox", { name: "Full prompt context tokens (len)" }), {
+    target: { value: "210001" },
+  });
+  fireEvent.change(screen.getByRole("textbox", { name: "Discount factor" }), { target: { value: "0.5" } });
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Custom cache write token counts by duration seconds (JSON)" }),
+    { target: { value: '{"750":"100"}' } },
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Simulate charge" }));
+  const result = await screen.findByRole("region", { name: "Simulated charge" });
+  expect(result).toHaveTextContent("$0.123456789 USD");
+  expect(result).toHaveTextContent("priority-peak");
+  expect(result).toHaveTextContent("2026-01-05T10:00:00+08:00");
+  expect(simulations[0]?.body).toMatchObject({
+    request: { service_tier: "priority", n: 1 },
+    started_at: "2026-01-05T10:00:00+08:00",
+    discount: "0.5",
+    facts: { p: "1000", len: "210001", tokens: "1", cache_write_ttl_tokens: { "750": "100" }, usage: {} },
+    expression_policy: { timezone: "Asia/Shanghai" },
+  });
+  expect(writes).toEqual([]);
+});
+
+it("starts a reviewed dynamic draft with all server-translated reference conditions intact", async () => {
+  const expression_policy = {
+    version: "expression-v1" as const,
+    expression: "len > 200000 ? tier('long', p * 4 + c * 16) : tier('standard', p * 2 + c * 8)",
+    timezone: "UTC",
+    usage_bounds: {},
+  };
+  const entry: ModelPriceCatalogEntry = {
+    ...priceEntry(builtInPrice, "unavailable"),
+    price: null,
+    candidates: [],
+    review_references: [
+      {
+        catalog_model: "provider/context-fixture",
+        source_label: "Loaded fixture",
+        rates: { input_cost_per_token: "0.000002", input_cost_per_token_above_200k_tokens: "0.000004" },
+        base_price: builtInPrice,
+        expression_policy,
+      },
+    ],
+  };
+  const { writes } = serveApi({ entries: [entry] });
+  renderPanel();
+  fireEvent.click(
+    within(await screen.findByRole("row", { name: /public-one/ })).getByRole("button", { name: "Review price" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Configure dynamic pricing" }));
+  expect(screen.getByRole("textbox", { name: "Pricing expression" })).toHaveValue(expression_policy.expression);
+  expect(screen.getByRole("textbox", { name: "Rule timezone" })).toHaveValue(expression_policy.timezone);
+  expect(writes).toEqual([]);
 });

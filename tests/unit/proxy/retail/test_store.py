@@ -5,7 +5,13 @@ import pytest
 from pydantic import JsonValue
 
 from litellm.proxy.retail.models import InvalidAmount, amount_to_nanos, cost_to_nanos, nanos_to_amount
-from litellm.proxy.retail.store import _model_price_published, _wallet_view, _WalletRow, model_discount_view
+from litellm.proxy.retail.store import (
+    _model_expression_policy,
+    _model_price_published,
+    _wallet_view,
+    _WalletRow,
+    model_discount_view,
+)
 
 
 @pytest.mark.parametrize("amount", ("0", "0.000000001", "0.125", "12.345678901", "1000000"))
@@ -148,3 +154,19 @@ def test_publication_provenance_keeps_explicit_flags_and_preserves_legacy_manual
 def test_publication_provenance_does_not_coerce_unknown_values_into_price_evidence(value: JsonValue, source: str) -> None:
     with pytest.raises(InvalidAmount, match="Published cache write"):
         _model_price_published({"cache_write_price_published": value}, source)
+
+
+def test_missing_and_null_policies_clear_expression_pricing_while_valid_policies_are_normalized() -> None:
+    assert _model_expression_policy({}) is None
+    assert _model_expression_policy({"expression_policy": None}) is None
+    assert _model_expression_policy({"expression_policy": {
+        "version": "expression-v1", "expression": "p * 2 + c * 6",
+    }}) == {
+        "version": "expression-v1", "expression": "p * 2 + c * 6", "timezone": "UTC", "usage_bounds": {},
+    }
+
+
+@pytest.mark.parametrize("policy", ("p * 2", {"expression": "__import__('os')"}, {"expression": "p + secret"}))
+def test_storage_rejects_invalid_expression_policies_before_opening_a_transaction(policy: JsonValue) -> None:
+    with pytest.raises(InvalidAmount):
+        _model_expression_policy({"expression_policy": policy})

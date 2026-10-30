@@ -79,7 +79,21 @@ export interface LedgerEntry {
   model: string | null;
   created_at: string;
   description: string;
-  details: Record<string, unknown>;
+  details: Record<string, unknown> & { expression_pricing?: ExpressionPricingReceipt };
+}
+
+export interface ExpressionPricingReceipt {
+  version: "expression-v1";
+  expression_hash: string;
+  expression: string;
+  timezone: string;
+  started_at: string;
+  tiers: string[];
+  variables: Record<string, string>;
+  usage: Record<string, string>;
+  undiscounted_amount: string;
+  discount: string;
+  amount: string;
 }
 
 export interface PageResult<T> {
@@ -108,6 +122,13 @@ export class RetailRequestError extends Error {
 function responseMessage(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return null;
   if ("detail" in body && typeof body.detail === "string") return body.detail;
+  if ("detail" in body && Array.isArray(body.detail)) {
+    const messages = body.detail.flatMap((detail: unknown) => {
+      const entry = detailRecord(detail);
+      return typeof entry.msg === "string" ? [entry.msg] : [];
+    });
+    if (messages.length) return messages.slice(0, 4).join(" ");
+  }
   if ("message" in body && typeof body.message === "string") return body.message;
   if ("error" in body && typeof body.error === "object" && body.error !== null) {
     if ("message" in body.error && typeof body.error.message === "string") return body.error.message;
@@ -221,13 +242,16 @@ function detailRecord(value: unknown): Record<string, unknown> {
 function receiptCacheWritePrices(snapshot: Record<string, unknown>, observed: readonly { ttl: string }[]) {
   const saved = detailRecord(snapshot.cache_write_tiers);
   const defaultPrice = snapshot.version === "token-v3" ? snapshot.cache_creation_input_token_cost : null;
-  const defaults = typeof defaultPrice === "string" ? Object.fromEntries(observed.map(({ ttl }) => [ttl, defaultPrice])) : {};
+  const defaults =
+    typeof defaultPrice === "string" ? Object.fromEntries(observed.map(({ ttl }) => [ttl, defaultPrice])) : {};
   return { saved, effective: { ...defaults, ...saved } };
 }
 
 export function ledgerReceiptSections(details: Record<string, unknown>): ReceiptSection[] {
   const usage = detailRecord(details.usage);
   const snapshot = detailRecord(details.price_snapshot);
+  const expression = detailRecord(details.expression_pricing);
+  const hasExpression = expression.version === "expression-v1";
   const discount = typeof snapshot.discount === "string" ? snapshot.discount : snapshot.multiplier;
   const hasReference = snapshot.source === "catalog" || snapshot.source === "manual";
   const usageRows = [
@@ -267,6 +291,7 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
     { key: "cache_creation_input_token_cost", label: "Cache write default base price / 1M" },
   ];
   const priceRows = prices.flatMap(({ key, label }) => {
+    if (hasExpression) return [];
     const value = snapshot[key];
     const scaled = typeof value === "string" ? usdPerTokenToPerMillion(value) : null;
     const referenceLabel = hasReference ? label.replace("base price", "reference price") : label;
@@ -282,6 +307,7 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
   });
   const durationPrices = receiptCacheWritePrices(snapshot, cacheWrites);
   const durationPriceRows = cacheTierEntries(durationPrices.effective).flatMap(([ttl, price]) => {
+    if (hasExpression) return [];
     const scaled = typeof price === "string" ? usdPerTokenToPerMillion(price) : null;
     const effective = scaled !== null && typeof discount === "string" ? multiplyDecimals(scaled, discount) : null;
     const duration = `${cacheDurationLabel(ttl)}${Object.hasOwn(durationPrices.saved, ttl) ? "" : " (default)"}`;
@@ -373,9 +399,51 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
     typeof rounding === "string" && /^-?\d+(?:\.\d+)?$/.test(rounding)
       ? [{ label: "Final rounding adjustment", value: `${formatMoney(rounding)} USD` }]
       : [];
+  const expressionRows = hasExpression
+    ? [
+        ...[
+          { key: "expression", label: "Pricing expression" },
+          { key: "expression_hash", label: "Expression hash" },
+          { key: "timezone", label: "Rule timezone" },
+          { key: "started_at", label: "Request start for pricing" },
+        ].flatMap(({ key, label }) =>
+          typeof expression[key] === "string" ? [{ label, value: String(expression[key]) }] : [],
+        ),
+        ...(Array.isArray(expression.tiers) && expression.tiers.every((tier) => typeof tier === "string")
+          ? [{ label: "Applied pricing branches", value: expression.tiers.join(", ") || "No named branch" }]
+          : []),
+        ...[
+          { key: "undiscounted_amount", label: "Expression charge before discount" },
+          { key: "amount", label: "Expression settled charge" },
+        ].flatMap(({ key, label }) =>
+          typeof expression[key] === "string" && /^\d+(?:\.\d+)?$/.test(String(expression[key]))
+            ? [{ label, value: `${formatMoney(String(expression[key]))} USD` }]
+            : [],
+        ),
+        ...(typeof expression.discount === "string"
+          ? [{ label: "Expression customer discount", value: discountDescription(expression.discount) }]
+          : []),
+      ]
+    : [];
+  const expressionVariables = hasExpression
+    ? [
+        ...Object.entries(detailRecord(expression.variables)).flatMap(([key, amount]) =>
+          typeof amount === "string" && /^-?\d+(?:\.\d+)?$/.test(amount)
+            ? [{ label: `Expression variable · ${key}`, value: amount }]
+            : [],
+        ),
+        ...Object.entries(detailRecord(expression.usage)).flatMap(([key, amount]) =>
+          typeof amount === "string" && /^\d+(?:\.\d+)?$/.test(amount)
+            ? [{ label: `Expression usage · ${key}`, value: amount }]
+            : [],
+        ),
+      ]
+    : [];
   return [
     { title: "Token usage", rows: [...usageRows, ...durationUsageRows] },
     { title: "Charge breakdown", rows: [...chargedRows, ...chargedTierRows, ...roundingRows] },
+    { title: "Dynamic pricing receipt", rows: expressionRows },
+    { title: "Evaluated pricing usage", rows: expressionVariables },
     {
       title: "Pricing snapshot",
       rows: [

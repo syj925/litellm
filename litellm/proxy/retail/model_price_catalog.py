@@ -1,9 +1,12 @@
+import re
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
+from itertools import chain
 from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from .catalog_expression import _parse_rate, catalog_expression_policy, unsupported_catalog_pricing_metadata
 from .pricing import (
     _catalog_card,
     _catalog_model,
@@ -25,6 +28,7 @@ class PricingCatalogPrice(BaseModel):
     cache_write_per_million: str
     cache_write_tiers: dict[str, str] = Field(default_factory=dict)
     cache_write_price_published: bool | None = None
+    expression_policy: dict[str, JsonValue] | None = None
     catalog_model: str | None = None
     source_label: str
     source: Literal["manual", "catalog", "legacy"] = "catalog"
@@ -39,6 +43,7 @@ class PricingReviewReference(BaseModel):
     source_label: str
     rates: dict[str, str]
     base_price: PricingCatalogPrice | None
+    expression_policy: dict[str, JsonValue] | None = None
 
 
 class PricingCatalogEntry(BaseModel):
@@ -48,7 +53,7 @@ class PricingCatalogEntry(BaseModel):
     providers: tuple[str, ...]
     modes: tuple[str, ...]
     configured: bool
-    status: Literal["custom", "catalog", "default", "ambiguous", "unavailable"]
+    status: Literal["expression", "custom", "catalog", "default", "ambiguous", "unavailable"]
     price: PricingCatalogPrice | None
     candidates: tuple[PricingCatalogPrice, ...]
     review_references: tuple[PricingReviewReference, ...] = ()
@@ -76,6 +81,8 @@ def _candidate_price(card: Mapping[str, JsonValue]) -> PricingCatalogPrice:
         cache_write_per_million=_million_rate(card["cache_creation_input_token_cost"]),
         cache_write_tiers={key: _million_rate(value) for key, value in as_mapping(card.get("cache_write_tiers")).items()},
         cache_write_price_published=card.get("cache_write_price_published") is True,
+        expression_policy={key: value for key, value in as_mapping(card["expression_policy"]).items()}
+        if card.get("expression_policy") is not None else None,
     )
 
 
@@ -108,6 +115,7 @@ def _review_reference(
         source_label=source_label,
         rates={key: format(rate, "f") for key, rate in entries if rate is not None},
         base_price=_candidate_price({"model": model, "source_label": source_label, **base}) if base else None,
+        expression_policy=catalog_expression_policy(name, metadata),
     )
 
 
@@ -158,6 +166,44 @@ def _categories(
     )
 
 
+def _unresolved_pricing_field(key: str, value: object, metadata: Mapping[str, object]) -> bool:
+    if value is None or re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,119}", key) is None:
+        return False
+    if unsupported_catalog_pricing_metadata({key: value}):
+        return True
+    if "cost" not in key or _parse_rate(key, value) is not None:
+        return False
+    if key in {"input_cost_per_image", "output_cost_per_image"}:
+        return metadata.get("mode") not in {"image_generation", "image_edit"}
+    if key in {"search_context_cost_per_query", "google_maps_grounding_cost_per_query"}:
+        from .catalog_image_expression import catalog_search_expression_policy
+
+        search_metadata: Final = {
+            **{name: metadata[name] for name in ("litellm_provider", "web_search_billing_unit") if name in metadata},
+            key: value,
+        }
+        return catalog_search_expression_policy(
+            {"version": "expression-v1", "expression": "0", "timezone": "UTC", "usage_bounds": {}}, search_metadata,
+        ) is None
+    return True
+
+
+def _unresolved_reference_fields(metadata: Mapping[str, object]) -> tuple[str, ...]:
+    return tuple(key for key, value in metadata.items() if _unresolved_pricing_field(key, value, metadata))
+
+
+def _pricing_review_reason(
+    references: Sequence[PricingReviewReference], catalog: Mapping[str, Mapping[str, object]],
+) -> str | None:
+    fields: Final = tuple(sorted(frozenset(chain.from_iterable(
+        _unresolved_reference_fields(catalog[reference.catalog_model]) for reference in references
+    ))))
+    if not fields:
+        return None
+    suffix: Final = f"; {len(fields) - 16} more fields" if len(fields) > 16 else ""
+    return "Manual pricing is required for unresolved catalog fields: " + ", ".join(fields[:16]) + suffix
+
+
 def _catalog_entry(
     model: str,
     deployments: Sequence[Mapping[str, object]],
@@ -169,9 +215,13 @@ def _catalog_entry(
     review_references: Final = _review_references(model, deployments, saved, catalog, source_label)
     providers, modes = _categories(model, deployments, saved, catalog)
     if saved is not None:
+        status: Final = (
+            "expression" if saved.expression_policy is not None else "catalog" if saved.source == "catalog" else "custom"
+        )
         return PricingCatalogEntry(
             model=model, providers=providers, modes=modes, configured=bool(deployments),
-            status="catalog" if saved.source == "catalog" else "custom", price=saved, candidates=candidates,
+            status=status,
+            price=saved, candidates=candidates,
             review_references=review_references,
         )
     try:
@@ -181,7 +231,7 @@ def _catalog_entry(
             model=model, providers=providers, modes=modes, configured=bool(deployments),
             status="ambiguous" if candidates else "unavailable", price=None, candidates=candidates,
             review_references=review_references,
-            reason=(
+            reason=_pricing_review_reason(review_references, catalog) or (
                 "Deployments do not share one supported catalog reference. Choose a reference or set a custom base price."
                 if candidates else
                 "No supported flat token price is available. Unknown, tiered and non-token prices require manual review."
@@ -189,7 +239,8 @@ def _catalog_entry(
         )
     return PricingCatalogEntry(
         model=model, providers=providers, modes=modes, configured=bool(deployments),
-        status="default", price=candidates[0], candidates=candidates,
+        status="expression" if candidates[0].expression_policy is not None else "default",
+        price=candidates[0], candidates=candidates,
         review_references=review_references,
     )
 

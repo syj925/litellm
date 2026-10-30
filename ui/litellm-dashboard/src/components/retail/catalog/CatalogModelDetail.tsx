@@ -1,4 +1,5 @@
 "use client";
+import ExpressionPricingRule from "../ExpressionPricingRule";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -24,6 +25,7 @@ import {
   discountLabel,
   formatCatalogPrice,
   modelPrice,
+  modelUsesExpression,
   type CatalogCapabilities,
   type CatalogDetailTab,
   type CatalogModel,
@@ -234,17 +236,23 @@ function CatalogOverview({
           <h2 id="catalog-reference-title" className="text-sm font-semibold">
             Reference pricing
           </h2>
-          <p className="mt-1 text-xs text-muted-foreground">From, per 1M tokens</p>
-          <dl className="mt-4 space-y-3 text-sm">
-            <div className="flex justify-between gap-3">
-              <dt className="text-muted-foreground">Input</dt>
-              <dd>{formatCatalogPrice(referenceInput?.toString())}</dd>
-            </div>
-            <div className="flex justify-between gap-3">
-              <dt className="text-muted-foreground">Output</dt>
-              <dd>{formatCatalogPrice(referenceOutput?.toString())}</dd>
-            </div>
-          </dl>
+          {modelUsesExpression(model) ? (
+            <p className="mt-3 text-sm">Dynamic pricing · See Pricing for the formula and conditions.</p>
+          ) : (
+            <>
+              <p className="mt-1 text-xs text-muted-foreground">From, per 1M tokens</p>
+              <dl className="mt-4 space-y-3 text-sm">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Input</dt>
+                  <dd>{formatCatalogPrice(referenceInput?.toString())}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Output</dt>
+                  <dd>{formatCatalogPrice(referenceOutput?.toString())}</dd>
+                </div>
+              </dl>
+            </>
+          )}
           <p className="mt-4 text-xs leading-5 text-muted-foreground">
             {publicView
               ? "Reference rates may differ by resource pool. See Pricing for the published rates."
@@ -323,28 +331,32 @@ function PricingTable({ offer, publicView }: { offer: CatalogOffer; publicView: 
         <PoolIdentity offer={offer} />
         {!publicView && <Availability available={offer.available_to_me} />}
       </div>
-      <Table aria-label={"Pricing for " + offer.pool_name}>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Usage type</TableHead>
-            <TableHead className="text-right">Reference / 1M tokens</TableHead>
-            {!publicView && <TableHead className="text-right">Your price / 1M tokens</TableHead>}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map(({ key, label, amount }) => (
-            <TableRow key={key}>
-              <TableCell>{label}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatCatalogPrice(amount)}</TableCell>
-              {!publicView && (
-                <TableCell className="text-right tabular-nums">
-                  {offer.available_to_me ? formatCatalogPrice(customerRows.get(key)) : "Access required"}
-                </TableCell>
-              )}
+      {offer.pricing.expression_policy ? (
+        <ExpressionPricingRule policy={offer.pricing.expression_policy} />
+      ) : (
+        <Table aria-label={"Pricing for " + offer.pool_name}>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Usage type</TableHead>
+              <TableHead className="text-right">Reference / 1M tokens</TableHead>
+              {!publicView && <TableHead className="text-right">Your price / 1M tokens</TableHead>}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {rows.map(({ key, label, amount }) => (
+              <TableRow key={key}>
+                <TableCell>{label}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatCatalogPrice(amount)}</TableCell>
+                {!publicView && (
+                  <TableCell className="text-right tabular-nums">
+                    {offer.available_to_me ? formatCatalogPrice(customerRows.get(key)) : "Access required"}
+                  </TableCell>
+                )}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
       {!publicView && offer.available_to_me && (
         <div className="border-t px-4 py-3 text-xs leading-6 text-muted-foreground">
           {discountLabel(offer.pricing.discount) || "Your price has not been published."}
@@ -367,9 +379,22 @@ function CatalogPricingPanel({ model, publicView }: ModelSectionProps) {
         </p>
       </div>
       {model.offers.map((offer) => (
-        <PricingTable key={offer.pool_id} offer={offer} publicView={publicView} />
+        <PricingTable
+          key={offer.pool_id}
+          offer={
+            model.expression_policy && !offer.pricing.expression_policy
+              ? { ...offer, pricing: { ...offer.pricing, expression_policy: model.expression_policy } }
+              : offer
+          }
+          publicView={publicView}
+        />
       ))}
-      {!model.offers.length && model.reference_pricing && (
+      {!model.offers.length && model.expression_policy && (
+        <div className="rounded-lg border">
+          <ExpressionPricingRule policy={model.expression_policy} />
+        </div>
+      )}
+      {!model.offers.length && !model.expression_policy && model.reference_pricing && (
         <div className="overflow-hidden rounded-lg border">
           <h3 className="border-b bg-muted/25 px-4 py-3 text-sm font-semibold">Reference pricing</h3>
           <Table aria-label="Reference pricing">
@@ -390,15 +415,21 @@ function CatalogPricingPanel({ model, publicView }: ModelSectionProps) {
           </Table>
         </div>
       )}
-      {!model.offers.length && !model.reference_pricing && (
+      {!model.offers.length && !model.reference_pricing && !model.expression_policy && (
         <p className="rounded-lg border p-8 text-center text-sm text-muted-foreground">
           Pricing has not been published for this model.
         </p>
       )}
       <p className="text-xs leading-6 text-muted-foreground">
-        Prices are in USD per 1M tokens. Each cache write duration is charged at its complete write price, without
-        adding ordinary input again. Duration prices are shown when configured; otherwise the cache write rate applies.
-        Additional context tiers may apply. Not listed means no price is published for that usage type.
+        {modelUsesExpression(model) ? (
+          "Dynamic charges follow the published rule and its conditions. Token coefficients are USD per 1M tokens; fixed fees are USD. The final charge includes your applicable discount."
+        ) : (
+          <>
+            Prices are in USD per 1M tokens. Each cache write duration is charged at its complete write price, without
+            adding ordinary input again. Duration prices are shown when configured; otherwise the cache write rate
+            applies. Additional context tiers may apply. Not listed means no price is published for that usage type.
+          </>
+        )}
         {!publicView && (
           <>
             {" "}

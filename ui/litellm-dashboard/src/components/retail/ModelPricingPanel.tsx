@@ -40,7 +40,8 @@ export default function ModelPricingPanel() {
         </PageHeaderTitle>
         <PageHeaderDescription>
           Site-wide base rates in USD per 1M tokens, including cache read and cache write duration prices. Customer
-          charges use these rates with the applicable customer, plan, or resource pool discount.
+          charges use these rates with the applicable customer, plan, or resource pool discount. Dynamic rules can price
+          context tiers, modalities, service tiers and time conditions.
         </PageHeaderDescription>
       </PageHeader>
       <ModelPrices accessToken={accessToken} enabled />

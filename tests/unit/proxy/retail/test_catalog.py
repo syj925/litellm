@@ -74,6 +74,24 @@ def _discount(pool_id: str, model: str, discount: str = "0.7", **values: object)
     )
 
 
+def test_expression_models_publish_the_policy_and_discount_without_presenting_inactive_flat_prices() -> None:
+    policy: Final = {"version": "expression-v1", "expression": "p * 2 + c * 6", "timezone": "UTC", "usage_bounds": {}}
+    page: Final = build_model_catalog(
+        (_pool("public"),), (_binding("public", "a", "dynamic"),),
+        PoolAccess(mode="custom", grants=(PoolGrant(pool_id="public"),)),
+        (_deployment("a", "dynamic"),), (_price("dynamic", expression_policy=policy),),
+        (_discount("public", "dynamic"),), {},
+    )
+    model: Final = page.items[0]
+    assert model.expression_policy == policy
+    assert model.reference_pricing is None
+    assert model.offers[0].pricing.expression_policy == policy
+    assert model.offers[0].pricing.reference is None
+    assert model.offers[0].pricing.customer is None
+    assert model.offers[0].pricing.discount == "0.7"
+    assert "private" not in page.model_dump_json()
+
+
 def test_personal_catalog_keeps_only_authorized_pool_model_pairs() -> None:
     pools: Final = (_pool("allowed"), _pool("public"), _pool("private", "restricted"), _pool("draft", enabled=False))
     bindings: Final = (

@@ -6,7 +6,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { catalogDescription, capabilityOptions } from "./catalogState";
 import { getModelIdentity, formatContext, catalogModelTitle } from "./modelIdentity";
-import { formatCatalogPrice, modelPrice, type CatalogModel, type CatalogPriceBasis } from "./types";
+import {
+  formatCatalogPrice,
+  modelPrice,
+  modelUsesExpression,
+  type CatalogModel,
+  type CatalogPriceBasis,
+} from "./types";
 import { MetadataSourceSummary } from "./MetadataSources";
 
 interface Props {
@@ -40,6 +46,7 @@ function Availability({ model }: { model: CatalogModel }) {
 }
 
 function priceLabel(model: CatalogModel, basis: CatalogPriceBasis, field: "input" | "output"): string {
+  if (modelUsesExpression(model)) return "Dynamic pricing";
   const value = modelPrice(model, basis, field);
   return value == null ? "Not listed" : `From ${formatCatalogPrice(String(value))}`;
 }
@@ -146,12 +153,18 @@ export default function CatalogModelList({
               </span>
               <span>{formatContext(model.context_length)} input context</span>
               {model.context_window != null && <span>{formatContext(model.context_window)} total context</span>}
-              <span>
-                <span className="font-medium text-foreground">{priceLabel(model, basis, "input")}</span> / M input
-              </span>
-              <span>
-                <span className="font-medium text-foreground">{priceLabel(model, basis, "output")}</span> / M output
-              </span>
+              {modelUsesExpression(model) ? (
+                <span className="font-medium text-foreground">Dynamic pricing · View rule in model details</span>
+              ) : (
+                <>
+                  <span>
+                    <span className="font-medium text-foreground">{priceLabel(model, basis, "input")}</span> / M input
+                  </span>
+                  <span>
+                    <span className="font-medium text-foreground">{priceLabel(model, basis, "output")}</span> / M output
+                  </span>
+                </>
+              )}
               <button className="hover:text-foreground hover:underline" onClick={() => onOpen(model.id)}>
                 {publicView && !model.offers.length
                   ? "View model"

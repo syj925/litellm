@@ -1,7 +1,7 @@
 import json
 import re
 from collections.abc import Iterator, Mapping, Sequence
-from decimal import Decimal, InvalidOperation
+from decimal import Context, Decimal, InvalidOperation, localcontext
 from typing import Final
 
 from pydantic import BaseModel, Field, JsonValue
@@ -125,7 +125,7 @@ def catalog_candidates(
     label: Final = source_label or catalog_source_label()
     names: Final = tuple(_catalog_model(deployment, source) for deployment in deployments)
     unique_names: Final = tuple(dict.fromkeys(name for name in names if name is not None))
-    cards: Final = tuple(_catalog_card(name, source[name]) for name in unique_names)
+    cards: Final = tuple(_resolved_catalog_card(name, source[name]) for name in unique_names)
     return tuple({"model": model, "source": "catalog", "source_label": label, **card} for card in cards if card)
 
 
@@ -214,6 +214,32 @@ def _catalog_card(name: str, rates: Mapping[str, object]) -> dict[str, JsonValue
         "cache_write_tiers": dict(tiers),
         "cache_write_price_published": write is not None,
     }
+
+
+def _resolved_catalog_card(name: str, rates: Mapping[str, object]) -> dict[str, JsonValue] | None:
+    from .catalog_expression import catalog_expression_policy, unsupported_catalog_pricing_metadata
+
+    if unsupported_catalog_pricing_metadata(rates):
+        return None
+    flat: Final = _catalog_card(name, rates)
+    canonical: Final = frozenset({
+        "input_cost_per_token", "output_cost_per_token", "cache_read_input_token_cost",
+        "cache_creation_input_token_cost", "cache_creation_input_token_cost_above_1hr",
+        "cache_creation_input_token_cost_above_12hr",
+    })
+    additional: Final = any("cost" in key and value is not None and key not in canonical for key, value in rates.items())
+    if flat is not None and not additional:
+        return flat
+    policy: Final = catalog_expression_policy(name, rates)
+    if policy is None:
+        return None if additional or flat is None else flat
+    basis: Final = _catalog_card(name, {
+        **{key: value for key, value in rates.items() if "cost" not in key or key in canonical},
+        "mode": "chat",
+        "input_cost_per_token": rates.get("input_cost_per_token", "0"),
+        "output_cost_per_token": rates.get("output_cost_per_token", "0"),
+    })
+    return {**basis, "expression_policy": policy} if basis is not None else None
 
 
 def _published_reference_card(
@@ -305,6 +331,9 @@ def cost_breakdown(snapshot: Mapping[str, object], usage: UsageFacts) -> dict[st
 
 
 def validate_requested_cache_ttls(snapshot: Mapping[str, object], data: Mapping[str, object]) -> None:
+    if snapshot.get("version") == "expression-v1":
+        tuple(_requested_cache_ttls(data))
+        return
     if snapshot.get("version") == "token-v3":
         _default_cache_write_rate(snapshot)
         tuple(_requested_cache_ttls(data))
@@ -344,9 +373,18 @@ def reserve_quote(
     content: Final = {
         key: data[key] for key in ("messages", "prompt", "input", "system", "tools", "instructions") if key in data
     }
-    upper_input: Final = max(
-        minimum_input_tokens, len(json.dumps(content, ensure_ascii=False, default=str).encode("utf-8")) + 1024
-    )
+    estimated_input: Final = len(json.dumps(content, ensure_ascii=False, default=str).encode("utf-8")) + 1024
+    upper_input: Final = max(minimum_input_tokens, estimated_input)
+    if snapshot.get("version") == "expression-v1":
+        from .expression_pricing import reserve_expression, validate_expression_policy
+
+        policy: Final = validate_expression_policy(snapshot.get("expression_policy"))
+        opaque_bound: Final = int(as_mapping(snapshot.get("expression_limits")).get("input_tokens", upper_input))
+        input_bound: Final = opaque_bound if minimum_input_tokens else estimated_input
+        quote: Final = reserve_expression(policy, as_mapping(snapshot.get("expression_context")), input_bound, output_limit)
+        with localcontext(Context(prec=80)):
+            discounted: Final = quote * Decimal(str(snapshot.get("discount", snapshot.get("multiplier"))))
+            return nanos_to_amount(cost_to_nanos(discounted))
     input_rate: Final = max(
         Decimal(str(snapshot["input_cost_per_token"])),
         Decimal(str(snapshot["cache_read_input_token_cost"])),

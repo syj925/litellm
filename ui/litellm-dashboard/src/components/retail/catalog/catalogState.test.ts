@@ -164,6 +164,21 @@ describe("catalog filtering and price semantics", () => {
     expect(formatCatalogPrice("0")).toBe("$0.00");
     expect(modelPrice(model("not-priced", { offers: [offer("A", true, null)] }), "reference", "input")).toBeNull();
   });
+  it("excludes expression models from flat price comparisons even when stale flat rates are supplied", () => {
+    const expression_policy = {
+      version: "expression-v1" as const,
+      expression: "p * 3",
+      timezone: "UTC",
+      usage_bounds: {},
+    };
+    const dynamic = model("dynamic", {
+      expression_policy,
+      offers: [offer("A", true, "0", { customer: "0" })],
+      reference_pricing: { input: "0", output: "0", cache_read: null, cache_write: null },
+    });
+    expect(modelPrice(dynamic, "reference", "input")).toBeNull();
+    expect(modelPrice(dynamic, "customer", "output")).toBeNull();
+  });
 
   it("shows model reference rates independently of published resource availability without inventing a customer quote", () => {
     const introductoryModel = model("reference-only", {

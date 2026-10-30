@@ -3,7 +3,7 @@ import hashlib
 import hmac
 import os
 from collections.abc import Awaitable, Mapping
-from decimal import Decimal, InvalidOperation
+from decimal import Context, Decimal, InvalidOperation, localcontext
 from itertools import chain
 from typing import Annotated, Final, Literal, TypeAlias
 from uuid import uuid4
@@ -12,13 +12,17 @@ import psycopg
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import (
     AliasChoices,
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     EmailStr,
     Field,
     JsonValue,
     SecretStr,
+    StrictInt,
+    StrictStr,
     TypeAdapter,
+    ValidationError,
     field_validator,
     model_validator,
 )
@@ -29,6 +33,13 @@ from litellm.proxy.auth.network import TrustedProxyConfig, resolve_client_ip
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.utils import hash_password
 
+from .expression_pricing import (
+    ExpressionPolicy,
+    ExpressionPricingError,
+    evaluate_expression,
+    freeze_expression_context,
+    validate_expression_policy,
+)
 from .model_price_catalog import PricingCatalogPage, PricingCatalogPrice, build_pricing_catalog
 from .models import (
     IdempotencyConflict,
@@ -40,6 +51,8 @@ from .models import (
     WalletError,
     WalletNotFound,
     amount_to_nanos,
+    cost_to_nanos,
+    nanos_to_amount,
     parse_discount,
 )
 from .pricing import as_mapping, catalog_candidates, catalog_source_label, validated_cache_write_tiers
@@ -144,6 +157,12 @@ class ModelPriceRequest(BaseModel):
     cache_write_per_million: str = Field(min_length=1, max_length=40)
     cache_write_tiers: dict[str, str] = Field(default_factory=dict, max_length=16)
     cache_write_price_published: bool | None = Field(default=None, strict=True)
+    expression_policy: ExpressionPolicy | None = None
+
+    @field_validator("expression_policy", mode="before")
+    @classmethod
+    def valid_expression_policy(cls, value: object) -> ExpressionPolicy | None:
+        return validate_expression_policy(value) if value is not None else None
 
     @field_validator("cache_write_tiers")
     @classmethod
@@ -164,9 +183,30 @@ class _StoredModelPrice(BaseModel):
     cache_creation_input_token_cost: str
     cache_write_tiers: dict[str, str] = Field(default_factory=dict)
     cache_write_price_published: bool | None = None
+    expression_policy: dict[str, JsonValue] | None = None
     source: str = "legacy"
     catalog_model: str | None = None
     source_label: str = "Existing reference, review required"
+
+
+class PricingPreviewRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    expression_policy: ExpressionPolicy
+    facts: dict[str, StrictStr | StrictInt | dict[str, StrictStr | StrictInt]] = Field(max_length=128)
+    request: dict[str, JsonValue] = Field(default_factory=dict, max_length=128)
+    started_at: AwareDatetime
+    discount: str = Field(default="1", min_length=1, max_length=30)
+
+    @field_validator("expression_policy", mode="before")
+    @classmethod
+    def valid_expression_policy(cls, value: object) -> ExpressionPolicy:
+        return validate_expression_policy(value)
+
+    @field_validator("discount")
+    @classmethod
+    def valid_discount(cls, value: str) -> str:
+        return _validated_discount(value)
 
 
 class ReferenceSelection(BaseModel):
@@ -270,6 +310,48 @@ def _finite_decimal(value: str) -> bool:
         return False
 
 
+def _public_expression_numbers(value: object) -> dict[str, JsonValue]:
+    return {
+        key: amount for key, amount in as_mapping(value).items()
+        if len(key) <= 128 and key.isascii() and key.replace("_", "").replace(".", "").isalnum()
+        and isinstance(amount, str) and len(amount) <= 80 and _finite_decimal(amount)
+    }
+
+
+def _public_expression_pricing(value: object) -> dict[str, JsonValue]:
+    raw: Final = as_mapping(value)
+    digest: Final = raw.get("expression_hash")
+    if raw.get("version") != "expression-v1" or not isinstance(digest, str) or len(digest) != 64:
+        return {}
+    if any(character not in "0123456789abcdef" for character in digest):
+        return {}
+    expression: Final = raw.get("expression")
+    if not isinstance(expression, str) or hashlib.sha256(expression.encode()).hexdigest() != digest:
+        return {}
+    try:
+        started_at: Final = TypeAdapter(AwareDatetime).validate_python(raw.get("started_at"))
+    except ValidationError:
+        return {}
+    strings: Final = {
+        key: item for key, item in raw.items()
+        if key in ("expression", "timezone") and isinstance(item, str) and 0 < len(item) <= 16_384
+    }
+    amounts: Final = {
+        key: item for key, item in raw.items()
+        if key in ("undiscounted_amount", "discount", "amount")
+        and isinstance(item, str) and len(item) <= 80 and _finite_decimal(item)
+    }
+    tiers: Final = raw.get("tiers")
+    return {
+        "version": "expression-v1", "expression_hash": digest, "started_at": started_at.isoformat(),
+        **strings, **amounts,
+        "variables": _public_expression_numbers(raw.get("variables")),
+        "usage": _public_expression_numbers(raw.get("usage")),
+        "tiers": [tier for tier in tiers if isinstance(tier, str) and len(tier) <= 128]
+        if isinstance(tiers, list) and len(tiers) <= 128 else [],
+    }
+
+
 def _public_ledger_details(value: object) -> dict[str, JsonValue]:
     if not isinstance(value, Mapping):
         return {}
@@ -338,11 +420,13 @@ def _public_ledger_details(value: object) -> dict[str, JsonValue]:
         for key, item in source.items()
         if key in ("billing_basis", "gateway_call_id", "reason", "billing_error") and isinstance(item, str)
     }
+    expression_pricing: Final = _public_expression_pricing(source.get("expression_pricing"))
     return {
         **scalar_details,
         **({"usage": usage_details} if usage_details else {}),
         **({"price_snapshot": price_details} if price_details else {}),
         **({"cost_breakdown": _public_cost_breakdown(source["cost_breakdown"])} if "cost_breakdown" in source else {}),
+        **({"expression_pricing": expression_pricing} if expression_pricing else {}),
     }
 
 
@@ -478,6 +562,7 @@ def _model_price_view(card: _StoredModelPrice) -> dict[str, JsonValue]:
             key: format(Decimal(value) * 1_000_000, "f") for key, value in card.cache_write_tiers.items()
         },
         "cache_write_price_published": card.cache_write_price_published,
+        "expression_policy": card.expression_policy,
     }
 
 
@@ -699,6 +784,7 @@ def _reference_price_view(card: Mapping[str, JsonValue]) -> dict[str, JsonValue]
             for key, value in validated_cache_write_tiers(card.get("cache_write_tiers", {})).items()
         },
         "cache_write_price_published": card.get("cache_write_price_published"),
+        "expression_policy": card.get("expression_policy"),
     }
 
 
@@ -782,11 +868,39 @@ async def admin_save_model_price(data: ModelPriceRequest, admin: Admin, store: S
                 key: _per_token_price(value) for key, value in data.cache_write_tiers.items()
             },
             "cache_write_price_published": data.cache_write_price_published,
+            "expression_policy": data.expression_policy.model_dump(mode="json") if data.expression_policy else None,
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     saved: Final = await _execute(store.save_model_price(data.model, rates))
     return _model_price_view(_StoredModelPrice.model_validate(saved))
+
+
+@router.post("/admin/pricing-preview")
+async def admin_pricing_preview(data: PricingPreviewRequest, admin: Admin) -> dict[str, JsonValue]:
+    try:
+        context: Final = freeze_expression_context(data.expression_policy, data.request, data.started_at)
+        result: Final = evaluate_expression(data.expression_policy, data.facts, context)
+    except ExpressionPricingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    undiscounted: Final = str(result["amount"])
+    with localcontext(Context(prec=80)):
+        discounted: Final = Decimal(undiscounted) * Decimal(data.discount)
+    amount: Final = nanos_to_amount(cost_to_nanos(discounted))
+    return {
+        "amount": amount,
+        "undiscounted_amount": undiscounted,
+        "discount": data.discount,
+        "tiers": result["tiers"],
+        "variables": {
+            **as_mapping(result["variables"]),
+            **{f"cache_write_{key}": value for key, value in as_mapping(result.get("cache_write_ttl_tokens")).items()},
+        },
+        "usage": result.get("usage", {}),
+        "started_at": data.started_at.isoformat(),
+        "timezone": data.expression_policy.timezone,
+        "rounding_adjustment": format(Decimal(amount) - discounted, "f"),
+    }
 
 
 @router.put("/admin/wallets/{user_id}/plan")

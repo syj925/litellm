@@ -209,6 +209,12 @@ export function LedgerTable({
                       request. Later price or discount changes do not alter this bill.
                     </p>
                   )}
+                  {section.title === "Dynamic pricing receipt" && (
+                    <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+                      This saved rule, request start time and selected branches produced the settled charge. The amount
+                      includes the saved discount and final currency rounding.
+                    </p>
+                  )}
                 </section>
               ))}
             </div>

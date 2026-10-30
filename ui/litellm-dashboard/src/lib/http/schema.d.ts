@@ -15046,6 +15046,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/pricing-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Pricing Preview */
+        post: operations["admin_pricing_preview_retail_admin_pricing_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/reference-prices": {
         parameters: {
             query?: never;
@@ -29819,6 +29836,10 @@ export interface components {
             context_window?: number | null;
             /** Description */
             description?: string | null;
+            /** Expression Policy */
+            expression_policy?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
             /** Id */
             id: string;
             /**
@@ -29888,6 +29909,10 @@ export interface components {
             customer?: components["schemas"]["CatalogRates"] | null;
             /** Discount */
             discount?: string | null;
+            /** Expression Policy */
+            expression_policy?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
             reference?: components["schemas"]["CatalogRates"] | null;
             /** Source Label */
             source_label?: string | null;
@@ -33867,6 +33892,26 @@ export interface components {
          * @enum {string}
          */
         ExportType: "daily" | "daily_with_keys" | "daily_with_models" | "daily_with_users";
+        /** ExpressionPolicy */
+        ExpressionPolicy: {
+            /** Expression */
+            expression: string;
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
+            /** Usage Bounds */
+            usage_bounds?: {
+                [key: string]: string;
+            };
+            /**
+             * Version
+             * @default expression-v1
+             * @constant
+             */
+            version: "expression-v1";
+        };
         /** Extraction */
         Extraction: {
             /**
@@ -40950,6 +40995,7 @@ export interface components {
             cache_write_tiers?: {
                 [key: string]: string;
             };
+            expression_policy?: components["schemas"]["ExpressionPolicy"] | null;
             /** Input Per Million */
             input_per_million: string;
             /** Model */
@@ -44122,7 +44168,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "custom" | "catalog" | "default" | "ambiguous" | "unavailable";
+            status: "expression" | "custom" | "catalog" | "default" | "ambiguous" | "unavailable";
         };
         /** PricingCatalogPage */
         PricingCatalogPage: {
@@ -44143,6 +44189,10 @@ export interface components {
             };
             /** Catalog Model */
             catalog_model?: string | null;
+            /** Expression Policy */
+            expression_policy?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
             /** Input Per Million */
             input_per_million: string;
             /** Model */
@@ -44162,11 +44212,39 @@ export interface components {
             /** Version */
             version?: number | null;
         };
+        /** PricingPreviewRequest */
+        PricingPreviewRequest: {
+            /**
+             * Discount
+             * @default 1
+             */
+            discount: string;
+            expression_policy: components["schemas"]["ExpressionPolicy"];
+            /** Facts */
+            facts: {
+                [key: string]: string | number | {
+                    [key: string]: string | number;
+                };
+            };
+            /** Request */
+            request?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+        };
         /** PricingReviewReference */
         PricingReviewReference: {
             base_price: components["schemas"]["PricingCatalogPrice"] | null;
             /** Catalog Model */
             catalog_model: string;
+            /** Expression Policy */
+            expression_policy?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
             /** Rates */
             rates: {
                 [key: string]: string;
@@ -74973,6 +75051,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PricingCatalogPage"];
+                };
+            };
+        };
+    };
+    admin_pricing_preview_retail_admin_pricing_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PricingPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

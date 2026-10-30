@@ -1,3 +1,33 @@
+# Dynamic expression pricing QA
+
+final result: passed for the reviewed local desktop states on 2026-10-30
+
+Model Pricing supports fixed rates and expression rules, including context thresholds, separately priced cache durations, modalities, service tiers, weekday/weekend conditions, times and explicit calendar dates in an IANA timezone. Custom cache durations remain addressable in seconds. The editor includes synthetic templates and a server-side simulator using the actual billing evaluator. No JavaScript or Python evaluation is used
+
+Before: C:/Users/26933/AppData/Local/Temp/codex-clipboard-78ee6509-fa8a-43fd-abdb-40369b4729df.png
+
+Editor: C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/expression-editor-proof.png
+
+Peak simulation: C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/expression-peak-proof.png
+
+Weekend simulation: C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/expression-weekend-proof.png
+
+Public pricing: C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/expression-public-pricing-proof.png
+
+Actual browser review covered a loaded dynamic rule, an editable peak/weekend template, Asia/Shanghai time selection, matched branches and amounts, the anonymous model pricing page, rule counts and precise review reasons. Identical synthetic quantities produced USD 0.0072 during the example weekday peak and USD 0.0048 on its weekend branch. Every draft was cancelled. Browser warning and error collections were empty. The user's existing tabs were left untouched. Mobile and dark-theme acceptance were not performed
+
+The final combined backend run passed 490 scoped tests. A real isolated PostgreSQL test verified additive migration, policy save/read and frozen historical snapshots. Eight scoped frontend files passed 106 tests. Production TypeScript, regenerated OpenAPI declarations, the webpack build and changed-file Ruff passed. UI lint retained existing warnings and pre-existing retail fetch-wrapper lint debt rather than adding suppressions
+
+Full isolated HTTP validation passed 56 checks across eleven requests. Chat, Responses and Anthropic Messages used streaming and nonstreaming requests. Ten requests settled with ten unique charges; one missing-facts request retained its reservation. Exact costs, cache/context partitioning, actual returned image count, frozen time, policy and discount, duplicate callbacks and receipt hashes were verified. The fixture provider was scripted, so this does not establish live vendor usage reporting. No paid upstream call occurred. The fixture proxy and database were removed
+
+The live administrator read API listed forty-four configured public model names. Seven had completely translated expression defaults; thirty-seven required manual pricing for unresolved dimensions such as regional factors, shared search allowances or unsupported usage categories. These remain visible with their original reference fields and named review reasons, without a partially translated active policy. Manual rules can be configured for any row. OpenAI and Anthropic search counters use loaded fees only when their dimensions can be preserved. No vendor schedule or rate is invented
+
+Customer billing uses a frozen expression, version, request start, timezone and discount, then evaluates actual usage. Receipts and CSV retain the expression hash, matched tiers, quantities and final amount. Opaque input reservations use the frozen model capacity, output limits are checked before upstream calls, missing required facts remain pending and callbacks remain idempotent. Existing fixed rates and historical bills keep their original semantics. Background Batch submission and realtime sessions retain their endpoint restrictions
+
+Local service health returned HTTP 200 after restart. Anonymous pricing simulation was denied with HTTP 401. A custom 750-second cache write simulation returned exactly USD 0.000513500 after its configured discount. Before/after row hashes matched for channels, native deployments, pool bindings, saved model prices and wallets. The isolated HTTP run independently reconciled wallet, price, ledger and reservation hashes. No actual model price, discount or balance was saved during QA
+
+---
+
 # Searchable model price configuration QA
 
 final result: passed for the reviewed local desktop states on 2026-10-30

@@ -1,4 +1,5 @@
 import { cacheWritePriceRows } from "../cachePricing";
+import type { ExpressionPolicy } from "../expressionPricing";
 
 export interface CatalogTokenPrice {
   input: string | null;
@@ -16,10 +17,7 @@ export function catalogPriceRows(
     { key: "output", label: "Output", amount: price?.output ?? null },
     { key: "cache_read", label: "Cache read", amount: price?.cache_read ?? null },
   ];
-  return [
-    ...baseRows,
-    ...cacheWritePriceRows(price?.cache_write, price?.cache_write_tiers),
-  ];
+  return [...baseRows, ...cacheWritePriceRows(price?.cache_write, price?.cache_write_tiers)];
 }
 
 export interface CatalogPricing {
@@ -31,6 +29,7 @@ export interface CatalogPricing {
   source_label: string | null;
   version: number | null;
   updated_at: string | null;
+  expression_policy?: ExpressionPolicy | null;
 }
 
 export interface CatalogOffer {
@@ -94,6 +93,7 @@ export interface CatalogModel {
   available_to_me: boolean;
   offers: CatalogOffer[];
   reference_pricing?: CatalogTokenPrice | null;
+  expression_policy?: ExpressionPolicy | null;
 }
 
 export interface CatalogResponse {
@@ -149,6 +149,7 @@ export function modelPrice(
   basis: CatalogPriceBasis,
   field: Exclude<keyof CatalogTokenPrice, "cache_write_tiers">,
 ): number | null {
+  if (modelUsesExpression(model)) return null;
   const values = model.offers.flatMap((offer) => {
     if (basis === "customer" && !offer.available_to_me) return [];
     const value = offer.pricing[basis]?.[field];
@@ -161,6 +162,10 @@ export function modelPrice(
   if (reference == null || reference.trim() === "") return null;
   const amount = Number(reference);
   return Number.isFinite(amount) && amount >= 0 ? amount : null;
+}
+
+export function modelUsesExpression(model: CatalogModel): boolean {
+  return Boolean(model.expression_policy || model.offers.some((offer) => offer.pricing.expression_policy));
 }
 
 export function discountLabel(discount: string | null): string | null {

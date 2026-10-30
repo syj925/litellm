@@ -24,6 +24,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatMoney, retailRequest } from "./api";
 import { cacheWritePriceRows } from "./cachePricing";
 import PriceConfigurationReview from "./PriceConfigurationReview";
+import ExpressionPricingRule from "./ExpressionPricingRule";
 import {
   displayedModelPrice,
   filterModelPrices,
@@ -56,6 +57,7 @@ const hasReviewReferences = (entry: ModelPriceCatalogEntry) =>
   entry.status !== "ambiguous" && Boolean(entry.review_references?.length);
 
 function rowActionLabel(entry: ModelPriceCatalogEntry): string {
+  if (entry.price?.expression_policy) return "Edit dynamic pricing";
   if (entry.price) return "Edit price";
   if (entry.status === "ambiguous") return "Choose reference";
   if (entry.review_references?.length) return "Review price";
@@ -102,6 +104,7 @@ function PriceRow({
   onChoose: (entry: ModelPriceCatalogEntry) => void;
 }) {
   const price = displayedModelPrice(entry);
+  const dynamic = Boolean(price?.expression_policy);
   return (
     <TableRow>
       <TableCell className="min-w-56 max-w-96 pl-5 whitespace-normal">
@@ -122,7 +125,7 @@ function PriceRow({
       </TableCell>
       <TableCell>
         <Badge variant={entry.status === "ambiguous" || entry.status === "unavailable" ? "outline" : "secondary"}>
-          {pricingStatusLabels[entry.status]}
+          {dynamic ? "Dynamic pricing" : pricingStatusLabels[entry.status]}
         </Badge>
         {price && !entry.price && <p className="mt-1 text-xs font-medium text-muted-foreground">Reference only</p>}
         {entry.reason && (
@@ -134,27 +137,32 @@ function PriceRow({
           </p>
         )}
       </TableCell>
-      {displayedRateFields.map((field) => (
-        <TableCell key={field} className="text-right tabular-nums">
-          {price ? formatMoney(price[field]) : "Not listed"}
-        </TableCell>
-      ))}
+      {displayedRateFields.map((field) => {
+        const flatRate = price ? formatMoney(price[field]) : "Not listed";
+        return (
+          <TableCell key={field} className="text-right tabular-nums">
+            {dynamic ? "Rule-based" : flatRate}
+          </TableCell>
+        );
+      })}
       <TableCell className="min-w-40 text-xs tabular-nums">
-        {price ? (
-          <dl className="space-y-1">
-            {cacheWritePriceRows(
-              price.cache_write_price_published === false ? null : price.cache_write_per_million,
-              price.cache_write_tiers,
-            ).map(({ key, label, amount }) => (
-              <div key={key} className="flex justify-between gap-4">
-                <dt>{label}</dt>
-                <dd>{amount === null ? "Not listed" : formatMoney(amount)}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : (
-          <span className="text-muted-foreground">Not listed</span>
-        )}
+        {dynamic && <span>See dynamic rule</span>}
+        {!dynamic &&
+          (price ? (
+            <dl className="space-y-1">
+              {cacheWritePriceRows(
+                price.cache_write_price_published === false ? null : price.cache_write_per_million,
+                price.cache_write_tiers,
+              ).map(({ key, label, amount }) => (
+                <div key={key} className="flex justify-between gap-4">
+                  <dt>{label}</dt>
+                  <dd>{amount === null ? "Not listed" : formatMoney(amount)}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <span className="text-muted-foreground">Not listed</span>
+          ))}
       </TableCell>
       <TableCell className="sticky right-0 z-sticky-pinned border-l bg-background pr-5 text-right">
         <Button variant="outline" size="xs" onClick={() => (entry.price ? onEdit(entry.price) : onChoose(entry))}>
@@ -203,7 +211,8 @@ function ReferenceChoice({
             ))}
           </SelectContent>
         </Select>
-        {choice && (
+        {choice?.expression_policy && <ExpressionPricingRule policy={choice.expression_policy} />}
+        {choice && !choice.expression_policy && (
           <p className="text-sm text-muted-foreground">
             Input {formatMoney(choice.input_per_million)} · Output {formatMoney(choice.output_per_million)} per 1M
             tokens
@@ -272,7 +281,13 @@ export default function ModelPriceCatalogTable({
   const page = pricingPage(filtered, table.pagination.pageIndex, table.pagination.pageSize);
   const providers = [...new Set(entries.flatMap((entry) => entry.providers))].sort();
   const modes = [...new Set(entries.flatMap((entry) => entry.modes))].sort();
-  const saved = entries.filter((entry) => entry.status === "custom" || entry.status === "catalog").length;
+  const dynamicRules = entries.filter((entry) => entry.status === "expression").length;
+  const saved = entries.filter(
+    (entry) =>
+      entry.status === "custom" ||
+      entry.status === "catalog" ||
+      (entry.status === "expression" && entry.price?.version != null),
+  ).length;
   const choosePrice = (entry: ModelPriceCatalogEntry) => {
     if (hasReviewReferences(entry)) {
       setReviewing(entry);
@@ -301,7 +316,8 @@ export default function ModelPriceCatalogTable({
           </Badge>
         </h2>
         <span className="text-xs text-muted-foreground">
-          {saved} saved overrides · {entries.filter((entry) => entry.status === "default").length} built-in defaults
+          {saved} saved overrides · {entries.filter((entry) => entry.status === "default").length} built-in defaults ·{" "}
+          {dynamicRules} dynamic {dynamicRules === 1 ? "rule" : "rules"}
         </span>
       </div>
       <div className="space-y-4 border-t px-5 py-4">
@@ -469,12 +485,7 @@ export default function ModelPriceCatalogTable({
           </div>
         </>
       )}
-      <ReferenceChoice
-        key={choosing?.model}
-        entry={choosing}
-        onClose={() => setChoosing(null)}
-        onEdit={onEdit}
-      />
+      <ReferenceChoice key={choosing?.model} entry={choosing} onClose={() => setChoosing(null)} onEdit={onEdit} />
       <PriceConfigurationReview
         key={reviewing?.model}
         entry={reviewing}

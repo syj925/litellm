@@ -1,15 +1,14 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Final
 
 import pytest
 
-from litellm.types.llms.openai import ResponseAPIUsage
-from litellm.types.utils import Usage
 from litellm.proxy.retail.billing import price_snapshot, reservation_id
 from litellm.proxy.retail.pricing import (
     UsageFacts,
-    catalog_candidates,
     catalog_cache_write_tiers,
+    catalog_candidates,
     catalog_snapshot,
     charge_for_usage,
     cost_breakdown,
@@ -18,6 +17,8 @@ from litellm.proxy.retail.pricing import (
     validate_requested_cache_ttls,
     validated_cache_write_tiers,
 )
+from litellm.types.llms.openai import ResponseAPIUsage
+from litellm.types.utils import Usage
 
 SNAPSHOT = {
     "input_cost_per_token": "0.000002",
@@ -147,9 +148,9 @@ def test_ambiguous_or_unrecognized_deployments_require_an_explicit_reference_cho
 @pytest.mark.parametrize(
     "extra",
     (
-        {"input_cost_per_token_above_200k_tokens": "0.000004"},
+        {"input_cost_per_pixel_above_200k_tokens": "0.000004"},
         {"cache_creation_input_token_cost_above_1hr": "0.000004"},
-        {"mode": "image_generation"},
+        {"mode": "unsupported_generation"},
         {"cache_read_input_token_cost": "NaN"},
         {"output_cost_per_token": None},
     ),
@@ -225,7 +226,10 @@ def test_catalog_extracts_duration_prices_without_flattening_context_tiers() -> 
     assert card["cache_write_tiers"] == {"1800": "0.000003", "43200": "0.000006"}
     assert card["version"] == "token-v3"
     advanced: Final = {"openai/fixture": {**rates, "input_cost_per_token_above_272k_tokens": "0.000004"}}
-    assert catalog_candidates("fixture", deployments, advanced) == ()
+    dynamic: Final = catalog_candidates("fixture", deployments, advanced)
+    assert dynamic[0]["cache_write_tiers"] == card["cache_write_tiers"]
+    assert "len > 272000" in dynamic[0]["expression_policy"]["expression"]
+    assert "cc12h" in dynamic[0]["expression_policy"]["expression"]
 
 
 def test_native_gemini_counts_include_cached_input_and_reasoning_without_guessing_storage() -> None:
@@ -306,6 +310,29 @@ def test_new_requests_freeze_the_compatible_policy_and_the_original_price_versio
     assert snapshot["version"] == "token-v3"
     assert snapshot["price_version"] == 7
     assert snapshot["cache_creation_input_token_cost"] == SNAPSHOT["cache_creation_input_token_cost"]
+
+
+@pytest.mark.parametrize("input_capacity", (128000, 2000000))
+def test_opaque_expression_quote_uses_frozen_capacity_instead_of_legacy_floor_or_encoded_input_size(
+    input_capacity: int,
+) -> None:
+    snapshot: Final = price_snapshot(
+        {**SNAPSHOT, "model": "fixture", "version": 1,
+         "expression_policy": {"version": "expression-v1", "expression": "p*2", "timezone": "UTC",
+                               "usage_bounds": {"input_tokens": str(input_capacity), "output_tokens": "512"}}},
+        {"model": "fixture", "plan_id": "shared", "discount": "1", "discount_source": "customer_model"},
+        "aresponses", request_data={}, started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    short: Final = reserve_quote(snapshot, {"input": "small"}, 0, minimum_input_tokens=1000000)
+    encoded: Final = reserve_quote(snapshot, {"input": "x" * (input_capacity + 1)}, 0, minimum_input_tokens=1000000)
+    assert Decimal(short) == Decimal(encoded) == Decimal(input_capacity) * Decimal("0.000002")
+    assert Decimal(reserve_quote(snapshot, {"input": "small"}, 0)) < Decimal(short)
+
+
+def test_legacy_flat_quote_keeps_the_opaque_input_floor() -> None:
+    quote: Final = reserve_quote(SNAPSHOT, {}, 0, minimum_input_tokens=1000000)
+    same_maximum_rate_usage: Final = UsageFacts(input_tokens=0, output_tokens=0, cache_write_tokens=1000000)
+    assert quote == charge_for_usage(SNAPSHOT, same_maximum_rate_usage)
 
 
 @pytest.mark.parametrize("rate", (None, "NaN", "-1"))

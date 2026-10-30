@@ -22,6 +22,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "@/lib/toast";
 import { formatMoney, retailRequest } from "./api";
 import ModelPriceCatalogTable from "./ModelPriceCatalogTable";
+import ExpressionPricingEditor from "./ExpressionPricingEditor";
+import ExpressionPricingRule from "./ExpressionPricingRule";
+import { parseUsageBounds, policyFromRates, type ExpressionPolicy } from "./expressionPricing";
 import type { SalesPrice } from "./modelPriceCatalog";
 import {
   cacheDurationLabel,
@@ -63,10 +66,22 @@ const emptyPrice: SalesPrice = {
   cache_write_per_million: "0",
 };
 
+function referenceRateLabel(
+  candidate: ReferenceCandidate | undefined,
+  field: (typeof rateFields)[number]["key"],
+): string {
+  if (!candidate) return "Choose reference";
+  return candidate.expression_policy ? "Rule-based" : formatMoney(candidate[field]);
+}
+
 export default function ModelPrices({ accessToken, enabled }: { accessToken: string | null; enabled: boolean }) {
   const client = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState<SalesPrice>(emptyPrice);
+  const [expressionEnabled, setExpressionEnabled] = useState(false);
+  const [expressionPolicy, setExpressionPolicy] = useState<ExpressionPolicy>(() => policyFromRates(emptyPrice));
+  const [hadExpression, setHadExpression] = useState(false);
+  const [expressionDraftStarted, setExpressionDraftStarted] = useState(false);
   const [cacheTiers, setCacheTiers] = useState<CacheTierDraft[]>([]);
   const [validation, setValidation] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -78,8 +93,12 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
         method: "POST",
         body: JSON.stringify({
           ...values,
+          ...(expressionEnabled ? Object.fromEntries(rateFields.map(({ key }) => [key, values[key] || "0"])) : {}),
           model: values.model.trim(),
           cache_write_tiers: validateCacheTierDrafts(cacheTiers).tiers,
+          ...(expressionEnabled || hadExpression
+            ? { expression_policy: expressionEnabled ? expressionPolicy : null }
+            : {}),
         }),
       }),
     onSuccess: () => {
@@ -142,6 +161,10 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
       cache_write_price_published: price.cache_write_price_published,
     });
     setCacheTiers(cacheTierEntries(price.cache_write_tiers).map(([ttl_seconds, price]) => ({ ttl_seconds, price })));
+    setExpressionEnabled(Boolean(price.expression_policy));
+    setHadExpression(Boolean(price.expression_policy));
+    setExpressionDraftStarted(Boolean(price.expression_policy));
+    setExpressionPolicy(price.expression_policy ?? policyFromRates(price));
     setValidation(null);
     mutation.reset();
     setEditing(true);
@@ -149,8 +172,22 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
 
   const savePrice = (event: FormEvent) => {
     event.preventDefault();
-    if (!values.model.trim() || !rateFields.every(({ key }) => /^\d{1,9}(?:\.\d{1,9})?$/.test(values[key]))) {
+    if (
+      !values.model.trim() ||
+      !rateFields.every(({ key }) =>
+        /^\d{1,9}(?:\.\d{1,9})?$/.test(expressionEnabled ? values[key] || "0" : values[key]),
+      )
+    ) {
       setValidation("Enter a model name and non-negative decimal USD prices, with no more than 9 decimal places.");
+      return;
+    }
+    if (
+      expressionEnabled &&
+      (!expressionPolicy.expression.trim() ||
+        !expressionPolicy.timezone.trim() ||
+        parseUsageBounds(JSON.stringify(expressionPolicy.usage_bounds)).error)
+    ) {
+      setValidation("Enter a pricing expression, a rule timezone and valid usage bounds.");
       return;
     }
     const durationPrices = validateCacheTierDrafts(cacheTiers);
@@ -184,11 +221,11 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
           if (!mutation.isPending) setEditing(open);
         }}
       >
-        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Save custom base price</DialogTitle>
             <DialogDescription>
-              Configure the site-wide base rate in USD per one million tokens. Customer discounts apply separately.
+              Configure fixed rates or a dynamic pricing rule. Customer discounts apply separately.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={savePrice} className="flex flex-col gap-5">
@@ -205,128 +242,171 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                   placeholder="Exact model name used by customers"
                 />
               </Field>
-              <div className="grid grid-cols-2 gap-4">
-                {rateFields.map(({ key, label }) => (
-                  <Field key={key}>
-                    <FieldLabel htmlFor={`sales-${key}`}>{label} (USD / 1M)</FieldLabel>
-                    <Input
-                      id={`sales-${key}`}
-                      value={values[key]}
-                      onChange={(event) =>
-                        setValues({
+              <div className="flex gap-2" role="group" aria-label="Pricing method">
+                <Button
+                  type="button"
+                  variant={expressionEnabled ? "outline" : "secondary"}
+                  aria-pressed={!expressionEnabled}
+                  disabled={mutation.isPending}
+                  onClick={() => setExpressionEnabled(false)}
+                >
+                  Fixed rates
+                </Button>
+                <Button
+                  type="button"
+                  variant={expressionEnabled ? "secondary" : "outline"}
+                  aria-pressed={expressionEnabled}
+                  disabled={mutation.isPending}
+                  onClick={() => {
+                    if (!expressionDraftStarted) {
+                      setExpressionPolicy(
+                        policyFromRates({
                           ...values,
-                          [key]: event.target.value,
-                          ...(key === "cache_write_per_million" ? { cache_write_price_published: true } : {}),
-                        })
-                      }
-                      inputMode="decimal"
-                      required
-                      disabled={mutation.isPending}
-                      placeholder="0.00"
-                    />
-                    {key === "cache_write_per_million" && values.cache_write_price_published === false && (
-                      <p className="text-xs leading-5 text-muted-foreground">
-                        This unpublished rate is an internal billing fallback. Editing it publishes a default cache
-                        write price.
-                      </p>
-                    )}
-                  </Field>
-                ))}
+                          cache_write_tiers: validateCacheTierDrafts(cacheTiers).tiers ?? {},
+                        }),
+                      );
+                      setExpressionDraftStarted(true);
+                    }
+                    setExpressionEnabled(true);
+                  }}
+                >
+                  Expression
+                </Button>
               </div>
-              <section className="space-y-3 rounded-lg border p-4" aria-labelledby="cache-duration-prices-title">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 id="cache-duration-prices-title" className="text-sm font-medium">
-                    Cache write duration prices
-                  </h3>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={mutation.isPending || cacheTiers.length >= 16}
-                    onClick={() => setCacheTiers([...cacheTiers, { ttl_seconds: "", price: "" }])}
-                  >
-                    <Plus /> Add duration
-                  </Button>
-                </div>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  Set each write duration separately. These are complete write prices, not a surcharge on input. The
-                  duration-specific rate takes precedence over the default cache write rate. Use the default rate for
-                  models priced without duration tiers.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {[300, 1800, 3600, 43200].map((ttl) => (
-                    <Button
-                      key={ttl}
-                      type="button"
-                      size="xs"
-                      variant="secondary"
-                      disabled={
-                        mutation.isPending ||
-                        cacheTiers.length >= 16 ||
-                        cacheTiers.some((tier) => Number(tier.ttl_seconds) === ttl)
-                      }
-                      onClick={() => setCacheTiers([...cacheTiers, { ttl_seconds: String(ttl), price: "" }])}
-                    >
-                      + {cacheDurationLabel(ttl)}
-                    </Button>
-                  ))}
-                </div>
-                {cacheTiers.map((tier, index) => (
-                  <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3">
-                    <Field>
-                      <FieldLabel htmlFor={`cache-ttl-${index}`}>Duration {index + 1} (seconds)</FieldLabel>
+              {expressionEnabled && (
+                <>
+                  <ExpressionPricingEditor
+                    policy={expressionPolicy}
+                    onChange={setExpressionPolicy}
+                    accessToken={accessToken}
+                    disabled={mutation.isPending}
+                  />
+                </>
+              )}
+              <div hidden={expressionEnabled} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  {rateFields.map(({ key, label }) => (
+                    <Field key={key}>
+                      <FieldLabel htmlFor={`sales-${key}`}>{label} (USD / 1M)</FieldLabel>
                       <Input
-                        id={`cache-ttl-${index}`}
-                        inputMode="numeric"
-                        value={tier.ttl_seconds}
-                        disabled={mutation.isPending}
+                        id={`sales-${key}`}
+                        value={values[key]}
                         onChange={(event) =>
-                          setCacheTiers(
-                            cacheTiers.map((row, position) =>
-                              position === index ? { ...row, ttl_seconds: event.target.value } : row,
-                            ),
-                          )
+                          setValues({
+                            ...values,
+                            [key]: event.target.value,
+                            ...(key === "cache_write_per_million" ? { cache_write_price_published: true } : {}),
+                          })
                         }
-                        placeholder="300"
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor={`cache-tier-price-${index}`}>
-                        {tier.ttl_seconds ? cacheDurationLabel(tier.ttl_seconds) : "Write"} price (USD / 1M)
-                      </FieldLabel>
-                      <Input
-                        id={`cache-tier-price-${index}`}
                         inputMode="decimal"
-                        value={tier.price}
+                        required={!expressionEnabled}
                         disabled={mutation.isPending}
-                        onChange={(event) =>
-                          setCacheTiers(
-                            cacheTiers.map((row, position) =>
-                              position === index ? { ...row, price: event.target.value } : row,
-                            ),
-                          )
-                        }
                         placeholder="0.00"
                       />
+                      {key === "cache_write_per_million" && values.cache_write_price_published === false && (
+                        <p className="text-xs leading-5 text-muted-foreground">
+                          This unpublished rate is an internal billing fallback. Editing it publishes a default cache
+                          write price.
+                        </p>
+                      )}
                     </Field>
+                  ))}
+                </div>
+                <section className="space-y-3 rounded-lg border p-4" aria-labelledby="cache-duration-prices-title">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 id="cache-duration-prices-title" className="text-sm font-medium">
+                      Cache write duration prices
+                    </h3>
                     <Button
                       type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Remove cache duration ${index + 1}`}
-                      disabled={mutation.isPending}
-                      onClick={() => setCacheTiers(cacheTiers.filter((_, position) => position !== index))}
+                      size="sm"
+                      variant="outline"
+                      disabled={mutation.isPending || cacheTiers.length >= 16}
+                      onClick={() => setCacheTiers([...cacheTiers, { ttl_seconds: "", price: "" }])}
                     >
-                      <Trash2 />
+                      <Plus /> Add duration
                     </Button>
                   </div>
-                ))}
-                {!cacheTiers.length && (
-                  <p className="text-xs text-muted-foreground">
-                    No duration prices configured. Add the durations supported by this model.
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    Set each write duration separately. These are complete write prices, not a surcharge on input. The
+                    duration-specific rate takes precedence over the default cache write rate. Use the default rate for
+                    models priced without duration tiers.
                   </p>
-                )}
-              </section>
+                  <div className="flex flex-wrap gap-2">
+                    {[300, 1800, 3600, 43200].map((ttl) => (
+                      <Button
+                        key={ttl}
+                        type="button"
+                        size="xs"
+                        variant="secondary"
+                        disabled={
+                          mutation.isPending ||
+                          cacheTiers.length >= 16 ||
+                          cacheTiers.some((tier) => Number(tier.ttl_seconds) === ttl)
+                        }
+                        onClick={() => setCacheTiers([...cacheTiers, { ttl_seconds: String(ttl), price: "" }])}
+                      >
+                        + {cacheDurationLabel(ttl)}
+                      </Button>
+                    ))}
+                  </div>
+                  {cacheTiers.map((tier, index) => (
+                    <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3">
+                      <Field>
+                        <FieldLabel htmlFor={`cache-ttl-${index}`}>Duration {index + 1} (seconds)</FieldLabel>
+                        <Input
+                          id={`cache-ttl-${index}`}
+                          inputMode="numeric"
+                          value={tier.ttl_seconds}
+                          disabled={mutation.isPending}
+                          onChange={(event) =>
+                            setCacheTiers(
+                              cacheTiers.map((row, position) =>
+                                position === index ? { ...row, ttl_seconds: event.target.value } : row,
+                              ),
+                            )
+                          }
+                          placeholder="300"
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor={`cache-tier-price-${index}`}>
+                          {tier.ttl_seconds ? cacheDurationLabel(tier.ttl_seconds) : "Write"} price (USD / 1M)
+                        </FieldLabel>
+                        <Input
+                          id={`cache-tier-price-${index}`}
+                          inputMode="decimal"
+                          value={tier.price}
+                          disabled={mutation.isPending}
+                          onChange={(event) =>
+                            setCacheTiers(
+                              cacheTiers.map((row, position) =>
+                                position === index ? { ...row, price: event.target.value } : row,
+                              ),
+                            )
+                          }
+                          placeholder="0.00"
+                        />
+                      </Field>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Remove cache duration ${index + 1}`}
+                        disabled={mutation.isPending}
+                        onClick={() => setCacheTiers(cacheTiers.filter((_, position) => position !== index))}
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  ))}
+                  {!cacheTiers.length && (
+                    <p className="text-xs text-muted-foreground">
+                      No duration prices configured. Add the durations supported by this model.
+                    </p>
+                  )}
+                </section>
+              </div>
             </FieldGroup>
             {(validation || mutation.error) && (
               <Alert variant="error">
@@ -503,18 +583,26 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                             <p className="mt-1 max-w-72 break-all text-xs text-muted-foreground">
                               {chosen?.source_label}
                             </p>
+                            {chosen?.expression_policy && (
+                              <details className="mt-2">
+                                <summary className="cursor-pointer text-xs font-medium">Review dynamic rule</summary>
+                                <ExpressionPricingRule policy={chosen.expression_policy} />
+                              </details>
+                            )}
                           </TableCell>
                           <TableCell className="text-right text-xs tabular-nums">
-                            {chosen ? formatMoney(chosen.input_per_million) : "Choose reference"}
+                            {referenceRateLabel(chosen, "input_per_million")}
                           </TableCell>
                           <TableCell className="text-right text-xs tabular-nums">
-                            {chosen ? formatMoney(chosen.output_per_million) : "Choose reference"}
+                            {referenceRateLabel(chosen, "output_per_million")}
                           </TableCell>
                           <TableCell className="text-right text-xs tabular-nums">
-                            {chosen ? formatMoney(chosen.cache_read_per_million) : "Choose reference"}
+                            {referenceRateLabel(chosen, "cache_read_per_million")}
                           </TableCell>
                           <TableCell className="text-right text-xs tabular-nums">
-                            {chosen ? (
+                            {chosen?.expression_policy && "See dynamic rule"}
+                            {!chosen && "Choose reference"}
+                            {chosen && !chosen.expression_policy && (
                               <div className="space-y-1">
                                 {cacheWritePriceRows(
                                   chosen.cache_write_price_published === false ? null : chosen.cache_write_per_million,
@@ -525,8 +613,6 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                                   </p>
                                 ))}
                               </div>
-                            ) : (
-                              "Choose reference"
                             )}
                           </TableCell>
                         </TableRow>

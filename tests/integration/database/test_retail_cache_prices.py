@@ -14,7 +14,7 @@ from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.retail.api import retail_store, router
 from litellm.proxy.retail.catalog import build_model_catalog
-from litellm.proxy.retail.models import IdempotencyConflict
+from litellm.proxy.retail.models import IdempotencyConflict, InvalidAmount
 from litellm.proxy.retail.pool_store import PoolAccess
 from litellm.proxy.retail.pricing import UsageFacts, catalog_snapshot, charge_for_usage, cost_breakdown, usage_facts
 from litellm.proxy.retail.store import WalletStore
@@ -54,6 +54,7 @@ async def _assert_frozen_cache_prices(database_url: str) -> None:
     assert legacy["version"] == 7
     assert legacy["cache_write_tiers"] == {}
     assert legacy["cache_write_price_published"] is None
+    assert legacy["expression_policy"] is None
     repeated: Final = WalletStore(database_url)
     await repeated.initialize()
     assert await repeated.get_model_price("example") == legacy
@@ -102,6 +103,7 @@ async def _assert_frozen_cache_prices(database_url: str) -> None:
     await _assert_default_duration_prices_are_frozen(store)
     await _assert_catalog_cache_write_provenance(store)
     await _assert_administrator_price_edits(store)
+    await _assert_expression_model_prices(store)
 
 
 async def _assert_default_duration_prices_are_frozen(store: WalletStore) -> None:
@@ -226,3 +228,73 @@ async def _assert_administrator_price_edits(store: WalletStore) -> None:
         assert published.json()["cache_write_price_published"] is True
         assert Decimal(published.json()["cache_write_per_million"]) == 0
         assert published.json()["version"] == preserved.json()["version"] + 1
+
+
+async def _assert_expression_model_prices(store: WalletStore) -> None:
+    async def isolated_store() -> WalletStore:
+        return store
+
+    async def administrator() -> UserAPIKeyAuth:
+        return UserAPIKeyAuth(user_id="fixture-admin", user_role=LitellmUserRoles.PROXY_ADMIN)
+
+    policy: Final = {
+        "version": "expression-v1", "expression": "p * 2 + c * 6", "timezone": "UTC", "usage_bounds": {},
+    }
+    payload: Final = {
+        "model": "expression-api-model", "input_per_million": "9", "output_per_million": "9",
+        "cache_read_per_million": "9", "cache_write_per_million": "9", "expression_policy": policy,
+    }
+    app: Final = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[retail_store] = isolated_store
+    app.dependency_overrides[user_api_key_auth] = administrator
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://retail.test") as client:
+        saved: Final = await client.post("/retail/admin/model-prices", json=payload)
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["expression_policy"] == policy
+        original: Final = await store.get_model_price(payload["model"])
+        assert original is not None and original["expression_policy"] == policy
+        await store.reserve("account", "expression-frozen-request", payload["model"], "0.01", original)
+        listing: Final = await client.get("/retail/admin/pricing-catalog")
+        assert listing.status_code == 200, listing.text
+        row: Final = next(item for item in listing.json()["items"] if item["model"] == payload["model"])
+        assert row["status"] == "expression" and row["price"]["expression_policy"] == policy
+        rejected: Final = await client.post("/retail/admin/model-prices", json={
+            **payload, "expression_policy": {**policy, "expression": "__import__('os')"},
+        })
+        assert rejected.status_code == 422, rejected.text
+        assert await store.get_model_price(payload["model"]) == original
+        cleared: Final = await client.post("/retail/admin/model-prices", json={
+            key: value for key, value in payload.items() if key != "expression_policy"
+        })
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["expression_policy"] is None
+        assert cleared.json()["version"] == saved.json()["version"] + 1
+        restored: Final = await client.post("/retail/admin/model-prices", json=payload)
+        explicit_null: Final = await client.post(
+            "/retail/admin/model-prices", json={**payload, "expression_policy": None},
+        )
+        assert explicit_null.status_code == 200, explicit_null.text
+        assert explicit_null.json()["expression_policy"] is None
+        assert explicit_null.json()["version"] == restored.json()["version"] + 1
+        await client.post("/retail/admin/model-prices", json=payload)
+    imported: Final = await store.save_reference_prices(({
+        **original, "source": "catalog", "catalog_model": "fixture", "source_label": "Imported catalog basis",
+        "expression_policy": None,
+    },))
+    assert imported["items"][0]["expression_policy"] is None
+    assert imported["items"][0]["source"] == "catalog"
+    imported_policy: Final = {**policy, "expression": "p * 3 + c * 9"}
+    dynamic_import: Final = await store.save_reference_prices(({
+        **original, "source": "catalog", "catalog_model": "fixture", "source_label": "Imported expression basis",
+        "expression_policy": imported_policy,
+    },))
+    assert dynamic_import["items"][0]["expression_policy"] == imported_policy
+    assert dynamic_import["items"][0]["version"] == imported["items"][0]["version"] + 1
+    with pytest.raises(InvalidAmount):
+        await store.save_model_price(payload["model"], {**original, "expression_policy": {"expression": "secret"}})
+    assert await store.get_model_price(payload["model"]) == dynamic_import["items"][0]
+    frozen: Final = await store.get_reservation("expression-frozen-request")
+    assert frozen is not None and frozen["price_snapshot"] == original
+    assert frozen["price_snapshot"]["expression_policy"] == policy
+    await store.release("expression-frozen-request", "Expression snapshot verified")

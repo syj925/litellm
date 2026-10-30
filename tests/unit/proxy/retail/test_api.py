@@ -1,3 +1,5 @@
+import hashlib
+from decimal import Decimal
 from typing import Final
 
 import httpx
@@ -11,6 +13,7 @@ from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.retail.api import (
     ModelPriceRequest,
     PlanRequest,
+    PricingPreviewRequest,
     ReferenceImportRequest,
     ResolveRequest,
     SetDiscountRequest,
@@ -100,6 +103,101 @@ def test_customer_bill_preserves_safe_duration_counts_prices_and_costs_without_i
     assert details["price_snapshot"] == {"cache_write_tiers": {"300": "0.0000025", "3600": "0.000004"}}
     assert details["cost_breakdown"] == {"input": "0.1", "cache_write_tiers": {"300": "0.2"}}
     assert "private" not in str(details)
+
+
+@pytest.mark.parametrize("policy", (
+    "p * 2", {"version": "expression-v0", "expression": "p * 2"},
+    {"version": "expression-v1", "expression": "__import__('os')"},
+    {"version": "expression-v1", "expression": "p * 2", "request": {"api_key": "private"}},
+))
+def test_admin_price_edits_reject_unsafe_or_malformed_expression_policies(policy: object) -> None:
+    with pytest.raises(ValidationError):
+        ModelPriceRequest.model_validate({
+            "model": "fixture", "input_per_million": "1", "output_per_million": "2",
+            "cache_read_per_million": "0.1", "cache_write_per_million": "0", "expression_policy": policy,
+        })
+
+
+@pytest.mark.parametrize("facts", ({"p": True}, {"p": 0.5}, {"usage": {"images": False}}))
+def test_pricing_preview_rejects_coerced_or_lossy_usage_values(facts: object) -> None:
+    with pytest.raises(ValidationError):
+        PricingPreviewRequest.model_validate({
+            "expression_policy": {"version": "expression-v1", "expression": "p * 2"},
+            "facts": facts, "started_at": "2026-01-01T00:00:00Z",
+        })
+
+
+def test_pricing_preview_requires_an_explicit_timezone_in_the_frozen_start_time() -> None:
+    with pytest.raises(ValidationError, match="timezone"):
+        PricingPreviewRequest.model_validate({
+            "expression_policy": {"version": "expression-v1", "expression": "p * 2"},
+            "facts": {"p": "100"}, "started_at": "2026-01-01T00:00:00",
+        })
+
+
+@pytest.mark.asyncio
+async def test_pricing_preview_evaluates_the_real_engine_without_storage_and_preserves_the_requested_time() -> None:
+    async def administrator() -> UserAPIKeyAuth:
+        return UserAPIKeyAuth(user_id="preview-admin", user_role=LitellmUserRoles.PROXY_ADMIN)
+
+    app: Final = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[user_api_key_auth] = administrator
+    payload: Final = {
+        "expression_policy": {
+            "version": "expression-v1", "expression": "p * 2 + c * 6 + cache_write('750') * 3 + 0.0003", "timezone": "UTC",
+        },
+        "facts": {"p": "100", "c": 10, "cache_write_ttl_tokens": {"750": "100"}},
+        "discount": "0.7", "started_at": "2026-01-01T20:30:00+08:00",
+        "request": {"api_key": "private-preview-key", "messages": [{"role": "user", "content": "private-message"}]},
+    }
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://retail.test") as client:
+        response: Final = await client.post("/retail/admin/pricing-preview", json=payload)
+    assert response.status_code == 200, response.text
+    result: Final = response.json()
+    assert Decimal(result["undiscounted_amount"]) == Decimal("0.0005600003")
+    assert Decimal(result["amount"]) == Decimal("0.000392001")
+    assert Decimal(result["rounding_adjustment"]) == Decimal("0.00000000079")
+    assert result["started_at"] == payload["started_at"]
+    assert result["timezone"] == "UTC"
+    assert result["variables"] == {"p": "100", "c": "10", "cache_write_750": "100"}
+    assert "private" not in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", (LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
+async def test_pricing_preview_requires_an_administrator_even_though_it_is_read_only(role: LitellmUserRoles) -> None:
+    async def authenticated_user() -> UserAPIKeyAuth:
+        return UserAPIKeyAuth(user_id="preview-reader", user_role=role)
+
+    app: Final = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[user_api_key_auth] = authenticated_user
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://retail.test") as client:
+        response: Final = await client.post("/retail/admin/pricing-preview", json={
+            "expression_policy": {"version": "expression-v1", "expression": "p * 2"},
+            "facts": {"p": "100"}, "started_at": "2026-01-01T00:00:00Z",
+        })
+    assert response.status_code == 403, response.text
+
+
+def test_expression_receipts_keep_verified_numeric_trace_and_remove_request_context() -> None:
+    expression: Final = "p * 2 + c * 6"
+    trace: Final = {
+        "version": "expression-v1", "expression": expression,
+        "expression_hash": hashlib.sha256(expression.encode()).hexdigest(),
+        "timezone": "UTC", "started_at": "2026-01-01T00:00:00+00:00", "tiers": ["weekday"],
+        "variables": {"p": "100", "c": "10", "api_key": "private"}, "usage": {"images": "4"},
+        "undiscounted_amount": "0.00026", "discount": "0.7", "amount": "0.000182",
+        "params": {"api_key": "private"}, "context": {"messages": ["private"]},
+    }
+    details: Final = _public_ledger_details({"expression_pricing": trace})
+    assert details == {"expression_pricing": {
+        key: value for key, value in {**trace, "variables": {"p": "100", "c": "10"}}.items()
+        if key not in {"params", "context"}
+    }}
+    assert "private" not in str(details)
+    assert _public_ledger_details({"expression_pricing": {**trace, "expression_hash": "0" * 64}}) == {}
 
 
 @pytest.mark.parametrize("field", ("discount", "multiplier"))
