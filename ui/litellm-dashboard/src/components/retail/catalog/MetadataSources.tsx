@@ -12,6 +12,8 @@ const fieldLabels: Readonly<Record<string, string>> = {
   description: "Description",
   provider: "Model author",
   name: "Model name",
+  benchmarks: "Benchmark observations",
+  model_identity: "Model identity",
   context_length: "Input context",
   context_window: "Context window",
   max_output_tokens: "Maximum output",

@@ -11,6 +11,7 @@ from .catalog_sources import catalog_sources_lifespan
 from .catalog_sources import router as catalog_sources_router
 from .channel_store import ChannelStore
 from .channels import router as channels_router
+from .model_metrics import router as model_metrics_router
 from .pool_pricing import pool_default_discount, set_pool_default_discount
 from .pool_store import (
     PoolAccess,
@@ -25,6 +26,7 @@ router: Final = APIRouter(prefix="/retail", tags=["Resource pools"], lifespan=ca
 router.include_router(channels_router)
 router.include_router(catalog_router)
 router.include_router(catalog_sources_router)
+router.include_router(model_metrics_router)
 
 
 class PoolUpsert(PoolDefinition):

@@ -16,6 +16,7 @@ export type LineChartProps<TDatum extends Record<string, unknown>> = {
   colors?: readonly ChartColor[];
   valueFormatter?: (value: number) => string;
   yAxisWidth?: number;
+  yAxisDomain?: readonly [number, number];
   tickGap?: number;
   showLegend?: boolean;
   showXAxis?: boolean;
@@ -36,6 +37,7 @@ export function LineChart<TDatum extends Record<string, unknown>>({
   colors,
   valueFormatter,
   yAxisWidth = 56,
+  yAxisDomain,
   tickGap = 5,
   showLegend = true,
   showXAxis = true,
@@ -64,7 +66,13 @@ export function LineChart<TDatum extends Record<string, unknown>>({
           minTickGap={tickGap}
           interval="equidistantPreserveStart"
         />
-        <YAxis width={yAxisWidth} tickLine={false} axisLine={false} tickFormatter={valueFormatter} />
+        <YAxis
+          width={yAxisWidth}
+          domain={yAxisDomain ? [...yAxisDomain] : undefined}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={valueFormatter}
+        />
         {showTooltip && (
           <ChartTooltip
             content={({ active, payload, label }) => (

@@ -15287,6 +15287,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/model-metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Personal Model Metrics */
+        get: operations["personal_model_metrics_retail_model_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/plans": {
         parameters: {
             query?: never;
@@ -15347,6 +15364,23 @@ export interface paths {
         };
         /** Public Catalog */
         get: operations["public_catalog_retail_public_model_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/public/model-metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Public Model Metrics */
+        get: operations["public_model_metrics_retail_public_model_metrics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -28282,6 +28316,39 @@ export interface components {
             /** Entities */
             entities: components["schemas"]["BedrockChecksSensitiveInformationEntityItem"][];
         };
+        /** BenchmarkRecord */
+        BenchmarkRecord: {
+            /** Dataset */
+            dataset?: string | null;
+            /** Evaluated At */
+            evaluated_at?: string | null;
+            /** Harness */
+            harness?: string | null;
+            /** Metric */
+            metric?: string | null;
+            /** Name */
+            name: string;
+            /** Rank */
+            rank?: number | null;
+            /**
+             * Retrieved At
+             * Format: date-time
+             */
+            retrieved_at: string;
+            /** Score */
+            score: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "models_dev" | "openrouter";
+            /** Source Url */
+            source_url: string;
+            /** Variant */
+            variant?: string | null;
+            /** Version */
+            version?: string | null;
+        };
         /** BindingsRequest */
         BindingsRequest: {
             /** Bindings */
@@ -29678,6 +29745,11 @@ export interface components {
         CatalogModel: {
             /** Available To Me */
             available_to_me: boolean;
+            /**
+             * Benchmarks
+             * @default []
+             */
+            benchmarks: components["schemas"]["BenchmarkRecord"][];
             capabilities: components["schemas"]["CatalogCapabilities"];
             /** Context Length */
             context_length?: number | null;
@@ -40585,6 +40657,170 @@ export interface components {
              * @enum {string}
              */
             role: "system" | "user" | "assistant";
+        };
+        /**
+         * ModelMetricHours
+         * @enum {integer}
+         */
+        ModelMetricHours: 24 | 168 | 720;
+        /** ModelMetricSummary */
+        ModelMetricSummary: {
+            /**
+             * Failed Requests
+             * @default 0
+             */
+            failed_requests: number;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Latency P50 Ms */
+            latency_p50_ms?: number | null;
+            /** Latency P95 Ms */
+            latency_p95_ms?: number | null;
+            /**
+             * Latency Samples
+             * @default 0
+             */
+            latency_samples: number;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Output Tokens Per Second P50 */
+            output_tokens_per_second_p50?: number | null;
+            /**
+             * Requests
+             * @default 0
+             */
+            requests: number;
+            /** Success Rate Pct */
+            success_rate_pct?: number | null;
+            /**
+             * Successful Requests
+             * @default 0
+             */
+            successful_requests: number;
+            /**
+             * Throughput Samples
+             * @default 0
+             */
+            throughput_samples: number;
+            /** Total Tokens */
+            total_tokens?: number | null;
+            /** Ttft P50 Ms */
+            ttft_p50_ms?: number | null;
+            /** Ttft P95 Ms */
+            ttft_p95_ms?: number | null;
+            /**
+             * Ttft Samples
+             * @default 0
+             */
+            ttft_samples: number;
+            /**
+             * Unknown Status Requests
+             * @default 0
+             */
+            unknown_status_requests: number;
+            /**
+             * Usage Samples
+             * @default 0
+             */
+            usage_samples: number;
+        };
+        /** ModelMetricsPage */
+        ModelMetricsPage: {
+            /** Model */
+            model: string;
+            /** Notes */
+            notes: string[];
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "gateway" | "account";
+            summary: components["schemas"]["ModelMetricSummary"];
+            /** Trend */
+            trend: components["schemas"]["ModelMetricsTrend"][];
+            window: components["schemas"]["ModelMetricsWindow"];
+        };
+        /** ModelMetricsTrend */
+        ModelMetricsTrend: {
+            /**
+             * Failed Requests
+             * @default 0
+             */
+            failed_requests: number;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Latency P50 Ms */
+            latency_p50_ms?: number | null;
+            /** Latency P95 Ms */
+            latency_p95_ms?: number | null;
+            /**
+             * Latency Samples
+             * @default 0
+             */
+            latency_samples: number;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Output Tokens Per Second P50 */
+            output_tokens_per_second_p50?: number | null;
+            /**
+             * Requests
+             * @default 0
+             */
+            requests: number;
+            /** Success Rate Pct */
+            success_rate_pct?: number | null;
+            /**
+             * Successful Requests
+             * @default 0
+             */
+            successful_requests: number;
+            /**
+             * Throughput Samples
+             * @default 0
+             */
+            throughput_samples: number;
+            /**
+             * Time
+             * Format: date-time
+             */
+            time: string;
+            /** Total Tokens */
+            total_tokens?: number | null;
+            /** Ttft P50 Ms */
+            ttft_p50_ms?: number | null;
+            /** Ttft P95 Ms */
+            ttft_p95_ms?: number | null;
+            /**
+             * Ttft Samples
+             * @default 0
+             */
+            ttft_samples: number;
+            /**
+             * Unknown Status Requests
+             * @default 0
+             */
+            unknown_status_requests: number;
+            /**
+             * Usage Samples
+             * @default 0
+             */
+            usage_samples: number;
+        };
+        /** ModelMetricsWindow */
+        ModelMetricsWindow: {
+            /** Bucket Minutes */
+            bucket_minutes: number;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            hours: components["schemas"]["ModelMetricHours"];
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
         };
         /** ModelParams */
         ModelParams: {
@@ -75109,6 +75345,38 @@ export interface operations {
             };
         };
     };
+    personal_model_metrics_retail_model_metrics_get: {
+        parameters: {
+            query: {
+                model: string;
+                hours?: components["schemas"]["ModelMetricHours"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelMetricsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     plans_retail_plans_get: {
         parameters: {
             query?: never;
@@ -75204,6 +75472,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CatalogPage"];
+                };
+            };
+        };
+    };
+    public_model_metrics_retail_public_model_metrics_get: {
+        parameters: {
+            query: {
+                model: string;
+                hours?: components["schemas"]["ModelMetricHours"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelMetricsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

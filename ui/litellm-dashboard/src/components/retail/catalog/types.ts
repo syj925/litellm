@@ -43,6 +43,21 @@ export interface CatalogMetadataSource {
   model_id: string | null;
 }
 
+export interface BenchmarkRecord {
+  name: string;
+  score: number;
+  metric: string | null;
+  source_url: string;
+  source: "models_dev" | "openrouter";
+  retrieved_at: string;
+  version: string | null;
+  harness: string | null;
+  dataset: string | null;
+  variant: string | null;
+  evaluated_at: string | null;
+  rank: number | null;
+}
+
 export interface CatalogModel {
   id: string;
   name: string;
@@ -58,6 +73,7 @@ export interface CatalogModel {
   metadata_source: "reference_catalog" | "deployment" | null;
   metadata_sources?: CatalogMetadataSource[];
   metadata_conflicts?: string[];
+  benchmarks?: BenchmarkRecord[];
   available_to_me: boolean;
   offers: CatalogOffer[];
   reference_pricing?: CatalogTokenPrice | null;
@@ -68,7 +84,34 @@ export interface CatalogResponse {
   metadata_note: string;
 }
 
-export const catalogDetailTabs = ["overview", "resources", "pricing", "api"] as const;
+export interface ModelPerformanceMetrics {
+  requests: number;
+  successful_requests: number;
+  failed_requests: number;
+  unknown_status_requests: number;
+  success_rate_pct: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  latency_p50_ms: number | null;
+  latency_p95_ms: number | null;
+  ttft_p50_ms: number | null;
+  ttft_p95_ms: number | null;
+  output_tokens_per_second_p50: number | null;
+  ttft_samples: number;
+  throughput_samples: number;
+}
+
+export interface ModelPerformanceResponse {
+  model: string;
+  scope: "gateway" | "account";
+  window: { start: string; end: string; hours: number; bucket_minutes: number };
+  summary: ModelPerformanceMetrics;
+  trend: (ModelPerformanceMetrics & { time: string })[];
+  notes?: string[];
+}
+
+export const catalogDetailTabs = ["overview", "resources", "performance", "benchmarks", "pricing", "api"] as const;
 export type CatalogDetailTab = (typeof catalogDetailTabs)[number];
 export type CatalogPriceBasis = "reference" | "customer";
 

@@ -17,6 +17,7 @@ import CatalogFilters, { CatalogSelect } from "./CatalogFilters";
 import CatalogModelList from "./CatalogModelList";
 import CatalogModelDetail from "./CatalogModelDetail";
 import CatalogCompare from "./CatalogCompare";
+import ModelBenchmarkExplorer from "./ModelBenchmarkExplorer";
 import { catalogParsers, filterCatalog, type CatalogFilters as Filters } from "./catalogState";
 import type { CatalogResponse } from "./types";
 
@@ -123,6 +124,7 @@ export default function ModelCatalogBrowser({
           onBack={() => void setFilters({ model: null, model_tab: null })}
           apiBaseUrl={apiBaseUrl}
           publicView={publicView}
+          accessToken={accessToken}
         />
       </div>
     );
@@ -159,6 +161,7 @@ export default function ModelCatalogBrowser({
             <Columns3 />
             Compare{compared.length > 0 ? ` (${compared.length})` : ""}
           </Button>
+          <ModelBenchmarkExplorer models={visible} />
           <Button
             variant="outline"
             size="icon"

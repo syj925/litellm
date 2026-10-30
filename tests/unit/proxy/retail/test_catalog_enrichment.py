@@ -144,3 +144,22 @@ def test_enrichment_preserves_exact_request_id_and_pricing() -> None:
     assert after.reference_pricing == before.reference_pricing
     assert after.offers == before.offers
     assert all(value not in after.model_dump_json() for value in ("supplier.invalid", '"api_key"'))
+
+
+def test_model_benchmarks_keep_source_and_protocol_without_averaging_or_alias_guessing() -> None:
+    benchmark: Final = {
+        "name": "Fixture benchmark", "score": 61.2, "metric": "accuracy", "source": "models_dev",
+        "source_url": "https://benchmark.invalid/report", "retrieved_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "version": "v2", "harness": "fixture-harness",
+    }
+    primary: Final = _record("models_dev", benchmarks=(benchmark,))
+    secondary: Final = _record("openrouter", benchmarks=({**benchmark, "source": "openrouter", "score": 64.0},))
+    index: Final = {(item.source, item.id): item for item in (primary, secondary)}
+    result: Final = resolve_metadata("public-alias", (_deployment(),), _baseline(), index)
+    assert len(result.benchmarks) == 2
+    assert result.benchmarks[0] is primary.benchmarks[0]
+    assert result.benchmarks[1] is secondary.benchmarks[0]
+    assert all(item.version == benchmark["version"] and item.harness == benchmark["harness"] for item in result.benchmarks)
+    assert all("benchmarks" in item.fields for item in result.sources if item.source in {"models_dev", "openrouter"})
+    mismatched: Final = resolve_metadata("public-alias", (_deployment("anthropic/other-model"),), _baseline(), index)
+    assert mismatched.benchmarks == ()

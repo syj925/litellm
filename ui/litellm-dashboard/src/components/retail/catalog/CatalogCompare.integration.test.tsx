@@ -75,7 +75,7 @@ describe("CatalogCompare", () => {
   it("compares access, specifications and the two price bases without inventing unknown values", () => {
     render(<CatalogCompare models={[available, unlisted]} open onOpenChange={vi.fn()} basis="customer" />);
     const dialog = screen.getByRole("dialog", { name: "Compare models" });
-    expect(within(dialog).getByText("Claude Sonnet 4.5")).toBeInTheDocument();
+    expect(within(dialog).getByRole("columnheader", { name: /Claude Sonnet 4.5/ })).toBeInTheDocument();
     expect(within(dialog).getByText(available.id)).toBeInTheDocument();
     expect(within(dialog).getByText(unlisted.id)).toBeInTheDocument();
     const context = within(dialog).getByRole("row", { name: /Input context window/ });
@@ -99,5 +99,21 @@ describe("CatalogCompare", () => {
     expect(clipboard).toHaveBeenCalledWith(available.id);
     await user.click(screen.getByRole("button", { name: "Close" }));
     expect(onOpenChange).toHaveBeenCalledWith(false, expect.anything());
+  });
+
+  it("charts exact token limits on a shared scale for each metric and keeps missing limits unknown", () => {
+    const large: CatalogModel = { ...available, id: "fixture-large", name: "Fixture large", context_window: 200000, context_length: 120000 };
+    const small: CatalogModel = { ...unlisted, id: "fixture-small", name: "Fixture small", context_window: 100000, context_length: 60000 };
+    render(<CatalogCompare models={[large, small]} open onOpenChange={vi.fn()} basis="reference" publicView />);
+    const context = screen.getByRole("figure", { name: "Total context window comparison" });
+    const largeMeter = within(context).getByRole("meter", { name: "Fixture large Total context window" });
+    const smallMeter = within(context).getByRole("meter", { name: "Fixture small Total context window" });
+    expect(largeMeter).toHaveAttribute("aria-valuenow", String(large.context_window));
+    expect(smallMeter).toHaveAttribute("aria-valuemax", String(large.context_window));
+    expect(smallMeter.firstElementChild).toHaveStyle({ width: "50%" });
+    const output = screen.getByRole("figure", { name: "Maximum output comparison" });
+    expect(within(output).queryByRole("meter")).not.toBeInTheDocument();
+    expect(within(output).getAllByText("Not specified")).toHaveLength(2);
+    expect(screen.getByText(/these are not quality scores/i)).toBeInTheDocument();
   });
 });

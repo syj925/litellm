@@ -53,6 +53,21 @@ describe("LineChart", () => {
     expect(screen.getAllByText(/ req$/).length).toBeGreaterThan(0);
   });
 
+  it("keeps the full percentage scale for sparse success-rate observations", () => {
+    render(
+      <LineChart
+        data={[{ date: "Fixture day", rate: 42.9 }]}
+        index="date"
+        categories={["rate"]}
+        yAxisDomain={[0, 100]}
+        valueFormatter={(value) => `${value}%`}
+        showLegend={false}
+      />,
+    );
+    expect(screen.getByText("0%")).toBeInTheDocument();
+    expect(screen.getByText("100%")).toBeInTheDocument();
+  });
+
   it("renders a legend by default, matching tremor, and hides it when showLegend is false", () => {
     const { container, rerender } = render(
       <LineChart data={data} index="date" categories={["/chat/completions"]} colors={["blue"]} />,

@@ -213,3 +213,16 @@ CREATE TABLE IF NOT EXISTS retail_catalog_sources (
     last_error TEXT,
     content_sha256 TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS retail_model_observations (
+    litellm_call_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    started_at TIMESTAMP(3) NOT NULL,
+    first_output_at TIMESTAMP(3) NOT NULL,
+    ended_at TIMESTAMP(3) NOT NULL,
+    protocol TEXT NOT NULL CHECK (protocol IN ('openai_chat','openai_responses','anthropic','gemini')),
+    output_kind TEXT NOT NULL CHECK (output_kind IN ('text','reasoning','tool_arguments')),
+    PRIMARY KEY (litellm_call_id,user_id,started_at),
+    CHECK (started_at <= first_output_at AND first_output_at <= ended_at)
+);
+CREATE INDEX IF NOT EXISTS retail_model_observations_started_at ON retail_model_observations(started_at);

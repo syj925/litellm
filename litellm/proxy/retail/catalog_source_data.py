@@ -1,10 +1,29 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
+from math import isfinite
 from typing import Final, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 SourceName = Literal["models_dev", "openrouter"]
+
+
+class BenchmarkRecord(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    score: float
+    metric: str | None = None
+    source_url: str
+    source: SourceName
+    retrieved_at: datetime
+    version: str | None = None
+    harness: str | None = None
+    dataset: str | None = None
+    variant: str | None = None
+    evaluated_at: str | None = None
+    rank: int | None = None
 
 
 class ExternalMetadataRecord(BaseModel):
@@ -21,6 +40,7 @@ class ExternalMetadataRecord(BaseModel):
     input_modalities: tuple[str, ...] = ()
     output_modalities: tuple[str, ...] = ()
     capabilities: dict[str, bool | None] = Field(default_factory=dict)
+    benchmarks: tuple[BenchmarkRecord, ...] = ()
     source: SourceName
     source_url: str
     retrieved_at: datetime
@@ -44,6 +64,86 @@ def _integer(value: JsonValue) -> int | None:
 
 def _boolean(value: JsonValue) -> bool | None:
     return value if isinstance(value, bool) else None
+
+
+def _score(value: JsonValue) -> float | None:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    try:
+        number: Final = float(value)
+        return number if isfinite(number) else None
+    except OverflowError:
+        return None
+
+
+def _citation(value: JsonValue) -> str | None:
+    text: Final = _text(value, 2049)
+    if text is None or len(text) > 2048 or any(ord(char) < 33 for char in text):
+        return None
+    try:
+        parsed: Final = urlsplit(text)
+        return text if parsed.scheme in {"http", "https"} and parsed.hostname and not parsed.username and not parsed.password else None
+    except ValueError:
+        return None
+
+
+def _benchmark(raw: JsonValue, retrieved_at: datetime) -> BenchmarkRecord | None:
+    item: Final = mapping(raw)
+    name: Final = _text(item.get("name"), 300)
+    score: Final = _score(item.get("score"))
+    citation: Final = _citation(item.get("source"))
+    if name is None or score is None or citation is None:
+        return None
+    return BenchmarkRecord(
+        name=name, score=score, metric=_text(item.get("metric"), 100), source_url=citation,
+        source="models_dev", retrieved_at=retrieved_at,
+        version=_text(item.get("version"), 100), harness=_text(item.get("harness"), 300),
+        dataset=_text(item.get("dataset"), 300), variant=_text(item.get("variant"), 300),
+        evaluated_at=_text(item.get("date"), 100),
+    )
+
+
+def _model_benchmarks(model: Mapping[str, JsonValue], retrieved_at: datetime) -> tuple[BenchmarkRecord, ...]:
+    candidates: Final = tuple(_benchmark(raw, retrieved_at) for raw in _sequence(model.get("benchmarks")))
+    return tuple(item for item in candidates if item is not None)
+
+
+def _arena_benchmark(raw: JsonValue, citation: str, retrieved_at: datetime) -> BenchmarkRecord | None:
+    item: Final = mapping(raw)
+    score: Final = _score(item.get("elo"))
+    category: Final = _text(item.get("category"), 300)
+    arena: Final = _text(item.get("arena"), 100)
+    if score is None or category is None or arena is None:
+        return None
+    return BenchmarkRecord(
+        name="Design Arena", score=score, metric="Elo", source_url=citation,
+        source="openrouter", retrieved_at=retrieved_at, dataset=arena, variant=category,
+        rank=_integer(item.get("rank")),
+    )
+
+
+def _openrouter_benchmarks(
+    model: Mapping[str, JsonValue], identifier: str, retrieved_at: datetime
+) -> tuple[BenchmarkRecord, ...]:
+    benchmarks: Final = mapping(model.get("benchmarks"))
+    analysis: Final = mapping(benchmarks.get("artificial_analysis"))
+    citation: Final = "https://openrouter.ai/" + identifier + "/benchmarks"
+    names: Final = {
+        "intelligence_index": "Artificial Analysis Intelligence Index",
+        "coding_index": "Artificial Analysis Coding Index",
+        "agentic_index": "Artificial Analysis Agentic Index",
+    }
+    indices: Final = tuple(
+        BenchmarkRecord(
+            name=name, score=score, metric="index", source="openrouter", source_url=citation,
+            retrieved_at=retrieved_at,
+        )
+        for key, name in names.items() if (score := _score(analysis.get(key))) is not None
+    )
+    arena: Final = tuple(
+        _arena_benchmark(raw, citation, retrieved_at) for raw in _sequence(benchmarks.get("design_arena"))
+    )
+    return (*indices, *(item for item in arena if item is not None))
 
 
 def _modality(value: str) -> str:
@@ -131,6 +231,7 @@ def _models_dev_record(
         input_modalities=inputs,
         output_modalities=outputs,
         capabilities=_model_capabilities(model, service, inputs, outputs),
+        benchmarks=_model_benchmarks(model, retrieved_at),
         source="models_dev",
         source_url="https://models.dev/models.json",
         retrieved_at=retrieved_at,
@@ -179,6 +280,7 @@ def _openrouter_record(raw: JsonValue, retrieved_at: datetime) -> ExternalMetada
             "audio_output": _modality_support(outputs, "audio"),
             "pdf_input": _modality_support(inputs, "pdf"),
         },
+        benchmarks=_openrouter_benchmarks(model, identifier, retrieved_at),
         source="openrouter",
         source_url="https://openrouter.ai/api/v1/models",
         retrieved_at=retrieved_at,

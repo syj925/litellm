@@ -8,6 +8,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatContext, getModelIdentity } from "./modelIdentity";
 import { formatCatalogPrice, modelPrice, type CatalogModel, type CatalogPriceBasis } from "./types";
+import SpecificationCharts from "./SpecificationCharts";
+import ModelBenchmarks from "./ModelBenchmarks";
 
 interface CatalogCompareProps {
   models: CatalogModel[];
@@ -83,6 +85,10 @@ export default function CatalogCompare({ models, open, onOpenChange, basis, publ
           </DialogDescription>
         </DialogHeader>
         <div className="min-h-0 min-w-0 max-h-[65dvh] overflow-auto rounded-md border">
+          <SpecificationCharts models={models} />
+          {models.some((model) => model.benchmarks?.length) && (
+            <div className="border-b px-4 pb-4"><ModelBenchmarks models={models} /></div>
+          )}
           <Table className="min-w-[44rem] table-fixed">
             <TableHeader>
               <TableRow>

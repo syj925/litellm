@@ -1,9 +1,11 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
+from itertools import chain
 from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
+from .catalog_source_data import BenchmarkRecord
 from .catalog_sources import ExternalMetadataRecord
 from .pricing import as_mapping
 
@@ -26,6 +28,7 @@ class MetadataResolution(BaseModel):
     context_window: int | None = None
     sources: tuple[MetadataSource, ...] = ()
     conflicts: tuple[str, ...] = ()
+    benchmarks: tuple[BenchmarkRecord, ...] = ()
 
 
 _OVERRIDES: Final = {
@@ -168,7 +171,12 @@ def resolve_metadata(
     secondary: Final = _matching_secondary(identifier, primary, index) if identifier else None
     capability_keys: Final = tuple(as_mapping(baseline.get("capabilities")))
     fields: Final = (*_SCALARS, "context_window", "name", *(f"capabilities.{key}" for key in capability_keys))
-    choices: Final = tuple(_choose(field, baseline, deployments, primary, secondary) for field in fields)
+    specification_choices: Final = tuple(_choose(field, baseline, deployments, primary, secondary) for field in fields)
+    matched: Final = tuple(record for record in (primary, secondary) if record is not None)
+    choices: Final = (*specification_choices, *(
+        _FieldChoice(field="benchmarks", value=len(record.benchmarks), source=record.source, record=record)
+        for record in matched if record.benchmarks
+    ))
     values: Final = {choice.field: choice.value for choice in choices}
     conflicts: Final = tuple(
         field for field in fields
@@ -189,4 +197,5 @@ def resolve_metadata(
             if (item := _provenance(source, choices, public_id)) is not None
         ),
         conflicts=(*conflicts, *(("model_identity",) if len(identities) > 1 else ())),
+        benchmarks=tuple(chain.from_iterable(record.benchmarks for record in matched)),
     )

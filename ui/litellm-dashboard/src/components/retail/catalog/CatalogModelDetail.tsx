@@ -16,6 +16,8 @@ import { sourceKindLabel } from "../pools/types";
 import { getModelIdentity, formatContext } from "./modelIdentity";
 import { catalogDescription } from "./catalogState";
 import { MetadataSourceDetails } from "./MetadataSources";
+import ModelPerformance from "./ModelPerformance";
+import ModelBenchmarks from "./ModelBenchmarks";
 import {
   catalogDetailTabs,
   discountLabel,
@@ -40,6 +42,7 @@ interface CatalogModelDetailProps {
   onBack: () => void;
   apiBaseUrl: string;
   publicView?: boolean;
+  accessToken?: string | null;
 }
 
 interface ModelSectionProps {
@@ -69,6 +72,8 @@ const sourceLogoProviders: Readonly<Record<string, string>> = {
 const tabLabels: Readonly<Record<CatalogDetailTab, string>> = {
   overview: "Overview",
   resources: "Resources",
+  performance: "Performance",
+  benchmarks: "Benchmarks",
   pricing: "Pricing",
   api: "API",
 };
@@ -433,6 +438,7 @@ export default function CatalogModelDetail({
   onBack,
   apiBaseUrl,
   publicView = false,
+  accessToken,
 }: CatalogModelDetailProps) {
   const identity = getModelIdentity(model.id, model.provider);
   const displayName = model.name && model.name !== model.id ? model.name : identity.displayName;
@@ -509,6 +515,12 @@ export default function CatalogModelDetail({
         </TabsContent>
         <TabsContent value="resources">
           <CatalogResources model={model} publicView={publicView} />
+        </TabsContent>
+        <TabsContent value="performance">
+          <ModelPerformance model={model.id} publicView={publicView} accessToken={accessToken} />
+        </TabsContent>
+        <TabsContent value="benchmarks">
+          <ModelBenchmarks models={[model]} />
         </TabsContent>
         <TabsContent value="pricing">
           <CatalogPricingPanel model={model} publicView={publicView} />

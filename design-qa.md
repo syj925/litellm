@@ -1,3 +1,32 @@
+# Model performance, specification and benchmark charts QA
+
+final result: passed for the reviewed desktop states on 2026-10-30
+
+The directory now opens benchmark charts for the current filter, model details include Performance and Benchmarks tabs, and Compare models includes token-limit charts. Existing LiteLLM typography, provider icons, neutral borders and chart colors are retained. The final desktop captures use a 1280 x 720 viewport at density 1
+
+| Evidence | Location |
+| --- | --- |
+| Filtered model benchmark explorer | C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/model-benchmark-explorer-proof.png |
+| Specification comparison and benchmark selector | C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/model-specification-compare-proof.png |
+| Live request traffic and success rate | C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/model-site-traffic-final.png |
+| Missing timing samples and measurement notes | C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/model-site-performance-charts-proof.png |
+
+The final browser review covered the filtered Benchmarks dialog, model comparison, public Performance tab and 24-hour/7-day range switching. Controls and labels remain readable, dialogs scroll, and sparse success samples remain visible on a fixed 0-100% scale. Browser error and warning collections were empty. Mobile and dark-theme acceptance were not performed
+
+Saved source snapshots provide 620 benchmark observations across 35 of the 44 configured public models at verification time. Each result retains source and protocol settings. Different sources, versions, harnesses, datasets and variants are separate choices. Index points and Elo keep their original units, unknown metrics remain a raw table, and declared capabilities never become fabricated evaluation scores. Specification charts compare declared token limits and do not imply quality rankings
+
+Live site statistics returned seven requests for the reviewed model, three successful and four failed, with the same totals in the trend buckets. Public charts aggregate current public resources, while account charts require current pool/model authorization and include only the authenticated user's requests. Missing samples stay unknown. The API excludes credentials, user identifiers, upstream addresses, raw errors and financial fields
+
+Verification exposed two timing issues and both were fixed before delivery. Native completionStartTime may be a control event or an end-time fallback, so it is never used as verified TTFT. The original logging start can also differ from the persisted native log start; the observer uses the native success callback's exact start rather than a time tolerance. Existing unverified logs therefore have no TTFT or speed sample
+
+An isolated running LiteLLM proxy and local Anthropic SSE server passed seven checks. Opening and heartbeat events preceded actual text; the collector recorded the later model output and left every response chunk unchanged. PostgreSQL observations joined the native log by call ID, account and exact millisecond start, producing a verified TTFT near 496 ms and an observed output-speed sample. This was a local protocol fixture, not a paid vendor call. Other recognized protocol parsers have unit coverage
+
+The combined backend run passed 85 checks. A persisted PostgreSQL observation regression and 13 independent SQL cases passed. The final combined UI run passed 29 checks, followed by 10 benchmark/explorer checks after coverage-selection refinements and 10 shared-chart checks after the fixed percentage axis. Three pure trend-data tests also passed. Production TypeScript, scoped Python/frontend lint and the final webpack build passed
+
+The local service is healthy. Before/after fingerprints for live channels, native models, pool bindings, price configuration and wallets matched exactly. Source refresh imported benchmark metadata without changing reference prices or billing. No paid inference request was made. Observation writes and aggregate queries are bounded; historical missing measurements remain visible as unavailable
+
+---
+
 # Dual-source model metadata QA
 
 final result: passed for the reviewed desktop states

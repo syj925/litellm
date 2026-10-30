@@ -12,6 +12,7 @@ from litellm.litellm_core_utils.get_model_cost_map import GetModelCostMap
 
 from .api import Store, User
 from .catalog_enrichment import MetadataSource, resolve_metadata
+from .catalog_source_data import BenchmarkRecord
 from .catalog_sources import ExternalMetadataRecord, read_records
 from .pool_pricing import _PoolFactors, pool_discount_view
 from .pool_store import (
@@ -91,6 +92,7 @@ class CatalogModel(BaseModel):
     metadata_source: Literal["reference_catalog", "deployment"] | None = None
     metadata_sources: tuple[MetadataSource, ...] = ()
     metadata_conflicts: tuple[str, ...] = ()
+    benchmarks: tuple[BenchmarkRecord, ...] = ()
     reference_pricing: CatalogRates | None = None
     available_to_me: bool
     offers: tuple[CatalogOffer, ...]
@@ -366,6 +368,7 @@ def _model_entry(
         metadata_source=metadata.source,
         metadata_sources=resolution.sources,
         metadata_conflicts=resolution.conflicts,
+        benchmarks=resolution.benchmarks,
         reference_pricing=reference_rates,
         available_to_me=any(offer.available_to_me for offer in offers),
         offers=offers,

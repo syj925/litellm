@@ -112,3 +112,61 @@ def test_generic_file_input_does_not_assert_pdf_is_unsupported():
     }
     record: Final = normalize_openrouter(document, _NOW)[0]
     assert record.capabilities["pdf_input"] is None
+
+
+def test_models_dev_benchmarks_preserve_source_units_and_test_protocol_without_combining_variants():
+    benchmark: Final[dict[str, JsonValue]] = {
+        "name": "Fixture benchmark", "score": 57.8, "metric": "accuracy", "version": "v2",
+        "harness": "Fixture harness", "dataset": "held-out", "variant": "high",
+        "source": "https://research.invalid/result", "date": "2026-01-01",
+    }
+    models: Final[dict[str, JsonValue]] = {
+        "lab/model": {"benchmarks": [benchmark, {**benchmark, "score": 62.1, "variant": "max"}]}
+    }
+    records: Final = normalize_models_dev(models, {}, _NOW)[0].benchmarks
+    assert len(records) == 2
+    first: Final = records[0]
+    assert first.score == benchmark["score"]
+    assert first.metric == benchmark["metric"]
+    assert first.version == benchmark["version"]
+    assert first.harness == benchmark["harness"]
+    assert first.dataset == benchmark["dataset"]
+    assert first.source_url == benchmark["source"]
+    assert first.retrieved_at == _NOW
+    assert first.evaluated_at == benchmark["date"]
+    assert first.variant != records[1].variant
+
+
+def test_models_dev_benchmark_scores_require_a_safe_citation_and_finite_numeric_score():
+    valid: Final[dict[str, JsonValue]] = {
+        "name": "Fixture", "score": 0, "metric": "index", "source": "https://research.invalid/result"
+    }
+    models: Final[dict[str, JsonValue]] = {"lab/model": {"benchmarks": [
+        valid, {**valid, "score": True}, {**valid, "score": float("nan")},
+        {**valid, "source": "javascript:alert(1)"}, {**valid, "source": "https://user:secret@research.invalid"},
+        {"name": "Uncited score", "score": 80},
+    ]}}
+    records: Final = normalize_models_dev(models, {}, _NOW)[0].benchmarks
+    assert len(records) == 1
+    assert records[0].score == valid["score"]
+
+
+def test_openrouter_indices_and_arena_scores_keep_separate_metric_units_and_source_ranks():
+    document: Final[dict[str, JsonValue]] = {"data": [{
+        "id": "lab/model", "pricing": {"prompt": "111"}, "latency": 0.001,
+        "benchmarks": {
+            "artificial_analysis": {"intelligence_index": 51.4, "coding_index": None, "agentic_index": 0},
+            "design_arena": [{"arena": "models", "category": "website", "elo": 1450, "rank": 2, "win_rate": 71}],
+        },
+    }]}
+    records: Final = normalize_openrouter(document, _NOW)[0].benchmarks
+    assert len(records) == 3
+    assert {item.metric for item in records} == {"index", "Elo"}
+    assert any(item.score == 0 and item.metric == "index" for item in records)
+    arena: Final = next(item for item in records if item.metric == "Elo")
+    assert arena.dataset == "models"
+    assert arena.variant == "website"
+    assert arena.rank == 2
+    assert arena.score == 1450
+    assert all(item.source == "openrouter" and item.source_url.endswith("/benchmarks") for item in records)
+    assert all(not {"pricing", "latency", "win_rate"}.intersection(item.model_dump()) for item in records)
