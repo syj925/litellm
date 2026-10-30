@@ -275,8 +275,22 @@ def choose_route(
 ) -> PoolRouteDecision | None:
     if not settings.routing_enabled and policy is None:
         return None
+    routing: Final = _runtime_policy(policy)
+    if routing.mode == "fixed":
+        fixed: Final = next((pool for pool in pools if pool.id == routing.pool_id and pool.enabled), None)
+        if fixed is not None and not any(binding.pool_id == fixed.id for binding in bindings):
+            authorized: Final = (
+                fixed.visibility == "public"
+                if access.mode == "inherit"
+                else any(
+                    grant.pool_id == fixed.id and (grant.models == "*" or model in grant.models)
+                    for grant in access.grants
+                )
+            )
+            if authorized:
+                raise HTTPException(503, "The selected resource pool has no upstream deployments yet")
     account: Final = effective_account_grants(access, pools, bindings)
-    grants: Final = effective_key_grants(_runtime_policy(policy), account, strict=False)
+    grants: Final = effective_key_grants(routing, account, strict=False)
     eligible: Final = frozenset(grant.pool_id for grant in grants if grant.models == "*" or model in grant.models)
     if not eligible:
         raise HTTPException(403, "This API key and account do not allow the requested pool/model pair")
@@ -409,10 +423,6 @@ class PoolStore:
             )
             if definition.enabled:
                 validate_bindings(selected, catalog)
-                if not selected:
-                    raise HTTPException(
-                        400, "Publishing a resource pool requires at least one valid deployment binding"
-                    )
             from .channel_store import validate_channel_bindings
 
             await validate_channel_bindings(connection, definition.id, selected)
@@ -475,8 +485,6 @@ class PoolStore:
             )
             if row is None:
                 raise HTTPException(404, "Resource pool does not exist")
-            if row.enabled and not bindings:
-                raise HTTPException(400, "Disable the resource pool before removing every binding")
             await self._replace_bindings(connection, pool_id, bindings)
             updated: Final = await _one(
                 connection,

@@ -215,18 +215,21 @@ it("shows same-name models under explicit channel names and locks channel member
   expect(writes[0]).toMatchObject({ path: "/retail/admin/pools/pool-a", body: { bindings: pool.bindings } });
 });
 
-it("allows an empty draft while preventing publication without an upstream binding", async () => {
+it.each([
+  { button: "Save draft", enabled: false },
+  { button: "Save and publish", enabled: true },
+])("creates an empty pool through $button so a channel can be assigned later", async ({ button, enabled }) => {
   const writes = serveApi();
+  const onClose = vi.fn();
   mount(
-    <PoolWizard accessToken="test-admin" seed={{ name: "Anthropic", source_kind: "anthropic" }} onClose={vi.fn()} />,
+    <PoolWizard accessToken="test-admin" seed={{ name: "Anthropic", source_kind: "anthropic" }} onClose={onClose} />,
   );
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-  fireEvent.click(screen.getByRole("button", { name: "Save and publish" }));
-  expect(screen.getByRole("alert")).toHaveTextContent("Add at least one upstream deployment");
+  expect(screen.getByText(/It cannot serve requests until deployments are assigned/)).toBeInTheDocument();
   expect(writes).toEqual([]);
-  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  fireEvent.click(screen.getByRole("button", { name: button }));
   await waitFor(() =>
     expect(writes).toEqual([
       {
@@ -237,7 +240,7 @@ it("allows an empty draft while preventing publication without an upstream bindi
           source_kind: "anthropic",
           description: "",
           priority: 0,
-          enabled: false,
+          enabled,
           visibility: "restricted",
           default_discount: "1",
           bindings: [],
@@ -245,6 +248,34 @@ it("allows an empty draft while preventing publication without an upstream bindi
       },
     ]),
   );
+  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+});
+
+it("keeps an empty pool's configuration available when the server rejects its creation", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_input: string, options?: RequestInit) =>
+      options?.method === "POST"
+        ? new Response(JSON.stringify({ detail: "This resource pool ID already exists" }), { status: 409 })
+        : new Response(JSON.stringify({ items: [] }), { status: 200 }),
+    ),
+  );
+  const onClose = vi.fn();
+  mount(
+    <PoolWizard accessToken="test-admin" seed={{ name: "Anthropic", source_kind: "anthropic" }} onClose={onClose} />,
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Pool name" }), { target: { value: "My empty resource pool" } });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save and publish" }));
+  expect(await screen.findByText("This resource pool ID already exists")).toBeInTheDocument();
+  expect(onClose).not.toHaveBeenCalled();
+  expect(screen.getByText("My empty resource pool")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  expect(screen.getByRole("textbox", { name: "Pool name" })).toHaveValue("My empty resource pool");
 });
 
 it("saves only explicit account pool-model pairs without creating cross-pool combinations", async () => {

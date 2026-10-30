@@ -191,6 +191,69 @@ def test_removed_native_deployments_are_unavailable_without_broadening_to_other_
     assert failure.value.status_code == 503
 
 
+def test_fixed_empty_pool_returns_unavailable_without_falling_back_to_another_resource() -> None:
+    with pytest.raises(HTTPException) as failure:
+        choose_route(
+            _Settings(routing_enabled=True, version=1),
+            (_pool("empty", priority=1), _pool("ready", priority=2)),
+            (_binding("ready", "available", "model-a"),),
+            PoolAccess(),
+            "model-a",
+            {"mode": "fixed", "pool_id": "empty"},
+            (_deployment("available", "model-a"),),
+        )
+    assert failure.value.status_code == 503
+
+
+def test_automatic_routing_skips_empty_pool_without_granting_it_models() -> None:
+    pools: Final = (_pool("empty", priority=1), _pool("ready", priority=2))
+    bindings: Final = (_binding("ready", "available", "model-a"),)
+    deployments: Final = (_deployment("available", "model-a"),)
+    route: Final = choose_route(
+        _Settings(routing_enabled=True, version=1), pools, bindings, PoolAccess(), "model-a", None, deployments
+    )
+    assert route is not None and route.pool_id == "ready" and route.allowed_deployment_ids == ("available",)
+    assert effective_account_grants(PoolAccess(), pools, bindings) == (PoolGrant(pool_id="ready", models=("model-a",)),)
+    assert (
+        allowed_model_names(PoolAccess(), pools, bindings, {"mode": "fixed", "pool_id": "empty"}, deployments)
+        == frozenset()
+    )
+
+
+@pytest.mark.parametrize(
+    ("access", "pool", "status"),
+    (
+        (PoolAccess(), _pool("empty", visibility="restricted"), 403),
+        (PoolAccess(), _pool("empty", enabled=False), 403),
+        (PoolAccess(mode="custom"), _pool("empty"), 403),
+        (
+            PoolAccess(mode="custom", grants=(PoolGrant(pool_id="empty", models=("other",)),)),
+            _pool("empty", visibility="restricted"),
+            403,
+        ),
+        (
+            PoolAccess(mode="custom", grants=(PoolGrant(pool_id="empty", models=("model-a",)),)),
+            _pool("empty", visibility="restricted"),
+            503,
+        ),
+    ),
+)
+def test_empty_fixed_pool_still_respects_account_and_pool_authorization(
+    access: PoolAccess, pool: _PoolRow, status: int
+) -> None:
+    with pytest.raises(HTTPException) as failure:
+        choose_route(
+            _Settings(routing_enabled=False, version=1),
+            (pool,),
+            (),
+            access,
+            "model-a",
+            {"mode": "fixed", "pool_id": "empty"},
+            (),
+        )
+    assert failure.value.status_code == status
+
+
 def test_model_discovery_filters_to_the_fixed_pool_and_excludes_models_available_only_elsewhere() -> None:
     pools: Final = (_pool("pool-a"), _pool("pool-b"))
     bindings: Final = (

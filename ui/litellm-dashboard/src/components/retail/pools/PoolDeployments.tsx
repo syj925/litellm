@@ -58,8 +58,8 @@ export default function PoolDeployments({
           <p className="font-medium">Assign named channels when you add an upstream</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             Each channel has a name and one resource pool. All models added through that channel appear together here,
-            even when their public model names match another channel. Save an empty draft first if you are creating a
-            new pool, then choose it when adding a channel.
+            even when their public model names match another channel. Create this pool first, as a draft or published
+            pool, then choose it when adding a channel.
           </p>
         </div>
         <Button

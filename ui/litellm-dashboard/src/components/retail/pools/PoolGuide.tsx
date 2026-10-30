@@ -31,7 +31,7 @@ export default function PoolGuide({
       icon: Layers,
       complete: progress.pools > 0,
       description:
-        "Give the resource pool a name your customers can understand. Choose its resource source and save a draft. You can add named channels after the pool exists, before publishing it.",
+        "Give the resource pool a name your customers can understand. Choose its resource source, then save a draft or publish the pool. You can add named channels after the pool exists. It cannot serve requests until deployments are assigned.",
       action: "Create your first pool",
       run: onCreate,
     },

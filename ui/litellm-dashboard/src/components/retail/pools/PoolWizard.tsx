@@ -117,10 +117,6 @@ export default function PoolWizard({
     if (!error) setStep(step + 1);
   };
   const submit = (publish: boolean) => {
-    if (publish && !bindings.length) {
-      setValidation("Add at least one upstream deployment before publishing this pool.");
-      return;
-    }
     const error = [0, 1, 2].map(validateStep).find(Boolean);
     if (error) {
       setValidation(error);
@@ -324,12 +320,18 @@ export default function PoolWizard({
               <p className="mt-3 text-sm font-medium">{price ? discountDescription(price) : "Invalid discount"}</p>
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 Bindings, source, visibility, and pricing are saved atomically. Saving a draft keeps it unavailable to
-                customer requests. Publishing makes this pool available to explicitly configured resource-routing keys.
-                Site-wide activation also applies pool routing to legacy keys.
+                customer requests. Publishing makes assigned models available to explicitly configured resource-routing
+                keys. Site-wide activation also applies pool routing to legacy keys.
               </p>
             </div>
             <div className="rounded-lg border p-4 sm:col-span-2">
               <p className="mb-2 text-xs text-muted-foreground">Public models in this pool</p>
+              {models.length === 0 && (
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  Create this pool now, then select it when adding a channel. It cannot serve requests until deployments
+                  are assigned.
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 {models.map((model) => (
                   <Badge variant="secondary" key={model}>

@@ -254,7 +254,7 @@ export default function ResourcePoolsPanel() {
             description={
               items.length
                 ? "Try another pool name, source, or ID."
-                : "Save a draft pool, then choose it when creating a named channel. Existing deployments can be named and grouped in Channels."
+                : "Create a pool, then choose it when creating a named channel. Existing deployments can be named and grouped in Channels."
             }
           />
         )}
