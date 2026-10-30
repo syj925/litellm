@@ -491,6 +491,14 @@ def _fetch_anthropic_model_ids(
     raise Exception(f"Anthropic /v1/models did not terminate within {_MODEL_LIST_PAGE_CAP} pages.")
 
 
+def anthropic_messages_url(api_base: str) -> str:
+    base: Final = api_base.rstrip("/")
+    if base.endswith("/v1/messages"):
+        return base
+    suffix: Final = "/messages" if base.endswith("/v1") else "/v1/messages"
+    return base + suffix
+
+
 class AnthropicModelInfo(BaseLLMModelInfo):
     _workload_identity_eligible: ClassVar[bool] = True
 

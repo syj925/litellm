@@ -1467,6 +1467,43 @@ def _recording_client(seen_urls: list[str]) -> AsyncHTTPHandler:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("api_base", "expected_url"),
+    [
+        ("https://upstream.example", "https://upstream.example/v1/messages"),
+        ("https://upstream.example/", "https://upstream.example/v1/messages"),
+        ("https://upstream.example/v1", "https://upstream.example/v1/messages"),
+        ("https://upstream.example/v1/", "https://upstream.example/v1/messages"),
+        ("https://upstream.example/v1/messages", "https://upstream.example/v1/messages"),
+        ("https://upstream.example/v1/messages/", "https://upstream.example/v1/messages"),
+        ("https://upstream.example/custom/", "https://upstream.example/custom/v1/messages"),
+        ("https://upstream.example/custom/v1/", "https://upstream.example/custom/v1/messages"),
+    ],
+)
+async def test_anthropic_messages_uses_one_messages_endpoint_on_the_wire(api_base: str, expected_url: str):
+    from litellm.llms.anthropic.pass_through.messages import handler
+
+    seen_urls: Final[list[str]] = []
+    client: Final = _recording_client(seen_urls)
+    try:
+        await handler.anthropic_messages(
+            max_tokens=16,
+            messages=[{"role": "user", "content": "ping"}],
+            model="anthropic/claude-opus-5",
+            api_key="sk-ant-test-key",
+            api_base=api_base,
+            client=client,
+        )
+    finally:
+        await asyncio.sleep(0)
+        await GLOBAL_LOGGING_WORKER.flush()
+        await GLOBAL_LOGGING_WORKER.stop()
+        await client.client.aclose()
+
+    assert seen_urls == [expected_url]
+
+
+@pytest.mark.asyncio
 async def test_provider_messages_api_base_env_is_not_shadowed_by_the_chat_default(monkeypatch):
     from litellm.llms.anthropic.pass_through.messages import handler
 

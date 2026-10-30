@@ -110,6 +110,7 @@ from litellm.litellm_core_utils.request_timeout_resolver import (
     get_configured_request_timeout,
 )
 from litellm.litellm_core_utils.tokenizer import Encoding as Tokenizer
+from litellm.llms.anthropic.common_utils import anthropic_messages_url
 from litellm.llms.azure_ai.common_utils import (
     azure_ai_supports_native_responses,
     foundry_chat_rejects_function_tools_while_reasoning,
@@ -2940,8 +2941,8 @@ def _complete_anthropic(ctx: CompletionDispatchContext) -> _CompletionDispatchRe
 
     # Check if we should disable automatic URL suffix appending
     disable_url_suffix: Final = get_secret_bool("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX")
-    if api_base is not None and not disable_url_suffix and not api_base.endswith("/v1/messages"):
-        api_base += "/v1/messages"
+    if api_base is not None and not disable_url_suffix:
+        api_base = anthropic_messages_url(api_base)
     elif disable_url_suffix:
         verbose_logger.debug("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX is set, skipping /v1/messages suffix")
 

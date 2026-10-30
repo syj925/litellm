@@ -37,6 +37,26 @@ FAKE_AUTH_TOKEN = "sk-ant-aut01-fake-auth-token-for-testing-123456789"
 
 
 @pytest.mark.parametrize(
+    ("api_base", "expected"),
+    [
+        ("https://upstream.example", "https://upstream.example/v1/messages"),
+        ("https://upstream.example/", "https://upstream.example/v1/messages"),
+        ("https://upstream.example/v1", "https://upstream.example/v1/messages"),
+        ("https://upstream.example/v1/", "https://upstream.example/v1/messages"),
+        ("https://upstream.example/v1/messages", "https://upstream.example/v1/messages"),
+        ("https://upstream.example/v1/messages/", "https://upstream.example/v1/messages"),
+        ("https://upstream.example/proxy/anthropic/", "https://upstream.example/proxy/anthropic/v1/messages"),
+        ("https://upstream.example/proxy/anthropic/v1/", "https://upstream.example/proxy/anthropic/v1/messages"),
+        ("https://upstream.example/custom/v1/v1/messages/", "https://upstream.example/custom/v1/v1/messages"),
+    ],
+)
+def test_anthropic_messages_url_normalizes_only_the_endpoint_suffix(api_base: str, expected: str):
+    from litellm.llms.anthropic.common_utils import anthropic_messages_url
+
+    assert anthropic_messages_url(api_base) == expected
+
+
+@pytest.mark.parametrize(
     "messages,system,expected",
     [
         ([{"role": "user", "content": "hi"}], "x-anthropic-billing-header: cc_is_subagent=true;", True),

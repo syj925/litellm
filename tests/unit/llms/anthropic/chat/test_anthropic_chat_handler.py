@@ -49,6 +49,57 @@ async def test_make_call_passes_logging_obj_to_client_post():
     assert call_kwargs.get("logging_obj") is logging_obj
 
 
+@pytest.mark.parametrize(
+    ("api_base", "disable_suffix", "expected_url"),
+    [
+        ("https://upstream.example", False, "https://upstream.example/v1/messages"),
+        ("https://upstream.example/", False, "https://upstream.example/v1/messages"),
+        ("https://upstream.example/v1", False, "https://upstream.example/v1/messages"),
+        ("https://upstream.example/v1/", False, "https://upstream.example/v1/messages"),
+        ("https://upstream.example/v1/messages", False, "https://upstream.example/v1/messages"),
+        ("https://upstream.example/v1/messages/", False, "https://upstream.example/v1/messages"),
+        ("https://upstream.example/custom/", False, "https://upstream.example/custom/v1/messages"),
+        ("https://upstream.example/custom/v1/", False, "https://upstream.example/custom/v1/messages"),
+        ("https://upstream.example/custom/messages", True, "https://upstream.example/custom/messages"),
+        ("https://upstream.example/custom/messages/", True, "https://upstream.example/custom/messages/"),
+    ],
+)
+def test_anthropic_completion_messages_url_preserves_explicit_suffix_override(
+    monkeypatch: pytest.MonkeyPatch, api_base: str, disable_suffix: bool, expected_url: str,
+):
+    monkeypatch.setenv("LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX", str(disable_suffix).lower())
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == expected_url
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_url_check",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-opus-5",
+                "content": [{"type": "text", "text": "URL check"}],
+                "stop_reason": "end_turn",
+                "stop_sequence": None,
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
+
+    client: Final = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(respond)))
+    try:
+        response: Final = litellm.completion(
+            model="anthropic/claude-opus-5",
+            messages=[{"role": "user", "content": "Hello"}],
+            api_key="sk-ant-test-key",
+            api_base=api_base,
+            client=client,
+        )
+    finally:
+        client.close()
+
+    assert response.choices[0].message.content == "URL check"
+
+
 def test_anthropic_completion_does_not_send_deployment_default_limits():
     captured_requests: list[httpx.Request] = []
 
