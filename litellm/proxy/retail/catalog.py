@@ -248,7 +248,10 @@ def _per_million(value: object) -> str | None:
 def _rates(card: Mapping[str, object] | None, catalog_name: str | None = None) -> CatalogRates | None:
     if card is None:
         return None
-    values: Final = {field: _per_million(card.get(key)) for field, key in _RATE_FIELDS.items()}
+    values: Final = {
+        field: None if field == "cache_write" and card.get("cache_write_price_published") is False
+        else _per_million(card.get(key)) for field, key in _RATE_FIELDS.items()
+    }
     tiers: Final = (
         as_mapping(card.get("cache_write_tiers"))
         if "cache_write_tiers" in card
@@ -287,11 +290,21 @@ def _reference_card(
     catalog: Mapping[str, Mapping[str, object]],
 ) -> Mapping[str, object] | None:
     if model in stored_prices:
-        return stored_prices[model]
+        return _published_reference_card(stored_prices[model], catalog)
     try:
         return catalog_snapshot(model, deployments, "1", catalog)
     except ValueError:
         return None
+
+
+def _published_reference_card(
+    card: Mapping[str, object], catalog: Mapping[str, Mapping[str, object]],
+) -> Mapping[str, object]:
+    if card.get("cache_write_price_published") is not None or card.get("source") != "catalog":
+        return card
+    name: Final = card.get("catalog_model")
+    reference: Final = catalog.get(name, {}) if isinstance(name, str) else {}
+    return {**card, "cache_write_price_published": reference.get("cache_creation_input_token_cost") is not None}
 
 
 def _reference_rates(
@@ -301,7 +314,7 @@ def _reference_rates(
     catalog: Mapping[str, Mapping[str, object]],
 ) -> CatalogRates | None:
     if model in stored_prices:
-        return _rates(stored_prices[model])
+        return _rates(_published_reference_card(stored_prices[model], catalog))
     if model in catalog:
         return _rates(catalog[model], model)
     names: Final = tuple(dict.fromkeys(_catalog_model(deployment, catalog) for deployment in deployments))
@@ -366,7 +379,7 @@ def _model_entry(
     resolution: Final = resolve_metadata(model, sources, metadata.model_dump(mode="json"), external_index or {})
     enriched: Final = _Metadata.model_validate({**metadata.model_dump(), **resolution.values})
     card: Final = _reference_card(model, sources, prices, catalog)
-    reference_rates: Final = _rates(card) or _reference_rates(model, sources, prices, catalog)
+    reference_rates: Final = _reference_rates(model, sources, prices, catalog)
     pool_ids: Final = frozenset(binding.pool_id for binding in bindings)
     offers: Final = tuple(
         _offer(model, pool, grants, card, reference_rates, discounts) for pool in pools if pool.id in pool_ids

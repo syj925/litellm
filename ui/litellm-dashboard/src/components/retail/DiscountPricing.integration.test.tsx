@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NuqsTestingAdapter } from "nuqs/adapters/testing";
 import { afterEach, expect, it, vi } from "vitest";
@@ -76,7 +76,11 @@ const candidates = [
   },
 ];
 
-function serveApi(activeModels = modelDiscounts.map((row) => row.model), pools: ResourcePool[] = []) {
+function serveApi(
+  activeModels = modelDiscounts.map((row) => row.model),
+  pools: ResourcePool[] = [],
+  cacheWriteTiers?: Record<string, string>,
+) {
   const writes: { path: string; body: unknown }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -132,6 +136,7 @@ function serveApi(activeModels = modelDiscounts.map((row) => row.model), pools: 
             items: [
               {
                 ...rate,
+                cache_write_tiers: cacheWriteTiers,
                 model: "legacy-model",
                 version: 1,
                 updated_at: "2026-01-01T00:00:00Z",
@@ -334,6 +339,16 @@ it("requires explicit catalog import and a choice for aliases with multiple refe
       },
     ]),
   );
+});
+
+it("shows saved duration prices without a duplicate default cache price", async () => {
+  serveApi(undefined, [], { "300": rate.cache_write_per_million, "3600": "4" });
+  renderPanel();
+  const saved = await screen.findByRole("row", { name: /legacy-model/ });
+  expect(within(saved).getByText("Cache write · 5m")).toBeInTheDocument();
+  expect(within(saved).getByText("Cache write · 1h")).toBeInTheDocument();
+  expect(within(saved).getAllByText("$2.50")).toHaveLength(1);
+  expect(within(saved).queryByText("Cache write", { exact: true })).not.toBeInTheDocument();
 });
 
 it("shows different effective discounts for each customer model without an account-wide percentage", async () => {

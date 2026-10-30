@@ -90,6 +90,7 @@ ALTER TABLE retail_model_prices ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DE
 ALTER TABLE retail_model_prices ADD COLUMN IF NOT EXISTS catalog_model TEXT;
 ALTER TABLE retail_model_prices ADD COLUMN IF NOT EXISTS source_label TEXT NOT NULL DEFAULT 'Existing reference, review required';
 ALTER TABLE retail_model_prices ADD COLUMN IF NOT EXISTS cache_write_tiers JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE retail_model_prices ADD COLUMN IF NOT EXISTS cache_write_price_published BOOLEAN;
 
 CREATE TABLE IF NOT EXISTS retail_signup_identities (
     email_normalized TEXT PRIMARY KEY,

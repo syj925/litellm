@@ -137,8 +137,8 @@ describe("customer billing receipts", () => {
           { label: "Output customer price / 1M", value: "$87.50 USD" },
           { label: "Cache read base price / 1M", value: "$0.50 USD" },
           { label: "Cache read customer price / 1M", value: "$1.75 USD" },
-          { label: "Cache write · unspecified duration base price / 1M", value: "$6.25 USD" },
-          { label: "Cache write · unspecified duration customer price / 1M", value: "$21.875 USD" },
+          { label: "Cache write default base price / 1M", value: "$6.25 USD" },
+          { label: "Cache write default customer price / 1M", value: "$21.875 USD" },
         ],
       },
     ]);
@@ -207,6 +207,36 @@ describe("customer billing receipts", () => {
     expect(csv).toContain('"Cache write charge · 12h"');
     expect(csv).toContain('"$0.000098765432109876 USD"');
     expect(csv).toContain('"\'=unsafe()"');
+  });
+
+  it.each(["0.0000025", "0"])("shows the frozen default %s applied to an observed duration without its own price", (price) => {
+    const sections = ledgerReceiptSections({
+      usage: { cache_write_tokens: 10, cache_write_ttl_tokens: { "300": 2, "43200": 8 } },
+      price_snapshot: {
+        version: "token-v3", source: "manual", discount: "0.5",
+        cache_creation_input_token_cost: price, cache_write_tiers: { "300": "0.000004" },
+      },
+    });
+    const prices = sections.find(({ title }) => title === "Pricing snapshot");
+    expect(prices?.rows).toEqual(expect.arrayContaining([
+      { label: "Cache write · 5m reference price / 1M", value: "$4.00 USD" },
+      { label: "Cache write · 12h (default) reference price / 1M", value: price === "0" ? "$0.00 USD" : "$2.50 USD" },
+      { label: "Cache write · 12h (default) customer price / 1M", value: price === "0" ? "$0.00 USD" : "$1.25 USD" },
+    ]));
+    expect(prices?.rows).not.toContainEqual(expect.objectContaining({ label: "Cache write · 5m (default) reference price / 1M" }));
+  });
+
+  it("does not apply the new default-duration policy to an older frozen price snapshot", () => {
+    const sections = ledgerReceiptSections({
+      usage: { cache_write_tokens: 2, cache_write_ttl_tokens: { "43200": 2 } },
+      price_snapshot: {
+        version: "token-v2", source: "manual", discount: "0.5",
+        cache_creation_input_token_cost: "0.0000025", cache_write_tiers: { "300": "0.000004" },
+      },
+    });
+    expect(sections.find(({ title }) => title === "Pricing snapshot")?.rows).not.toContainEqual(
+      expect.objectContaining({ label: "Cache write · 12h (default) reference price / 1M" }),
+    );
   });
 
   it("shows the saved customer override and exact effective rates instead of applying a current plan", () => {

@@ -397,7 +397,7 @@ function CatalogPricingPanel({ model, publicView }: ModelSectionProps) {
       )}
       <p className="text-xs leading-6 text-muted-foreground">
         Prices are in USD per 1M tokens. Each cache write duration is charged at its complete write price, without
-        adding ordinary input again. Unspecified duration means the upstream did not identify a write duration.
+        adding ordinary input again. Duration prices are shown when configured; otherwise the cache write rate applies.
         Additional context tiers may apply. Not listed means no price is published for that usage type.
         {!publicView && (
           <>

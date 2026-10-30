@@ -20,6 +20,7 @@ services:
       - ../litellm/litellm/utils.py:/app/.venv/lib/python3.13/site-packages/litellm/utils.py:ro
       - ../litellm/litellm/cost_calculator.py:/app/.venv/lib/python3.13/site-packages/litellm/cost_calculator.py:ro
       - ../litellm/litellm/litellm_core_utils/llm_cost_calc/utils.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/llm_cost_calc/utils.py:ro
+      - ../litellm/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py:ro
       - ../litellm/litellm/litellm_core_utils/streaming_chunk_builder_utils.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/streaming_chunk_builder_utils.py:ro
       - ../litellm/litellm/responses/utils.py:/app/.venv/lib/python3.13/site-packages/litellm/responses/utils.py:ro
       - ../litellm/litellm/responses/litellm_completion_transformation/transformation.py:/app/.venv/lib/python3.13/site-packages/litellm/responses/litellm_completion_transformation/transformation.py:ro

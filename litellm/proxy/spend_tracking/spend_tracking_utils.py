@@ -946,9 +946,9 @@ def _get_request_duration_ms(start_time: datetime, end_time: datetime) -> int | 
 
 
 def _ensure_datetime_utc(timestamp: datetime) -> datetime:
-    """Helper to ensure datetime is in UTC"""
-    timestamp = timestamp.astimezone(timezone.utc)
-    return timestamp
+    """Match observation identity before PostgreSQL rounds timestamp(3) strings."""
+    timestamp = timestamp.replace(tzinfo=timezone.utc) if timestamp.tzinfo is None else timestamp.astimezone(timezone.utc)
+    return timestamp.replace(microsecond=timestamp.microsecond // 1000 * 1000)
 
 
 async def _query_raw_rows(

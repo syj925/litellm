@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .api import Admin, Store
 from .cache_observations import TTL_AGGREGATE, legacy_cache_sql
+from .cache_usage import CACHE_DETAIL_FIELDS, CACHE_READ_FIELDS, CACHE_WRITE_FIELDS
 from .store import WalletStore, _many
 
 
@@ -353,13 +354,17 @@ _UPSTREAM_STATUS: Final = _status_sql("e.status_code")
 _HELPER: Final = """COALESCE(s.request_id ~ '-attempt-[0-9]+$' AND
     substring(s.request_id from '-attempt-[0-9]+$') =
     substring(COALESCE(s.litellm_call_id,'') from '-attempt-[0-9]+$'),false)"""
-_READ: Final = _usage_count((
-    "cache_read_input_tokens", "cached_tokens", "prompt_tokens_details,cached_tokens", "input_tokens_details,cached_tokens",
+_READ_ALIASES: Final = _usage_count(tuple(
+    f"{prefix},{field}" if prefix else field
+    for prefix in ("", *CACHE_DETAIL_FIELDS) for field in CACHE_READ_FIELDS
 ))
-_WRITE: Final = _usage_count((
-    "cache_creation_input_tokens", "cache_write_tokens", "cache_creation_tokens",
-    "prompt_tokens_details,cache_write_tokens", "prompt_tokens_details,cache_creation_tokens",
-    "input_tokens_details,cache_write_tokens", "input_tokens_details,cache_creation_tokens",
+_READ_CANONICAL: Final = _usage_count((
+    "cache_read_input_tokens", *(f"{prefix},cached_tokens" for prefix in CACHE_DETAIL_FIELDS),
+))
+_READ: Final = f"COALESCE(NULLIF({_READ_CANONICAL},0),{_READ_ALIASES})"
+_WRITE: Final = _usage_count(tuple(
+    f"{prefix},{field}" if prefix else field
+    for prefix in ("", *CACHE_DETAIL_FIELDS) for field in CACHE_WRITE_FIELDS
 ))
 _REASONING: Final = _integer_json(
     "s.metadata #>> '{additional_usage_values,completion_tokens_details,reasoning_tokens}'"

@@ -7,7 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatContext, getModelIdentity } from "./modelIdentity";
-import { formatCatalogPrice, modelPrice, type CatalogModel, type CatalogPriceBasis } from "./types";
+import {
+  formatCatalogPrice,
+  modelPrice,
+  type CatalogModel,
+  type CatalogPriceBasis,
+  type CatalogTokenPrice,
+} from "./types";
 import SpecificationCharts from "./SpecificationCharts";
 import ModelBenchmarks from "./ModelBenchmarks";
 import { cacheDurationLabel, cacheTierEntries } from "../cachePricing";
@@ -31,6 +37,23 @@ const modalityLabel = (values: string[]): string =>
 function priceLabel(model: CatalogModel, basis: CatalogPriceBasis, field: "input" | "output"): string {
   const price = modelPrice(model, basis, field);
   return price == null ? "Not listed" : `From ${formatCatalogPrice(String(price))}`;
+}
+
+function cachePriceCards(model: CatalogModel, basis: CatalogPriceBasis): CatalogTokenPrice[] {
+  const prices = model.offers.flatMap((offer) => {
+    const price = offer.pricing[basis];
+    return price && (basis === "reference" || offer.available_to_me) ? [price] : [];
+  });
+  return prices.length || basis === "customer" || !model.reference_pricing ? prices : [model.reference_pricing];
+}
+
+function defaultCachePrice(model: CatalogModel, basis: CatalogPriceBasis): string | null {
+  const rates = cachePriceCards(model, basis).flatMap((price) =>
+    cacheTierEntries(price.cache_write_tiers).length || price.cache_write == null || price.cache_write.trim() === ""
+      ? []
+      : [Number(price.cache_write)],
+  ).filter((price) => Number.isFinite(price) && price >= 0);
+  return rates.length ? `From ${formatCatalogPrice(String(Math.min(...rates)))}` : null;
 }
 
 interface CompareRow {
@@ -73,6 +96,17 @@ const rows: CompareRow[] = [
 ];
 
 export default function CatalogCompare({ models, open, onOpenChange, basis, publicView = false }: CatalogCompareProps) {
+  const defaultCacheRows: CompareRow[] = (["reference", "customer"] as const)
+    .filter((priceBasis) => models.some((model) => defaultCachePrice(model, priceBasis) != null))
+    .map((priceBasis) => ({
+      label: `${priceBasis === "reference" ? "Reference" : "Your"} cache write / 1M tokens`,
+      basis: priceBasis,
+      value: (model) => defaultCachePrice(model, priceBasis) ?? (
+        cachePriceCards(model, priceBasis).some((price) => cacheTierEntries(price.cache_write_tiers).length)
+          ? "See duration rates"
+          : "Not listed"
+      ),
+    }));
   const durations = [
     ...new Set(
       models.flatMap((model) => [
@@ -106,7 +140,7 @@ export default function CatalogCompare({ models, open, onOpenChange, basis, publ
       },
     })),
   );
-  const visibleRows = [...rows, ...cacheRows].filter(
+  const visibleRows = [...rows, ...defaultCacheRows, ...cacheRows].filter(
     (row) => !publicView || (!row.personal && row.basis !== "customer"),
   );
   return (

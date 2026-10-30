@@ -1,3 +1,31 @@
+# Cache compatibility and price display correction QA
+
+final result: passed for the reviewed local desktop states on 2026-10-30
+
+Duration-priced models display only their duration rows. A configured generic write price retains the normal Cache write label. The public Claude detail shows 5m and 1h with no duplicate default category. Gemini's unconfigured creation rate is no longer manufactured from an internal input-price fallback; its generic row shows Not listed. Explicit manual generic rates, including zero, remain published. The nullable publication marker survives automatic price initialization and catalog import without repricing old records
+
+Before: C:/Users/26933/AppData/Local/Temp/codex-clipboard-8010e335-f9a4-4525-b94e-8b945d5b18c5.png
+
+Claude after: C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/cache-compat-claude-pricing-proof.png
+
+Gemini after: C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/cache-compat-gemini-pricing-proof.png
+
+Both actual anonymous pages were reviewed in the existing LiteLLM shell and had no captured browser warnings or errors. The administrator editor, generic-price comparison and billing receipt have targeted integration/unit coverage; authenticated visual states, mobile and dark-theme acceptance were not reviewed in this pass
+
+The compatibility audit used the local NewAPI source at 142436bc0 and current official OpenAI/Claude cache documentation. Known aliases and nested locations are normalized without summing mirror fields or changing the meaning of original input totals. The common native conversion now preserves choice-level and timing cache reads before native cost calculation and across synchronous/asynchronous cache replay. Actual TTL evidence remains intact
+
+New requests use token-v3 snapshots: dedicated duration prices take precedence, with a frozen generic write rate as fallback. Missing individual duration prices do not alone leave an otherwise valid request pending. Old token-v2 and flat snapshots retain their original rules, and existing bills are not recalculated. The billing receipt identifies a default rate used for an actual reported duration
+
+The combined retail backend run passed 307 tests, followed by targeted regressions for positive canonical precedence, publication provenance and native serialization. A 175-test store/catalog/API/pricing run passed after the publication fix. Native tests covered 75 usage cases, 21 selected cache-cost/usage cases, 27 millisecond/timezone boundary cases and 6 complete native cost/log/cache-replay cases. Real PostgreSQL tests covered persistence, immutable price snapshots, publication flags, legacy aliases, aggregation, isolation and exact timestamp identity. Scoped frontend tests, production TypeScript and the webpack build passed. Regenerated OpenAPI types had no declaration delta
+
+A running isolated proxy and scripted local upstreams passed 80 checks across nine requests: DeepSeek-style top-level hits, Zhipu top-level/input-detail counts, Moonshot choice usage, llama.cpp timing counts, mirrored aliases, creation-token aliases, mixed Responses TTLs without dedicated prices and Claude creation totals without duration details. Each request settled once. Charged usage, native spend-log cache counts and observations matched. The wallet and nine charge ledger rows reconciled to 4902950 nanos with no remaining reservation. These were local protocol fixtures, not paid vendor calls. The temporary database and proxy were deleted
+
+That HTTP verification exposed native timestamp rounding: a serialized microsecond timestamp could round up in PostgreSQL while its observation was truncated. Native persistence now normalizes UTC and millisecond precision before serialization. The original duration calculation and strict call/account/start identity remain intact. No matching tolerance was added
+
+The local service is healthy. Before/after fingerprints match for channels, native models, pool bindings, reference prices and wallets. The NewAPI checkout was read only and production was not changed. Existing frontend raw-fetch lint debt was not modified or suppressed; the changed presentation components added no lint errors
+
+---
+
 # Cache duration pricing and usage QA
 
 final result: passed for the reviewed local desktop states on 2026-10-30

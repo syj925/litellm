@@ -98,7 +98,7 @@ describe("catalog model details", () => {
             ...offer,
             pricing: {
               ...offer.pricing,
-              reference: { ...offer.pricing.reference!, cache_write_tiers: { "300": "2.5", "3600": "4" } },
+              reference: { ...offer.pricing.reference!, cache_write: "99", cache_write_tiers: { "300": "2.5", "3600": "4" } },
               customer: {
                 ...offer.pricing.customer!,
                 cache_write_tiers: { "300": index ? "999" : "1.25", "3600": index ? "999" : "2" },
@@ -111,10 +111,28 @@ describe("catalog model details", () => {
     const authorized = screen.getByRole("table", { name: "Pricing for AWS fixture pool" });
     expect(within(authorized).getByRole("row", { name: /Cache write · 5m/ })).toHaveTextContent("$2.50$1.25");
     expect(within(authorized).getByRole("row", { name: /Cache write · 1h/ })).toHaveTextContent("$4.00$2.00");
-    expect(within(authorized).getByText("Cache write · unspecified duration")).toBeInTheDocument();
+    expect(within(authorized).queryByText("Cache write", { exact: true })).not.toBeInTheDocument();
+    expect(within(authorized).queryByText("$99.00")).not.toBeInTheDocument();
     const unauthorized = screen.getByRole("table", { name: "Pricing for Anthropic fixture pool" });
     expect(within(unauthorized).getByRole("row", { name: /Cache write · 1h/ })).toHaveTextContent("Access required");
     expect(within(unauthorized).queryByText("$999.00")).not.toBeInTheDocument();
+  });
+
+  it("keeps the ordinary cache write label and price for models without duration pricing", () => {
+    renderWithProviders(
+      <Detail
+        publicView
+        initialTab="pricing"
+        data={{
+          ...model,
+          offers: [],
+          reference_pricing: { input: "2", output: "10", cache_read: "0.2", cache_write: "3.33" },
+        }}
+      />,
+    );
+    const reference = screen.getByRole("table", { name: "Reference pricing" });
+    expect(within(reference).getByRole("row", { name: "Cache write $3.33" })).toBeInTheDocument();
+    expect(within(reference).queryByText(/unspecified duration/i)).not.toBeInTheDocument();
   });
 
   it("lists OpenAI and custom duration rates in a public reference without personal quotes", () => {

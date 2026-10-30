@@ -160,6 +160,7 @@ class _StoredModelPrice(BaseModel):
     cache_read_input_token_cost: str
     cache_creation_input_token_cost: str
     cache_write_tiers: dict[str, str] = Field(default_factory=dict)
+    cache_write_price_published: bool | None = None
     source: str = "legacy"
     catalog_model: str | None = None
     source_label: str = "Existing reference, review required"
@@ -473,6 +474,7 @@ def _model_price_view(card: _StoredModelPrice) -> dict[str, JsonValue]:
         "cache_write_tiers": {
             key: format(Decimal(value) * 1_000_000, "f") for key, value in card.cache_write_tiers.items()
         },
+        "cache_write_price_published": card.cache_write_price_published,
     }
 
 
@@ -693,6 +695,7 @@ def _reference_price_view(card: Mapping[str, JsonValue]) -> dict[str, JsonValue]
             key: format(Decimal(value) * 1_000_000, "f")
             for key, value in validated_cache_write_tiers(card.get("cache_write_tiers", {})).items()
         },
+        "cache_write_price_published": card.get("cache_write_price_published"),
     }
 
 

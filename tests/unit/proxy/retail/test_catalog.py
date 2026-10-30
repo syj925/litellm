@@ -219,6 +219,81 @@ def test_public_canonical_reference_is_independent_of_unrelated_channel_cost_ove
     assert Decimal(stored.input or "NaN") == Decimal(str(_price(model)["input_cost_per_token"])) * 1_000_000
 
 
+@pytest.mark.parametrize("published_write", (None, "0", "0.0000025"))
+def test_billing_input_fallback_does_not_invent_a_published_cache_write_price(published_write: str | None) -> None:
+    catalog: Final = {"reference-model": {
+        "mode": "chat", "litellm_provider": "gemini", "input_cost_per_token": "0.000002",
+        "output_cost_per_token": "0.000006", "cache_read_input_token_cost": "0.0000002",
+        **({"cache_creation_input_token_cost": published_write} if published_write is not None else {}),
+    }}
+    page: Final = build_model_catalog(
+        (), (), PoolAccess(), (_deployment("a", "public-model"),), (), (), catalog, mode="public",
+    )
+    rates: Final = page.items[0].reference_pricing
+    assert rates is not None
+    assert rates.input == "2.000000"
+    assert rates.cache_write == (format(Decimal(published_write) * 1_000_000, "f") if published_write is not None else None)
+
+
+def test_explicit_manual_cache_write_price_remains_public_without_duration_tiers() -> None:
+    page: Final = build_model_catalog(
+        (), (), PoolAccess(), (_deployment("a", "public-model"),), (_price("public-model"),), (), {}, mode="public",
+    )
+    rates: Final = page.items[0].reference_pricing
+    assert rates is not None
+    assert rates.cache_write == "2.5000000"
+    assert rates.cache_write_tiers == {}
+
+
+@pytest.mark.parametrize(
+    ("source", "published", "raw_write", "catalog_exists", "visible"),
+    (
+        ("catalog", False, "0.000003", True, False),
+        ("catalog", True, None, True, True),
+        ("catalog", None, None, True, False),
+        ("catalog", None, "0", True, True),
+        ("catalog", None, None, False, False),
+        ("manual", None, None, False, True),
+        ("legacy", None, None, False, True),
+    ),
+)
+def test_saved_price_publication_survives_catalog_changes_without_repricing_configured_rates(
+    source: str, published: bool | None, raw_write: str | None, catalog_exists: bool, visible: bool,
+) -> None:
+    stored: Final = _price("public-model", source=source, catalog_model="reference-model",
+                           cache_write_price_published=published)
+    raw: Final = {
+        "mode": "chat", "input_cost_per_token": "0.000001", "output_cost_per_token": "0.000009",
+        **({"cache_creation_input_token_cost": raw_write} if raw_write is not None else {}),
+    }
+    page: Final = build_model_catalog(
+        (_pool("pool"),), (_binding("pool", "a", "public-model"),), PoolAccess(),
+        (_deployment("a", "public-model"),), (stored,), (_discount("pool", "public-model"),),
+        {"reference-model": raw} if catalog_exists else {},
+    )
+    item: Final = page.items[0]
+    assert item.reference_pricing is not None
+    assert item.reference_pricing.input == "2.000000"
+    assert item.reference_pricing.cache_write == ("2.5000000" if visible else None)
+    customer: Final = item.offers[0].pricing.customer
+    assert customer is not None
+    assert customer.cache_write == ("1.75000000" if visible else None)
+    assert stored["cache_creation_input_token_cost"] == "0.0000025"
+    assert stored["version"] == 3
+    assert stored["cache_write_price_published"] is published
+
+
+def test_hidden_generic_publication_keeps_explicit_duration_prices_and_free_rates() -> None:
+    stored: Final = _price("public-model", source="catalog", cache_write_price_published=False,
+                           cache_write_tiers={"300": "0", "3600": "0.000004"})
+    page: Final = build_model_catalog(
+        (), (), PoolAccess(), (_deployment("a", "public-model"),), (stored,), (), {}, mode="public",
+    )
+    rates: Final = page.items[0].reference_pricing
+    assert rates is not None and rates.cache_write is None
+    assert rates.cache_write_tiers == {"300": "0", "3600": "4.000000"}
+
+
 def test_public_model_names_are_deduplicated_and_wildcards_are_not_presented_as_models() -> None:
     deployments: Final = (
         _deployment("a", "model-a"),

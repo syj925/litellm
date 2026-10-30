@@ -1796,6 +1796,16 @@ class CacheCreationTokenDetails(LiteLLMBaseModel):
     ttl_12h_tokens: int | None = None
 
 
+def _cache_alias_tokens(sources: Sequence[Mapping[str, object]], names: tuple[str, ...]) -> int | None:
+    return max(
+        (
+            value for source in sources for name in names
+            if isinstance(value := source.get(name), int) and not isinstance(value, bool) and value >= 0
+        ),
+        default=None,
+    )
+
+
 class PromptTokensDetailsWrapper(
     SafeAttributeModel, PromptTokensDetails
 ):  # extends with image generation fields (text_tokens, image_tokens)
@@ -1857,21 +1867,19 @@ class PromptTokensDetailsWrapper(
         super().__init__(*args, **kwargs)
         if self.cache_creation_token_details is None and self.cache_write_tokens_details is not None:
             self.cache_creation_token_details = self.cache_write_tokens_details
-        extra_fields: Final = self.model_extra
-        nested_cache_creation_input_tokens: Final = (
-            extra_fields.get("cache_creation_input_tokens") if extra_fields is not None else None
+        extra_fields: Final = self.model_extra or {}
+        read_alias: Final = _cache_alias_tokens(
+            (extra_fields,), ("cache_hit_tokens", "cache_read_tokens", "cache_read_input_tokens", "prompt_cache_hit_tokens"),
         )
-        self.cache_write_tokens = (
-            self.cache_write_tokens
-            if self.cache_write_tokens is not None
-            else (
-                self.cache_creation_tokens
-                if self.cache_creation_tokens is not None
-                else (
-                    nested_cache_creation_input_tokens if isinstance(nested_cache_creation_input_tokens, int) else None
-                )
-            )
+        if not self.cached_tokens and read_alias is not None:
+            self.cached_tokens = read_alias
+        write_alias: Final = _cache_alias_tokens(
+            (extra_fields,), ("cache_creation_input_tokens", "cached_creation_tokens"),
         )
+        declared_write: Final = (
+            self.cache_write_tokens if self.cache_write_tokens is not None else self.cache_creation_tokens
+        )
+        self.cache_write_tokens = write_alias if not declared_write and write_alias is not None else declared_write
         if self.cache_write_tokens is None and self.cache_creation_token_details is not None:
             self.cache_write_tokens = sum(
                 count for count in (
@@ -1995,27 +2003,35 @@ class Usage(SafeAttributeModel, CompletionUsage):
             elif isinstance(prompt_tokens_details, PromptTokensDetailsWrapper):
                 _prompt_tokens_details = prompt_tokens_details
 
-        ## DEEPSEEK MAPPING ##
-        if "prompt_cache_hit_tokens" in params and isinstance(params["prompt_cache_hit_tokens"], int):
+        input_details: Final = params.get("input_tokens_details")
+        input_detail_fields: Final = (
+            input_details.model_dump() if isinstance(input_details, BaseModel)
+            else input_details if isinstance(input_details, Mapping) else {}
+        )
+        if _prompt_tokens_details is None and input_detail_fields:
+            _prompt_tokens_details = PromptTokensDetailsWrapper(**input_detail_fields)
+        read_alias: Final = _cache_alias_tokens(
+            (params, input_detail_fields),
+            ("prompt_cache_hit_tokens", "cache_read_input_tokens", "cache_read_tokens", "cache_hit_tokens", "cached_tokens"),
+        )
+        if read_alias is not None and (_prompt_tokens_details is None or not _prompt_tokens_details.cached_tokens):
             if _prompt_tokens_details is None:
-                _prompt_tokens_details = PromptTokensDetailsWrapper(cached_tokens=params["prompt_cache_hit_tokens"])
+                _prompt_tokens_details = PromptTokensDetailsWrapper(cached_tokens=read_alias)
             else:
-                _prompt_tokens_details.cached_tokens = params["prompt_cache_hit_tokens"]
+                _prompt_tokens_details.cached_tokens = read_alias
 
-        ## ANTHROPIC MAPPING ##
-        if "cache_read_input_tokens" in params and isinstance(params["cache_read_input_tokens"], int):
+        write_alias: Final = _cache_alias_tokens(
+            (params, input_detail_fields),
+            ("cache_creation_input_tokens", "cached_creation_tokens", "cache_creation_tokens", "cache_write_tokens"),
+        )
+        if write_alias is not None and (
+            _prompt_tokens_details is None
+            or not _cache_alias_tokens((_prompt_tokens_details.__dict__,), ("cache_write_tokens",))
+        ):
             if _prompt_tokens_details is None:
-                _prompt_tokens_details = PromptTokensDetailsWrapper(cached_tokens=params["cache_read_input_tokens"])
+                _prompt_tokens_details = PromptTokensDetailsWrapper(cache_write_tokens=write_alias)
             else:
-                _prompt_tokens_details.cached_tokens = params["cache_read_input_tokens"]
-
-        if "cache_creation_input_tokens" in params and isinstance(params["cache_creation_input_tokens"], int):
-            if _prompt_tokens_details is None:
-                _prompt_tokens_details = PromptTokensDetailsWrapper(
-                    cache_write_tokens=params["cache_creation_input_tokens"]
-                )
-            else:
-                _prompt_tokens_details.cache_write_tokens = params["cache_creation_input_tokens"]
+                _prompt_tokens_details.cache_write_tokens = write_alias
 
         super().__init__(
             prompt_tokens=prompt_tokens or 0,
@@ -2038,16 +2054,9 @@ class Usage(SafeAttributeModel, CompletionUsage):
         else:
             del self.cost
 
-        ## ANTHROPIC MAPPING ##
-        if "cache_creation_input_tokens" in params and isinstance(params["cache_creation_input_tokens"], int):
-            self._cache_creation_input_tokens = params["cache_creation_input_tokens"]
-
-        if "cache_read_input_tokens" in params and isinstance(params["cache_read_input_tokens"], int):
-            self._cache_read_input_tokens = params["cache_read_input_tokens"]
-
-        ## DEEPSEEK MAPPING ##
-        if "prompt_cache_hit_tokens" in params and isinstance(params["prompt_cache_hit_tokens"], int):
-            self._cache_read_input_tokens = params["prompt_cache_hit_tokens"]
+        normalized_fields: Final = _prompt_tokens_details.__dict__ if _prompt_tokens_details is not None else {}
+        self._cache_creation_input_tokens = _cache_alias_tokens((normalized_fields,), ("cache_write_tokens",)) or 0
+        self._cache_read_input_tokens = _cache_alias_tokens((normalized_fields,), ("cached_tokens",)) or 0
 
         for k, v in params.items():
             setattr(self, k, v)

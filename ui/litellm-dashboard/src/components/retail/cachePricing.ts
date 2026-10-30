@@ -17,6 +17,20 @@ export function cacheTierEntries<T>(tiers: Readonly<Record<string, T>> | null | 
     .sort(([left], [right]) => Number(left) - Number(right));
 }
 
+export function cacheWritePriceRows(
+  defaultPrice: string | null | undefined,
+  tiers: Readonly<Record<string, string>> | null | undefined,
+): { key: string; label: string; amount: string | null }[] {
+  const durations = cacheTierEntries(tiers);
+  return durations.length
+    ? durations.map(([ttl, amount]) => ({
+        key: `cache_write_${ttl}`,
+        label: `Cache write · ${cacheDurationLabel(ttl)}`,
+        amount,
+      }))
+    : [{ key: "cache_write", label: "Cache write", amount: defaultPrice ?? null }];
+}
+
 export function validateCacheTierDrafts(
   drafts: CacheTierDraft[],
 ): { tiers: Record<string, string>; error: null } | { tiers: null; error: string } {

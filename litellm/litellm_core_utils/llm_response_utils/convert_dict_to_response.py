@@ -54,6 +54,31 @@ _CHOICES_FIELDS: Final[frozenset] = frozenset(Choices.model_fields.keys())
 _MODEL_RESPONSE_FIELDS: Final[frozenset] = frozenset(ModelResponse.model_fields.keys()) | {"usage"}
 
 
+def _completion_usage_with_cache_aliases(response: Mapping[str, object]) -> Usage:
+    usage: Final = Usage.model_validate(response["usage"])
+    details: Final = usage.prompt_tokens_details
+    if details is not None and (details.cached_tokens or 0) > 0:
+        return usage
+    choices: Final = response.get("choices")
+    sequence: Final = choices if isinstance(choices, (list, tuple)) else ()
+    choice_read: Final = next(
+        (count for choice in sequence if isinstance(choice, Mapping)
+         if isinstance(choice_usage := choice.get("usage"), Mapping)
+         if isinstance(count := choice_usage.get("cached_tokens"), int)
+         and not isinstance(count, bool) and count > 0),
+        None,
+    )
+    timings: Final = response.get("timings")
+    timing_read: Final = timings.get("cache_n") if isinstance(timings, Mapping) else None
+    fallback: Final = choice_read if choice_read is not None else timing_read
+    if not isinstance(fallback, int) or isinstance(fallback, bool) or fallback <= 0:
+        return usage
+    return Usage.model_validate({
+        **usage.model_dump(),
+        "prompt_tokens_details": {**(details.model_dump() if details is not None else {}), "cached_tokens": fallback},
+    })
+
+
 def _normalize_images_for_message(
     images: list[dict] | None,
 ) -> list[ImageURLListItem] | None:
@@ -236,11 +261,7 @@ async def convert_to_streaming_response_async(
         setattr(
             model_response_object,
             "usage",
-            Usage(
-                completion_tokens=response_object["usage"].get("completion_tokens", 0),
-                prompt_tokens=response_object["usage"].get("prompt_tokens", 0),
-                total_tokens=response_object["usage"].get("total_tokens", 0),
-            ),
+            _completion_usage_with_cache_aliases(response_object),
         )
 
     if "id" in response_object:
@@ -327,10 +348,7 @@ def convert_to_streaming_response(
     model_response_object.choices = choice_list
 
     if "usage" in response_object and response_object["usage"] is not None:
-        setattr(model_response_object, "usage", Usage())
-        model_response_object.usage.completion_tokens = response_object["usage"].get("completion_tokens", 0)
-        model_response_object.usage.prompt_tokens = response_object["usage"].get("prompt_tokens", 0)
-        model_response_object.usage.total_tokens = response_object["usage"].get("total_tokens", 0)
+        setattr(model_response_object, "usage", _completion_usage_with_cache_aliases(response_object))
 
     if "id" in response_object:
         model_response_object.id = response_object["id"]
@@ -724,7 +742,7 @@ def convert_to_model_response_object(
             model_response_object.choices = choice_list
 
             if "usage" in response_object and response_object["usage"] is not None:
-                usage_object: Final = litellm.Usage(**response_object["usage"])
+                usage_object: Final = _completion_usage_with_cache_aliases(response_object)
                 setattr(model_response_object, "usage", usage_object)
             if "created" in response_object:
                 model_response_object.created = safe_convert_created_field(response_object["created"])

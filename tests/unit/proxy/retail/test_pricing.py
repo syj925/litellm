@@ -5,7 +5,7 @@ import pytest
 
 from litellm.types.llms.openai import ResponseAPIUsage
 from litellm.types.utils import Usage
-from litellm.proxy.retail.billing import reservation_id
+from litellm.proxy.retail.billing import price_snapshot, reservation_id
 from litellm.proxy.retail.pricing import (
     UsageFacts,
     catalog_candidates,
@@ -223,7 +223,7 @@ def test_catalog_extracts_duration_prices_without_flattening_context_tiers() -> 
     deployments: Final = ({"litellm_params": {"model": "openai/fixture"}},)
     card: Final = catalog_snapshot("fixture", deployments, "1", catalog)
     assert card["cache_write_tiers"] == {"1800": "0.000003", "43200": "0.000006"}
-    assert card["version"] == "token-v2"
+    assert card["version"] == "token-v3"
     advanced: Final = {"openai/fixture": {**rates, "input_cost_per_token_above_272k_tokens": "0.000004"}}
     assert catalog_candidates("fixture", deployments, advanced) == ()
 
@@ -248,3 +248,68 @@ def test_explicit_unpriced_cache_ttl_is_rejected_before_provider_access() -> Non
     with pytest.raises(ValueError, match="43200"):
         validate_requested_cache_ttls(snapshot, {"input": [{"prompt_cache_breakpoint": {"ttl": "12h"}}]})
     validate_requested_cache_ttls(snapshot, {"prompt_cache_options": {"ttl": "30m"}})
+
+
+@pytest.mark.parametrize("default_rate", ("0.0000025", "0"))
+def test_new_snapshots_charge_unconfigured_durations_at_the_frozen_default_without_losing_ttl(default_rate: str) -> None:
+    snapshot: Final = {
+        **SNAPSHOT, "version": "token-v3", "discount": "0.65",
+        "cache_creation_input_token_cost": default_rate, "cache_write_tiers": {"300": "0.000004"},
+    }
+    facts: Final = UsageFacts(
+        input_tokens=2, output_tokens=1, cache_read_tokens=3, cache_write_tokens=10,
+        cache_write_ttl_tokens={"300": 2, "43200": 5},
+    )
+    expected: Final = (
+        Decimal("0.000002") * 2 + Decimal("0.000010") + Decimal("0.0000002") * 3
+        + Decimal("0.000004") * 2 + Decimal(default_rate) * 8
+    ) * Decimal("0.65")
+    amount: Final = charge_for_usage(snapshot, facts)
+    details: Final = cost_breakdown(snapshot, facts)
+    assert Decimal(amount) == expected
+    assert details["cache_write_tiers"] == {
+        "300": format(Decimal("0.000004") * 2 * Decimal("0.65"), "f"),
+        "43200": format(Decimal(default_rate) * 5 * Decimal("0.65"), "f"),
+    }
+    assert Decimal(str(details["cache_write_unclassified"])) == Decimal(default_rate) * 3 * Decimal("0.65")
+    assert sum((Decimal(str(details[key])) for key in ("input", "output", "cache_read", "cache_write_unclassified")),
+               sum((Decimal(value) for value in details["cache_write_tiers"].values()), Decimal(0))) == expected
+    assert facts.cache_write_ttl_tokens == {"300": 2, "43200": 5}
+    assert Decimal(reserve_quote(snapshot, {"messages": []}, 1)) >= Decimal(amount)
+    validate_requested_cache_ttls(snapshot, {"input": [{"prompt_cache_breakpoint": {"ttl": "12h"}}]})
+
+
+def test_new_snapshots_use_default_write_pricing_without_requiring_duration_rows() -> None:
+    snapshot: Final = {**SNAPSHOT, "version": "token-v3", "cache_write_tiers": {}}
+    known: Final = UsageFacts(input_tokens=0, output_tokens=0, cache_write_tokens=4,
+                             cache_write_ttl_tokens={"3600": 4})
+    aggregate: Final = UsageFacts(input_tokens=0, output_tokens=0, cache_write_tokens=4)
+    assert charge_for_usage(snapshot, known) == charge_for_usage(snapshot, aggregate) == "0.000015000"
+    assert cost_breakdown(snapshot, known)["cache_write_tiers"] == {"3600": "0.00001500"}
+    assert cost_breakdown(snapshot, aggregate)["cache_write_unclassified"] == "0.00001500"
+
+
+def test_an_explicit_free_duration_wins_over_a_paid_default_write_price() -> None:
+    snapshot: Final = {**SNAPSHOT, "version": "token-v3", "cache_write_tiers": {"3600": "0"}}
+    facts: Final = UsageFacts(input_tokens=0, output_tokens=0, cache_write_tokens=4,
+                             cache_write_ttl_tokens={"3600": 4})
+    assert charge_for_usage(snapshot, facts) == "0.000000000"
+    assert Decimal(cost_breakdown(snapshot, facts)["cache_write_tiers"]["3600"]) == 0
+
+
+def test_new_requests_freeze_the_compatible_policy_and_the_original_price_version() -> None:
+    snapshot: Final = price_snapshot(
+        {**SNAPSHOT, "version": 7},
+        {"discount": "0.65", "discount_source": "customer_model", "model": "fixture", "plan_id": "shared"},
+        "aresponses",
+    )
+    assert snapshot["version"] == "token-v3"
+    assert snapshot["price_version"] == 7
+    assert snapshot["cache_creation_input_token_cost"] == SNAPSHOT["cache_creation_input_token_cost"]
+
+
+@pytest.mark.parametrize("rate", (None, "NaN", "-1"))
+def test_new_snapshots_cannot_silently_use_an_invalid_default_cache_write_price(rate: object) -> None:
+    snapshot: Final = {**SNAPSHOT, "version": "token-v3", "cache_creation_input_token_cost": rate}
+    with pytest.raises(ValueError, match="default cache write"):
+        validate_requested_cache_ttls(snapshot, {"cache_control": {"ttl": "1h"}})

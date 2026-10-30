@@ -8,6 +8,18 @@ _TTL_TOKEN_FIELD: Final = re.compile(r"^(?:ephemeral_(\d+)([smhd])_input_tokens|
 _TTL_UNITS: Final = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 MAX_TTL_SECONDS: Final = 31_536_000
 MAX_TTL_TIERS: Final = 16
+CACHE_READ_FIELDS: Final = (
+    "cache_read_input_tokens", "cached_tokens", "prompt_cache_hit_tokens", "cache_read_tokens", "cache_hit_tokens",
+    "cachedContentTokenCount",
+)
+CACHE_WRITE_FIELDS: Final = (
+    "cache_creation_input_tokens", "cache_write_tokens", "cache_creation_tokens", "cached_creation_tokens",
+)
+CACHE_DETAIL_FIELDS: Final = ("prompt_tokens_details", "input_tokens_details", "input_details")
+CACHE_FIELDS: Final = (
+    *CACHE_READ_FIELDS, *CACHE_WRITE_FIELDS, "cache_creation", "cache_creation_token_details",
+    "cache_write_tokens_details", "cache_write_ttl_tokens",
+)
 
 
 def mapping_value(value: object) -> Mapping[str, object]:
@@ -73,6 +85,23 @@ def _container_counts(containers: tuple[Mapping[str, object], ...], names: tuple
                 yield token_count(value)
 
 
+def usage_containers(usage: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
+    return (usage, *(mapping_value(usage.get(key)) for key in CACHE_DETAIL_FIELDS))
+
+
+def has_cache_fields(usage: Mapping[str, object]) -> bool:
+    return any(container.get(key) is not None for container in usage_containers(usage) for key in CACHE_FIELDS)
+
+
+def cache_read_count(usage: Mapping[str, object]) -> int:
+    containers: Final = usage_containers(usage)
+    canonical: Final = (
+        *_counts((usage,), ("cache_read_input_tokens",)),
+        *_counts(containers[1:], ("cached_tokens",)),
+    )
+    return max(canonical, default=0) or max(_counts(containers, CACHE_READ_FIELDS), default=0)
+
+
 def _named_ttl_tokens(value: Mapping[str, object]) -> tuple[tuple[str, int], ...]:
     return tuple(_ttl_entries(value))
 
@@ -87,14 +116,11 @@ def _ttl_entries(value: Mapping[str, object]) -> Iterator[tuple[str, int]]:
 
 
 def cache_usage(usage: Mapping[str, object]) -> CacheUsage:
-    details: Final = mapping_value(usage.get("prompt_tokens_details") or usage.get("input_tokens_details"))
-    containers: Final = (usage, details)
-    reads: Final = _counts(containers, ("cache_read_input_tokens", "cached_tokens"))
-    writes: Final = _counts(containers, ("cache_creation_input_tokens", "cache_write_tokens", "cache_creation_tokens"))
-    split_sources: Final = (
-        mapping_value(usage.get("cache_creation")),
-        mapping_value(details.get("cache_creation_token_details")),
-        mapping_value(details.get("cache_write_tokens_details")),
+    containers: Final = usage_containers(usage)
+    writes: Final = _counts(containers, CACHE_WRITE_FIELDS)
+    split_sources: Final = tuple(
+        mapping_value(container.get(field)) for container in containers
+        for field in ("cache_creation", "cache_creation_token_details", "cache_write_tokens_details")
     )
     entries: Final = tuple(_all_ttl_entries(split_sources))
     explicit: Final = _validated_token_tiers(usage.get("cache_write_ttl_tokens", {}))
@@ -104,8 +130,8 @@ def cache_usage(usage: Mapping[str, object]) -> CacheUsage:
         for key in durations
     }
     return CacheUsage(
-        cache_read_tokens=max(reads, default=0),
-        cache_write_tokens=max(writes, default=sum(tiers.values())),
+        cache_read_tokens=cache_read_count(usage),
+        cache_write_tokens=max(writes, default=0) or sum(tiers.values()),
         cache_write_ttl_tokens={key: count for key, count in tiers.items() if count > 0},
     )
 

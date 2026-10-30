@@ -218,6 +218,13 @@ function detailRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+function receiptCacheWritePrices(snapshot: Record<string, unknown>, observed: readonly { ttl: string }[]) {
+  const saved = detailRecord(snapshot.cache_write_tiers);
+  const defaultPrice = snapshot.version === "token-v3" ? snapshot.cache_creation_input_token_cost : null;
+  const defaults = typeof defaultPrice === "string" ? Object.fromEntries(observed.map(({ ttl }) => [ttl, defaultPrice])) : {};
+  return { saved, effective: { ...defaults, ...saved } };
+}
+
 export function ledgerReceiptSections(details: Record<string, unknown>): ReceiptSection[] {
   const usage = detailRecord(details.usage);
   const snapshot = detailRecord(details.price_snapshot);
@@ -257,7 +264,7 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
     { key: "input_cost_per_token", label: "Input base price / 1M" },
     { key: "output_cost_per_token", label: "Output base price / 1M" },
     { key: "cache_read_input_token_cost", label: "Cache read base price / 1M" },
-    { key: "cache_creation_input_token_cost", label: "Cache write · unspecified duration base price / 1M" },
+    { key: "cache_creation_input_token_cost", label: "Cache write default base price / 1M" },
   ];
   const priceRows = prices.flatMap(({ key, label }) => {
     const value = snapshot[key];
@@ -273,21 +280,23 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
             : [{ label: label.replace("base price", "customer price"), value: `${formatMoney(effective)} USD` }]),
         ];
   });
-  const durationPriceRows = cacheTierEntries(detailRecord(snapshot.cache_write_tiers)).flatMap(([ttl, price]) => {
+  const durationPrices = receiptCacheWritePrices(snapshot, cacheWrites);
+  const durationPriceRows = cacheTierEntries(durationPrices.effective).flatMap(([ttl, price]) => {
     const scaled = typeof price === "string" ? usdPerTokenToPerMillion(price) : null;
     const effective = scaled !== null && typeof discount === "string" ? multiplyDecimals(scaled, discount) : null;
+    const duration = `${cacheDurationLabel(ttl)}${Object.hasOwn(durationPrices.saved, ttl) ? "" : " (default)"}`;
     return scaled === null
       ? []
       : [
           {
-            label: `Cache write · ${cacheDurationLabel(ttl)} ${hasReference ? "reference" : "base"} price / 1M`,
+            label: `Cache write · ${duration} ${hasReference ? "reference" : "base"} price / 1M`,
             value: `${formatMoney(scaled)} USD`,
           },
           ...(effective === null
             ? []
             : [
                 {
-                  label: `Cache write · ${cacheDurationLabel(ttl)} customer price / 1M`,
+                  label: `Cache write · ${duration} customer price / 1M`,
                   value: `${formatMoney(effective)} USD`,
                 },
               ]),

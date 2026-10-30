@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, JsonValue
 
 from litellm.litellm_core_utils.get_model_cost_map import GetModelCostMap, get_model_cost_map_source_info
 
-from .cache_usage import MAX_TTL_TIERS, CacheUsage, cache_usage, token_count, ttl_seconds_key
+from .cache_usage import MAX_TTL_TIERS, CacheUsage, cache_read_count, cache_usage, token_count, ttl_seconds_key
 from .models import cost_to_nanos, nanos_to_amount
 
 
@@ -25,30 +25,43 @@ def as_mapping(value: object) -> Mapping[str, object]:
     return {}
 
 
-def usage_facts(response: object, *, allow_input_only: bool = False) -> UsageFacts | None:
+def response_usage(response: object) -> Mapping[str, object]:
     payload: Final = as_mapping(response)
-    gemini: Final = as_mapping(payload.get("usageMetadata"))
-    if gemini:
-        try:
-            return _gemini_usage(gemini, allow_input_only)
-        except ValueError:
-            return None
-    usage: Final = as_mapping(payload.get("usage"))
+    usage: Final = as_mapping(payload.get("usage") or payload.get("usageMetadata"))
+    choices: Final = payload.get("choices")
+    choice_values: Final = tuple(as_mapping(choice) for choice in choices) if isinstance(choices, (tuple, list)) else ()
+    supplemental: Final = (
+        *(as_mapping(container.get("usage")) for choice in choice_values
+          for container in (choice, as_mapping(choice.get("provider_specific_fields")))),
+        {"cached_tokens": as_mapping(payload.get("timings")).get("cache_n")},
+        {"cached_tokens": as_mapping(as_mapping(payload.get("provider_specific_fields")).get("timings")).get("cache_n")},
+    )
+    reads: Final = tuple(cache_read_count(item) for item in supplemental if any(v is not None for v in item.values()))
+    return {**usage, "cached_tokens": max(cache_read_count(usage), *reads)} if reads else usage
+
+
+def usage_facts(response: object, *, allow_input_only: bool = False) -> UsageFacts | None:
+    try:
+        return _response_usage_facts(response_usage(response), allow_input_only)
+    except ValueError:
+        return None
+
+
+def _response_usage_facts(usage: Mapping[str, object], allow_input_only: bool) -> UsageFacts | None:
+    if "promptTokenCount" in usage:
+        return _gemini_usage(usage, allow_input_only)
     if not usage:
         return None
     if not any(key in usage for key in ("prompt_tokens", "input_tokens")):
         return None
     if not allow_input_only and not any(key in usage for key in ("completion_tokens", "output_tokens")):
         return None
-    try:
-        return _valid_usage(usage)
-    except ValueError:
-        return None
+    return _valid_usage(usage)
 
 
 def _valid_usage(usage: Mapping[str, object]) -> UsageFacts:
     cache: Final = cache_usage(usage)
-    aggregate: Final = "prompt_tokens" in usage or "input_tokens_details" in usage
+    aggregate: Final = "prompt_tokens" in usage or "input_tokens_details" in usage or "input_details" in usage
     prompt: Final = token_count(usage.get("prompt_tokens", usage.get("input_tokens")))
     cached_input: Final = cache.cache_read_tokens + cache.cache_write_tokens
     if aggregate and cached_input > prompt:
@@ -199,6 +212,7 @@ def _catalog_card(name: str, rates: Mapping[str, object]) -> dict[str, JsonValue
         "cache_read_input_token_cost": str(read_rate),
         "cache_creation_input_token_cost": str(write_rate),
         "cache_write_tiers": dict(tiers),
+        "cache_write_price_published": write is not None,
     }
 
 
@@ -216,20 +230,29 @@ def catalog_snapshot(
         raise ValueError(
             "A single supported catalog reference is required. Import the model's official reference price in Customer wallets"
         )
-    return {"version": "token-v2", "multiplier": multiplier, **candidates[0]}
+    return {"version": "token-v3", "multiplier": multiplier, **candidates[0]}
 
 
 def _cache_write_cost(snapshot: Mapping[str, object], usage: UsageFacts) -> Decimal:
-    if snapshot.get("version") != "token-v2":
+    if snapshot.get("version") not in {"token-v2", "token-v3"}:
         return Decimal(str(snapshot["cache_creation_input_token_cost"])) * usage.cache_write_tokens
     tiers: Final = validated_cache_write_tiers(snapshot.get("cache_write_tiers", {}))
     missing: Final = tuple(key for key in usage.cache_write_ttl_tokens if key not in tiers)
-    if missing:
+    if missing and snapshot.get("version") == "token-v2":
         raise ValueError("Cache write prices are missing for TTL seconds: " + ", ".join(missing))
+    default: Final = _default_cache_write_rate(snapshot)
     return (
-        Decimal(str(snapshot["cache_creation_input_token_cost"])) * usage.cache_write_unclassified_tokens
-        + sum((Decimal(tiers[key]) * tokens for key, tokens in usage.cache_write_ttl_tokens.items()), Decimal(0))
+        default * usage.cache_write_unclassified_tokens
+        + sum((Decimal(tiers[key]) * tokens if key in tiers else default * tokens
+               for key, tokens in usage.cache_write_ttl_tokens.items()), Decimal(0))
     )
+
+
+def _default_cache_write_rate(snapshot: Mapping[str, object]) -> Decimal:
+    rate: Final = _rate(snapshot.get("cache_creation_input_token_cost"))
+    if rate is None:
+        raise ValueError("A finite non-negative default cache write price is required")
+    return rate
 
 
 def _usage_amount(snapshot: Mapping[str, object], usage: UsageFacts) -> Decimal:
@@ -248,7 +271,7 @@ def charge_for_usage(snapshot: Mapping[str, object], usage: UsageFacts) -> str:
 def cost_breakdown(snapshot: Mapping[str, object], usage: UsageFacts) -> dict[str, JsonValue]:
     discount: Final = Decimal(str(snapshot.get("discount", snapshot.get("multiplier"))))
     tiers: Final = validated_cache_write_tiers(snapshot.get("cache_write_tiers", {}))
-    current: Final = snapshot.get("version") == "token-v2"
+    current: Final = snapshot.get("version") in {"token-v2", "token-v3"}
     _cache_write_cost(snapshot, usage)
     return {
         "input": format(Decimal(str(snapshot["input_cost_per_token"])) * usage.input_tokens * discount, "f"),
@@ -262,7 +285,7 @@ def cost_breakdown(snapshot: Mapping[str, object], usage: UsageFacts) -> dict[st
             "f",
         ),
         "cache_write_tiers": {
-            key: format(Decimal(tiers[key]) * count * discount, "f")
+            key: format(Decimal(tiers.get(key, snapshot["cache_creation_input_token_cost"])) * count * discount, "f")
             for key, count in usage.cache_write_ttl_tokens.items() if current
         },
         "rounding_adjustment": format(
@@ -272,6 +295,10 @@ def cost_breakdown(snapshot: Mapping[str, object], usage: UsageFacts) -> dict[st
 
 
 def validate_requested_cache_ttls(snapshot: Mapping[str, object], data: Mapping[str, object]) -> None:
+    if snapshot.get("version") == "token-v3":
+        _default_cache_write_rate(snapshot)
+        tuple(_requested_cache_ttls(data))
+        return
     if snapshot.get("version") != "token-v2":
         return
     tiers: Final = validated_cache_write_tiers(snapshot.get("cache_write_tiers", {}))

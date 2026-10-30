@@ -56,6 +56,19 @@ def test_legacy_write_total_is_unspecified_instead_of_assigned_a_guessed_duratio
     assert result.cache_write_unclassified_tokens == 14
 
 
+@pytest.mark.parametrize("fields", (
+    {"usage": {"prompt_tokens": 100, "completion_tokens": 10, "prompt_cache_hit_tokens": 20}},
+    {"usage": {"prompt_tokens": 100, "completion_tokens": 10, "input_details": {"cached_tokens": 20}}},
+    {"usage": {"prompt_tokens": 100, "completion_tokens": 10}, "choices": [{"usage": {"cached_tokens": 20}}]},
+    {"usage": {"prompt_tokens": 100, "completion_tokens": 10}, "timings": {"cache_n": 20}},
+))
+def test_compatible_cache_aliases_reach_observations_as_well_as_billing(fields: dict[str, object]) -> None:
+    result: Final = cache_observation(_KWARGS, fields, _START)
+    assert result is not None
+    assert result.cache_read_tokens == 20
+    assert result.cache_write_tokens == 0
+
+
 @pytest.mark.asyncio
 async def test_complete_stream_usage_wins_over_partial_object_and_writes_off_response_path() -> None:
     saved: list[CacheObservation] = []

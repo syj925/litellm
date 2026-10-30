@@ -14,6 +14,59 @@ from tests._vcr_conftest_common import install_live_call_probe, record_vcr_outco
 
 FIXED_TIME: Final[datetime] = datetime(2025, 1, 1, 12, 0, 0)
 
+
+@pytest.mark.parametrize(("choice_read", "timing_read", "canonical_read", "expected_read"), (
+    (20, None, None, 20), (None, 20, None, 20), (20, 90, None, 20),
+    (80, 90, 20, 20), (20, 90, 0, 20), (True, -1, 0, 0),
+))
+@pytest.mark.asyncio
+async def test_external_cache_reads_reach_native_cost_and_spend_log_without_overriding_canonical_usage(
+    choice_read: object, timing_read: object, canonical_read: int | None, expected_read: int,
+) -> None:
+    from litellm.litellm_core_utils.litellm_logging import Logging
+    from litellm.litellm_core_utils.llm_response_utils.convert_dict_to_response import convert_to_streaming_response_async
+    from litellm.proxy.spend_tracking.spend_tracking_utils import get_logging_payload
+
+    raw: Final = {
+        "id": "external-cache-fixture", "model": "external-cache-fixture", "object": "chat.completion", "created": 1,
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop",
+                     **({"usage": {"cached_tokens": choice_read}} if choice_read is not None else {})}],
+        "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110,
+                  **({"prompt_tokens_details": {"cached_tokens": canonical_read}} if canonical_read is not None else {})},
+        **({"timings": {"cache_n": timing_read}} if timing_read is not None else {}),
+    }
+    converted: Final = convert_to_model_response_object(response_object=raw, model_response_object=ModelResponse())
+    assert isinstance(converted, ModelResponse)
+    logging: Final = Logging(
+        model="external-cache-fixture", messages=[], stream=False, call_type="completion", start_time=FIXED_TIME,
+        litellm_call_id="external-cache-call", function_id="fixture",
+    )
+    rates: Final = {"input_cost_per_token": 2e-6, "output_cost_per_token": 10e-6,
+                    "cache_read_input_token_cost": 0.2e-6}
+    cost: Final = litellm.completion_cost(
+        model="external-cache-fixture", completion_response=converted, custom_llm_provider="openai",
+        custom_cost_per_token=rates, litellm_logging_obj=logging,
+    )
+    assert cost == pytest.approx((100 - expected_read) * 2e-6 + expected_read * 0.2e-6 + 10 * 10e-6)
+    assert logging.cost_breakdown is not None
+    assert logging.cost_breakdown.get("cache_read_cost", 0) == pytest.approx(expected_read * 0.2e-6)
+    payload: Final = get_logging_payload(
+        {"model": "external-cache-fixture", "response_cost": cost}, converted, FIXED_TIME, FIXED_TIME,
+    )
+    additional: Final = json.loads(payload["metadata"])["additional_usage_values"]
+    assert additional.get("cache_read_input_tokens", 0) == expected_read
+    assert getattr(converted, "timings", None) == raw.get("timings")
+    assert (converted.choices[0].provider_specific_fields or {}).get("usage") == (
+        {"cached_tokens": choice_read} if choice_read is not None else None
+    )
+    replayed: Final = tuple(convert_to_streaming_response(response_object=raw))
+    details: Final = replayed[-1].usage.prompt_tokens_details
+    assert (details.cached_tokens if details is not None else 0) == expected_read
+    async_replayed: Final = [chunk async for chunk in convert_to_streaming_response_async(response_object=raw)]
+    async_details: Final = async_replayed[-1].usage.prompt_tokens_details
+    assert (async_details.cached_tokens if async_details is not None else 0) == expected_read
+
+
 OPENAI_CUSTOM_TOOL_CALL_RESPONSE = {
     "id": "chatcmpl-abc",
     "created": 1784657740,

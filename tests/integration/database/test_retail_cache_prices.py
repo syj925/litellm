@@ -8,8 +8,10 @@ import pytest
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
+from litellm.proxy.retail.catalog import build_model_catalog
 from litellm.proxy.retail.models import IdempotencyConflict
-from litellm.proxy.retail.pricing import charge_for_usage, cost_breakdown, usage_facts
+from litellm.proxy.retail.pool_store import PoolAccess
+from litellm.proxy.retail.pricing import UsageFacts, catalog_snapshot, charge_for_usage, cost_breakdown, usage_facts
 from litellm.proxy.retail.store import WalletStore
 
 
@@ -46,6 +48,10 @@ async def _assert_frozen_cache_prices(database_url: str) -> None:
     assert legacy is not None
     assert legacy["version"] == 7
     assert legacy["cache_write_tiers"] == {}
+    assert legacy["cache_write_price_published"] is None
+    repeated: Final = WalletStore(database_url)
+    await repeated.initialize()
+    assert await repeated.get_model_price("example") == legacy
     rates: Final = {
         "input_cost_per_token": "0.000002", "output_cost_per_token": "0.000010",
         "cache_read_input_token_cost": "0.0000002", "cache_creation_input_token_cost": "0.0000025",
@@ -54,6 +60,7 @@ async def _assert_frozen_cache_prices(database_url: str) -> None:
     saved: Final = await store.save_model_price("example", rates)
     assert saved["version"] == 8
     assert saved["cache_write_tiers"] == rates["cache_write_tiers"]
+    assert saved["cache_write_price_published"] is True
     snapshot: Final = {**saved, "version": "token-v2", "price_version": saved["version"], "discount": "0.65"}
     await store.get_wallet("account", create=True)
     async with store.transaction() as connection:
@@ -87,3 +94,92 @@ async def _assert_frozen_cache_prices(database_url: str) -> None:
     assert ledger["total"] == 1
     with pytest.raises(IdempotencyConflict):
         await store.settle("request", "0", details)
+    await _assert_default_duration_prices_are_frozen(store)
+    await _assert_catalog_cache_write_provenance(store)
+
+
+async def _assert_default_duration_prices_are_frozen(store: WalletStore) -> None:
+    rates: Final = {
+        "input_cost_per_token": "0.000002", "output_cost_per_token": "0.000010",
+        "cache_read_input_token_cost": "0.0000002", "cache_creation_input_token_cost": "0.0000025",
+        "cache_write_tiers": {"300": "0.000004"},
+    }
+    saved: Final = await store.save_model_price("fallback-write", rates)
+    snapshot: Final = {**saved, "version": "token-v3", "price_version": saved["version"], "discount": "0.65"}
+    await store.get_wallet("fallback-account", create=True)
+    async with store.transaction() as connection:
+        await connection.execute("UPDATE retail_wallets SET balance_nanos=1000000000 WHERE user_id='fallback-account'")
+    await store.reserve("fallback-account", "fallback-request", "fallback-write", "0.1", snapshot)
+    await store.save_model_price("fallback-write", {
+        **rates, "cache_creation_input_token_cost": "0.5", "cache_write_tiers": {"300": "1", "43200": "2"},
+    })
+    facts: Final = UsageFacts(
+        input_tokens=100, output_tokens=10, cache_read_tokens=200, cache_write_tokens=1000,
+        cache_write_ttl_tokens={"300": 400, "43200": 600},
+    )
+    expected: Final = (
+        Decimal("0.000002") * 100 + Decimal("0.000010") * 10 + Decimal("0.0000002") * 200
+        + Decimal("0.000004") * 400 + Decimal("0.0000025") * 600
+    ) * Decimal("0.65")
+    amount: Final = charge_for_usage(snapshot, facts)
+    assert Decimal(amount) == expected
+    details: Final = {"usage": facts.model_dump(mode="json"), "cost_breakdown": cost_breakdown(snapshot, facts)}
+    await store.settle("fallback-request", amount, details)
+    await store.settle("fallback-request", amount, details)
+    reservation: Final = await store.get_reservation("fallback-request")
+    assert reservation is not None and reservation["status"] == "settled"
+    assert reservation["price_snapshot"] == snapshot
+    assert reservation["details"]["usage"]["cache_write_ttl_tokens"] == {"300": 400, "43200": 600}
+    assert Decimal(reservation["details"]["cost_breakdown"]["cache_write_tiers"]["43200"]) == (
+        Decimal("0.0000025") * 600 * Decimal("0.65")
+    )
+    wallet: Final = await store.get_wallet("fallback-account")
+    assert Decimal(str(wallet["balance"])) == Decimal(1) - expected
+    assert wallet["reserved"] == "0.000000000"
+    assert (await store.ledger("fallback-account", kind="charge"))["total"] == 1
+
+
+async def _assert_catalog_cache_write_provenance(store: WalletStore) -> None:
+    catalog: Final = {"gemini/catalog-fixture": {
+        "mode": "chat", "litellm_provider": "gemini", "input_cost_per_token": "0.000002",
+        "output_cost_per_token": "0.000006", "cache_read_input_token_cost": "0.0000002",
+    }}
+    for operation in ("auto", "import"):
+        model: Final = "publication-" + operation
+        deployment: Final = {
+            "model_name": model, "model_info": {"id": model},
+            "litellm_params": {"model": "gemini/catalog-fixture"},
+        }
+        initial: Final = catalog_snapshot(model, (deployment,), "1", catalog)
+        assert initial["cache_write_price_published"] is False
+        assert Decimal(str(initial["cache_creation_input_token_cost"])) == Decimal("0.000002")
+        if operation == "auto":
+            await store.get_model_price(model, initial)
+        else:
+            await store.save_reference_prices((initial,))
+        saved: Final = await store.get_model_price(model)
+        assert saved is not None and saved["cache_write_price_published"] is False
+        assert saved["version"] == 1
+        assert Decimal(str(saved["cache_creation_input_token_cost"])) == Decimal("0.000002")
+        page: Final = build_model_catalog(
+            (), (), PoolAccess(), (deployment,), (saved,), (), catalog, mode="public",
+        )
+        pricing: Final = page.items[0].reference_pricing
+        assert pricing is not None and pricing.cache_write is None
+        assert await store.get_model_price(model) == saved
+    for amount in ("0.000002", "0"):
+        manual_model: Final = "manual-" + amount
+        manual_saved: Final = await store.save_model_price(manual_model, {
+            "input_cost_per_token": "0.000002", "output_cost_per_token": "0.000006",
+            "cache_read_input_token_cost": "0.0000002", "cache_creation_input_token_cost": amount,
+            "cache_write_price_published": False,
+        })
+        assert manual_saved["cache_write_price_published"] is True
+        manual_page: Final = build_model_catalog(
+            (), (), PoolAccess(), ({"model_name": manual_model, "model_info": {"id": manual_model},
+                                   "litellm_params": {"model": "gemini/catalog-fixture"}},),
+            (manual_saved,), (), catalog, mode="public",
+        )
+        manual_pricing: Final = manual_page.items[0].reference_pricing
+        assert manual_pricing is not None and manual_pricing.cache_write is not None
+        assert Decimal(manual_pricing.cache_write) == Decimal(amount) * 1_000_000

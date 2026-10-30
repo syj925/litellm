@@ -1227,25 +1227,7 @@ class ResponseAPILoggingUtils:
                 prompt_tokens_details = PromptTokensDetailsWrapper(**response_api_usage.input_tokens_details)
             else:
                 prompt_tokens_details = PromptTokensDetailsWrapper(
-                    cached_tokens=getattr(response_api_usage.input_tokens_details, "cached_tokens", None),
-                    audio_tokens=getattr(response_api_usage.input_tokens_details, "audio_tokens", None),
-                    text_tokens=getattr(response_api_usage.input_tokens_details, "text_tokens", None),
-                    image_tokens=getattr(response_api_usage.input_tokens_details, "image_tokens", None),
-                    cached_tokens_details=getattr(
-                        response_api_usage.input_tokens_details, "cached_tokens_details", None
-                    ),
-                    video_tokens=getattr(response_api_usage.input_tokens_details, "video_tokens", None),
-                    cache_write_tokens=getattr(response_api_usage.input_tokens_details, "cache_write_tokens", None),
-                    cache_write_tokens_details=getattr(
-                        response_api_usage.input_tokens_details, "cache_write_tokens_details", None
-                    ),
-                    cache_creation_token_details=getattr(
-                        response_api_usage.input_tokens_details, "cache_creation_token_details", None
-                    ),
-                    web_search_requests=getattr(response_api_usage.input_tokens_details, "web_search_requests", None),
-                    google_maps_grounding_requests=getattr(
-                        response_api_usage.input_tokens_details, "google_maps_grounding_requests", None
-                    ),
+                    **response_api_usage.input_tokens_details.model_dump(),
                 )
         completion_tokens_details: CompletionTokensDetailsWrapper | None = None
         output_tokens_details: Final[OutputTokensDetails | None] = getattr(

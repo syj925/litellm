@@ -54,6 +54,38 @@ from litellm.types.utils import (
 )
 
 
+@pytest.mark.parametrize("microseconds", (499, 500, 999, 123499, 123500, 123999, 999499, 999500, 999999))
+@pytest.mark.parametrize("zone", (None, timezone.utc, timezone(datetime.timedelta(hours=8))))
+def test_spend_payload_and_cache_observation_keep_exact_millisecond_identity(
+    microseconds: int, zone: datetime.tzinfo | None,
+) -> None:
+    from litellm.proxy.retail.cache_observations import cache_observation
+
+    start: Final = datetime.datetime(2026, 1, 1, 12, 0, 0, microseconds, tzinfo=zone)
+    end: Final = start + datetime.timedelta(seconds=1, microseconds=800)
+    kwargs: Final = {
+        "model": "precision-fixture", "litellm_call_id": "precision-call", "response_cost": 0,
+        "completion_start_time": start + datetime.timedelta(microseconds=100),
+        "litellm_params": {"litellm_metadata": {"user_api_key_user_id": "precision-owner"}},
+    }
+    response: Final = {"id": "precision-request", "usage": {
+        "prompt_tokens": 100, "completion_tokens": 10, "prompt_tokens_details": {"cached_tokens": 20},
+    }}
+    observation: Final = cache_observation(kwargs, response, start)
+    assert observation is not None
+    payload: Final = get_logging_payload(kwargs, response, start, end)
+    native_start: Final = payload["startTime"]
+    assert isinstance(native_start, datetime.datetime)
+    assert native_start.tzinfo == timezone.utc
+    assert native_start.replace(tzinfo=None) == observation.started_at
+    assert payload["request_duration_ms"] == 1000
+    for field in ("endTime", "completionStartTime"):
+        stamp = payload[field]
+        assert isinstance(stamp, datetime.datetime)
+        assert stamp.tzinfo == timezone.utc
+        assert stamp.microsecond % 1000 == 0
+
+
 def _get_additional_usage_values_for_usage(usage: litellm.Usage) -> dict:
     payload = get_logging_payload(
         kwargs={

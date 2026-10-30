@@ -1,4 +1,4 @@
-import { cacheDurationLabel, cacheTierEntries } from "../cachePricing";
+import { cacheWritePriceRows } from "../cachePricing";
 
 export interface CatalogTokenPrice {
   input: string | null;
@@ -15,15 +15,10 @@ export function catalogPriceRows(
     { key: "input", label: "Input", amount: price?.input ?? null },
     { key: "output", label: "Output", amount: price?.output ?? null },
     { key: "cache_read", label: "Cache read", amount: price?.cache_read ?? null },
-    { key: "cache_write", label: "Cache write · unspecified duration", amount: price?.cache_write ?? null },
   ];
   return [
     ...baseRows,
-    ...cacheTierEntries(price?.cache_write_tiers).map(([ttl, amount]) => ({
-      key: `cache_write_${ttl}`,
-      label: `Cache write · ${cacheDurationLabel(ttl)}`,
-      amount,
-    })),
+    ...cacheWritePriceRows(price?.cache_write, price?.cache_write_tiers),
   ];
 }
 

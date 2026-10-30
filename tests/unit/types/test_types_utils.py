@@ -221,6 +221,105 @@ def test_prompt_tokens_details_maps_nested_cache_creation_input_tokens():
     assert not hasattr(non_int, "cache_write_tokens")
 
 
+@pytest.mark.parametrize(
+    "cache_fields",
+    (
+        {"prompt_cache_hit_tokens": 40, "cached_creation_tokens": 20},
+        {"cached_tokens": 40, "cache_write_tokens": 20},
+        {"cache_read_input_tokens": 40, "cache_creation_input_tokens": 20},
+        {"input_tokens_details": {"cached_tokens": 40, "cached_creation_tokens": 20}},
+        {"prompt_tokens_details": {"cache_hit_tokens": 40, "cached_creation_tokens": 20}},
+        {"prompt_tokens_details": {"cache_read_tokens": 40, "cache_creation_tokens": 20}},
+        {"prompt_tokens_details": {"cached_tokens": 0, "cache_read_input_tokens": 40, "cached_creation_tokens": 20}},
+    ),
+)
+def test_compatible_cache_aliases_survive_usage_round_trip_and_native_bridges(cache_fields: dict[str, object]) -> None:
+    from litellm.litellm_core_utils.streaming_handler import calculate_total_usage
+    from litellm.responses.litellm_completion_transformation.transformation import LiteLLMCompletionResponsesConfig
+    from litellm.responses.utils import ResponseAPILoggingUtils
+    from litellm.types.utils import Usage
+
+    usage: Final = Usage.model_validate(
+        {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110, **cache_fields},
+    )
+    response_usage: Final = LiteLLMCompletionResponsesConfig.transform_chat_completion_usage_to_responses_usage(usage)
+    native_usages: Final = (
+        usage,
+        Usage.model_validate(usage.model_dump()),
+        calculate_total_usage([ModelResponse(usage=usage)]),
+        ResponseAPILoggingUtils.transform_response_api_usage_to_chat_usage(response_usage),
+    )
+    for normalized in native_usages:
+        assert normalized.prompt_tokens_details is not None
+        assert normalized.prompt_tokens_details.cached_tokens == 40
+        assert normalized.prompt_tokens_details.cache_write_tokens == 20
+        assert normalized.prompt_tokens == 100
+        assert normalized.completion_tokens == 10
+
+
+def test_compatible_cache_alias_mirrors_are_not_added_or_relabelled_as_ttl() -> None:
+    from litellm.types.utils import Usage
+
+    raw: Final = {
+        "prompt_tokens": 100, "completion_tokens": 10,
+        "prompt_cache_hit_tokens": 40, "cached_tokens": 40,
+        "cache_creation_input_tokens": 20, "cache_creation_tokens": 20,
+        "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0, "cached_creation_tokens": 20},
+    }
+    usage: Final = Usage.model_validate(raw)
+    assert usage.prompt_tokens_details is not None
+    assert usage.prompt_tokens_details.cached_tokens == 40
+    assert usage.prompt_tokens_details.cache_write_tokens == 20
+    assert not hasattr(usage.prompt_tokens_details, "cache_creation_token_details")
+    assert {key: usage.model_dump()[key] for key in ("prompt_cache_hit_tokens", "cached_tokens")} == {
+        "prompt_cache_hit_tokens": 40, "cached_tokens": 40,
+    }
+
+
+def test_responses_input_detail_cache_durations_survive_native_usage_bridges() -> None:
+    from litellm.litellm_core_utils.streaming_handler import calculate_total_usage
+    from litellm.responses.litellm_completion_transformation.transformation import LiteLLMCompletionResponsesConfig
+    from litellm.types.utils import Usage
+
+    usage: Final = Usage(
+        prompt_tokens=100, completion_tokens=10, total_tokens=110,
+        input_tokens_details={
+            "cached_tokens": 40, "cached_creation_tokens": 20,
+            "cache_write_tokens_details": {"ttl_30m_tokens": 12, "ttl_12h_tokens": 8},
+        },
+    )
+    aggregated: Final = calculate_total_usage([ModelResponse(usage=usage)])
+    response: Final = LiteLLMCompletionResponsesConfig.transform_chat_completion_usage_to_responses_usage(aggregated)
+    assert response.input_tokens_details is not None
+    assert response.input_tokens_details.cached_tokens == 40
+    assert response.input_tokens_details.cache_write_tokens == 20
+    assert response.input_tokens_details.cache_write_tokens_details.ttl_30m_tokens == 12
+    assert response.input_tokens_details.cache_write_tokens_details.ttl_12h_tokens == 8
+
+
+def test_raw_typed_responses_cache_aliases_are_preserved_by_chat_conversion() -> None:
+    from litellm.responses.utils import ResponseAPILoggingUtils
+    from litellm.types.llms.openai import ResponseAPIUsage
+
+    raw: Final = ResponseAPIUsage(
+        input_tokens=100, output_tokens=10, total_tokens=110,
+        input_tokens_details={"cached_tokens": 40, "cached_creation_tokens": 20},
+    )
+    converted: Final = ResponseAPILoggingUtils.transform_response_api_usage_to_chat_usage(raw)
+    assert converted.prompt_tokens_details is not None
+    assert converted.prompt_tokens_details.cached_tokens == 40
+    assert converted.prompt_tokens_details.cache_write_tokens == 20
+    assert converted.prompt_tokens_details.model_dump()["cached_creation_tokens"] == 20
+
+
+@pytest.mark.parametrize("invalid", (True, -1, "40", 1.5))
+def test_invalid_compatible_cache_aliases_do_not_create_normalized_counts(invalid: object) -> None:
+    from litellm.types.utils import Usage
+
+    usage: Final = Usage.model_validate({"cached_tokens": invalid, "cached_creation_tokens": invalid})
+    assert usage.prompt_tokens_details is None
+
+
 def test_usage_server_tool_use_dict_is_coerced_and_round_trips():
     from litellm.types.utils import ServerToolUse, Usage
 

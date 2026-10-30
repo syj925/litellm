@@ -60,6 +60,25 @@ const unlisted: CatalogModel = {
 };
 
 describe("CatalogCompare", () => {
+  it("keeps generic cache prices for flat models while tiered models show their duration prices", () => {
+    const tiered: CatalogModel = {
+      ...available,
+      offers: [],
+      reference_pricing: { input: "1", output: "2", cache_read: "0.1", cache_write: "99", cache_write_tiers: { "300": "2.5", "3600": "2.5" } },
+    };
+    const flat: CatalogModel = {
+      ...unlisted,
+      reference_pricing: { input: "1", output: "2", cache_read: "0.1", cache_write: "3.33" },
+    };
+    render(<CatalogCompare models={[tiered, flat]} open onOpenChange={vi.fn()} basis="reference" publicView />);
+    const generic = screen.getByRole("row", { name: /Reference cache write \/ 1M tokens/ });
+    expect(within(generic).getByText("From $3.33")).toBeInTheDocument();
+    expect(within(generic).getByText("See duration rates")).toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /Reference cache write · 5m/ })).toHaveTextContent("From $2.50");
+    expect(screen.getByRole("row", { name: /Reference cache write · 1h/ })).toHaveTextContent("From $2.50");
+    expect(screen.queryByText("From $99.00")).not.toBeInTheDocument();
+  });
+
   it("keeps anonymous comparisons public even when the supplied model contains account-specific fields", () => {
     render(<CatalogCompare models={[available]} open onOpenChange={vi.fn()} basis="customer" publicView />);
     const dialog = screen.getByRole("dialog", { name: "Compare models" });

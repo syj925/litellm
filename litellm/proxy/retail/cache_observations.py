@@ -13,16 +13,11 @@ from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.core_helpers import get_litellm_metadata_from_kwargs
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 
-from .cache_usage import CacheUsage, cache_usage
-from .pricing import as_mapping, usage_facts
+from .cache_usage import CACHE_DETAIL_FIELDS, CacheUsage, cache_usage, has_cache_fields
+from .pricing import as_mapping, response_usage, usage_facts
 from .store import WalletStore, _many, get_store
 
 _MAX_PENDING: Final = 64
-_CACHE_FIELDS: Final = (
-    "cache_read_input_tokens", "cache_creation_input_tokens", "cachedContentTokenCount", "cached_tokens",
-    "cache_write_tokens", "cache_creation_tokens", "cache_creation", "cache_creation_token_details",
-    "cache_write_tokens_details",
-)
 TTL_AGGREGATE: Final = """(SELECT COALESCE(jsonb_object_agg(ttl,tokens),'{}'::jsonb) FROM (
  SELECT e.key AS ttl,sum(e.value::bigint)::bigint AS tokens
  FROM unnest(array_agg(cache_write_ttl_tokens)) d(payload)
@@ -32,30 +27,28 @@ TTL_AGGREGATE: Final = """(SELECT COALESCE(jsonb_object_agg(ttl,tokens),'{}'::js
 
 def legacy_cache_sql(write_total: str) -> str:
     """Read only explicit native duration fields; never infer duration from model/provider."""
-    sources: Final = (
-        ("300", "cache_creation", "ephemeral_5m_input_tokens"),
-        ("3600", "cache_creation", "ephemeral_1h_input_tokens"),
-        ("300", "prompt_tokens_details,cache_creation_token_details", "ephemeral_5m_input_tokens"),
-        ("3600", "prompt_tokens_details,cache_creation_token_details", "ephemeral_1h_input_tokens"),
-        ("300", "input_tokens_details,cache_creation_token_details", "ephemeral_5m_input_tokens"),
-        ("3600", "input_tokens_details,cache_creation_token_details", "ephemeral_1h_input_tokens"),
-        ("1800", "prompt_tokens_details,cache_write_tokens_details", "ttl_30m_tokens"),
-        ("43200", "prompt_tokens_details,cache_write_tokens_details", "ttl_12h_tokens"),
-        ("1800", "input_tokens_details,cache_write_tokens_details", "ttl_30m_tokens"),
-        ("43200", "input_tokens_details,cache_write_tokens_details", "ttl_12h_tokens"),
+    sources: Final = tuple(
+        (ttl, f"{prefix},{container}" if prefix else container, field)
+        for prefix in ("", *CACHE_DETAIL_FIELDS)
+        for container in ("cache_creation", "cache_creation_token_details", "cache_write_tokens_details")
+        for ttl, field in (
+            ("300", "ephemeral_5m_input_tokens"), ("3600", "ephemeral_1h_input_tokens"),
+            ("1800", "ttl_30m_tokens"), ("43200", "ttl_12h_tokens"),
+        )
     )
     values: Final = ",".join(
         f"('{ttl}',s.metadata #> '{{additional_usage_values,{container},{field}}}')"
         for ttl, container, field in sources
     )
     return f"""LEFT JOIN LATERAL (
- SELECT COALESCE({write_total},CASE WHEN valid THEN reported_total END)::bigint AS cache_write_tokens,
- CASE WHEN valid AND reported_total<=COALESCE({write_total},reported_total)
+ SELECT total::bigint AS cache_write_tokens,
+ CASE WHEN valid AND reported_total<=total
       THEN tiers ELSE '{{}}'::jsonb END AS cache_write_ttl_tokens,
- CASE WHEN valid AND reported_total<=COALESCE({write_total},reported_total)
-      THEN COALESCE({write_total},reported_total)-reported_total ELSE {write_total} END::bigint
+ CASE WHEN valid AND reported_total<=total
+      THEN total-reported_total ELSE total END::bigint
       AS cache_write_unclassified_tokens
- FROM (SELECT sum(tokens)::bigint AS reported_total,
+ FROM (SELECT *,COALESCE(NULLIF({write_total},0),CASE WHEN valid THEN reported_total END,{write_total}) AS total
+       FROM (SELECT sum(tokens)::bigint AS reported_total,
        COALESCE(bool_and(valid),true) AS valid,
        COALESCE(jsonb_object_agg(ttl,tokens) FILTER(WHERE tokens>0),'{{}}'::jsonb) AS tiers
        FROM (SELECT ttl,max(tokens)::bigint AS tokens,bool_and(valid) AS valid
@@ -64,7 +57,7 @@ def legacy_cache_sql(write_total: str) -> str:
                         THEN amount::text::bigint END AS tokens,
                    amount IS NULL OR amount='null'::jsonb OR
                    (jsonb_typeof(amount)='number' AND amount::text ~ '^[0-9]{{1,18}}$') AS valid
-                   FROM (VALUES {values}) native(ttl,amount)) parsed GROUP BY ttl) durations) aggregate
+                   FROM (VALUES {values}) native(ttl,amount)) parsed GROUP BY ttl) durations) aggregate) normalized
  ) legacy_cache ON true"""
 
 
@@ -97,8 +90,7 @@ def _utc_naive(value: datetime) -> datetime:
 
 
 def _has_cache_fields(usage: Mapping[str, object]) -> bool:
-    details: Final = as_mapping(usage.get("prompt_tokens_details") or usage.get("input_tokens_details"))
-    return any(item.get(key) is not None for item in (usage, details) for key in _CACHE_FIELDS)
+    return has_cache_fields(usage)
 
 
 def cache_observation(kwargs: Mapping[str, object], response: object, start_time: datetime) -> CacheObservation | None:
@@ -109,8 +101,7 @@ def cache_observation(kwargs: Mapping[str, object], response: object, start_time
         return None
     if not isinstance(user_id, str) or not 0 < len(user_id) <= 191 or not isinstance(start_time, datetime):
         return None
-    payload: Final = as_mapping(response)
-    usage: Final = as_mapping(payload.get("usage") or payload.get("usageMetadata"))
+    usage: Final = response_usage(response)
     if not _has_cache_fields(usage):
         return None
     facts: Final = usage_facts(response, allow_input_only=True)

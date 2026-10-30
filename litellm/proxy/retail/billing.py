@@ -74,7 +74,7 @@ def price_snapshot(
 ) -> dict[str, JsonValue]:
     return {
         **card,
-        "version": "token-v2",
+        "version": "token-v3",
         "price_version": card.get("version"),
         "multiplier": str(discount["discount"]),
         "discount": str(discount["discount"]),

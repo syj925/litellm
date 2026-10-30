@@ -16,11 +16,13 @@ from litellm.proxy.retail.api import (
     SetDiscountRequest,
     SetModelDiscountRequest,
     SignupRequest,
+    _model_price_view,
     _per_token_price,
     _PublicLedgerPage,
     _public_ledger_details,
     _select_references,
     _source_hash,
+    _StoredModelPrice,
     _validate_discount_selection,
     retail_admin,
     retail_user,
@@ -37,6 +39,27 @@ def test_custom_cache_duration_prices_keep_per_million_units_and_zero_rates() ->
     assert request.cache_write_tiers == {"300": "2.5", "3600": "4", "750": "0"}
     assert _per_token_price(request.cache_write_tiers["750"]) == "0"
     assert _per_token_price(request.cache_write_tiers["3600"]) == "0.000004"
+
+
+def test_manual_price_requests_cannot_override_catalog_publication_evidence() -> None:
+    with pytest.raises(ValidationError, match="cache_write_price_published"):
+        ModelPriceRequest.model_validate({
+            "model": "fixture", "input_per_million": "1", "output_per_million": "2",
+            "cache_read_per_million": "0.1", "cache_write_per_million": "0",
+            "cache_write_price_published": False,
+        })
+
+
+def test_management_price_responses_keep_internal_default_amounts_separate_from_publication_evidence() -> None:
+    view: Final = _model_price_view(_StoredModelPrice(
+        model="fixture", version=3, updated_at="2026-01-01T00:00:00Z", source="catalog",
+        input_cost_per_token="0.000002", output_cost_per_token="0.000006",
+        cache_read_input_token_cost="0.0000002", cache_creation_input_token_cost="0.000002",
+        cache_write_price_published=False,
+    ))
+    assert view["cache_write_per_million"] == "2.000000"
+    assert view["cache_write_price_published"] is False
+    assert view["version"] == 3
 
 
 @pytest.mark.parametrize("tiers", ({"0": "1"}, {"0300": "1"}, {"5m": "1"}, {"300": "NaN"}, {"300": "-1"}))

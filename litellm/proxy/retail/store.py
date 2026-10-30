@@ -128,6 +128,7 @@ class _ModelPriceRow(BaseModel):
     cache_read_input_token_cost: Decimal
     cache_creation_input_token_cost: Decimal
     cache_write_tiers: dict[str, str] = Field(default_factory=dict)
+    cache_write_price_published: bool | None = None
     version: int
     updated_at: datetime
     source: str = "legacy"
@@ -161,8 +162,9 @@ _MODEL_PRICE_KEYS: Final = (
 )
 _MODEL_PRICE_INSERT: Final = """
     INSERT INTO retail_model_prices(model,input_cost_per_token,output_cost_per_token,
-           cache_read_input_token_cost,cache_creation_input_token_cost,source,catalog_model,source_label,cache_write_tiers)
-    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           cache_read_input_token_cost,cache_creation_input_token_cost,source,catalog_model,source_label,cache_write_tiers,
+           cache_write_price_published)
+    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
 """
 
 
@@ -260,6 +262,7 @@ def _model_price_view(row: _ModelPriceRow) -> dict[str, JsonValue]:
         "cache_read_input_token_cost": format(row.cache_read_input_token_cost, "f"),
         "cache_creation_input_token_cost": format(row.cache_creation_input_token_cost, "f"),
         "cache_write_tiers": {key: value for key, value in row.cache_write_tiers.items()},
+        "cache_write_price_published": row.cache_write_price_published,
         "version": row.version,
         "updated_at": row.updated_at.isoformat(),
         "source": row.source,
@@ -289,6 +292,15 @@ def _model_price_tiers(rates: Mapping[str, JsonValue]) -> dict[str, str]:
         return validated_cache_write_tiers(rates.get("cache_write_tiers", {}))
     except ValueError as exc:
         raise InvalidAmount(str(exc)) from exc
+
+
+def _model_price_published(rates: Mapping[str, JsonValue], source: str) -> bool | None:
+    if source == "manual":
+        return True
+    value: Final = rates.get("cache_write_price_published")
+    if value is not None and not isinstance(value, bool):
+        raise InvalidAmount("Published cache write pricing must be a boolean or unknown")
+    return value
 
 
 def model_discount_view(
@@ -721,6 +733,7 @@ class WalletStore:
                         initial_snapshot.get("catalog_model"),
                         initial_snapshot.get("source_label", "Existing reference, review required"),
                         Jsonb(_model_price_tiers(initial_snapshot)),
+                        _model_price_published(initial_snapshot, str(initial_snapshot.get("source", "legacy"))),
                     ),
                 )
             row: Final = await _one(
@@ -756,6 +769,7 @@ class WalletStore:
                 catalog_model,
                 source_label,
                 _model_price_tiers(rates),
+                _model_price_published(rates, source),
             )
 
     async def save_reference_prices(self, cards: Sequence[Mapping[str, JsonValue]]) -> dict[str, JsonValue]:
@@ -771,6 +785,7 @@ class WalletStore:
                         str(card["catalog_model"]),
                         str(card["source_label"]),
                         _model_price_tiers(card),
+                        _model_price_published(card, "catalog"),
                     )
                     for card, rates in parsed
                 ]
@@ -786,6 +801,7 @@ class WalletStore:
         catalog_model: str | None,
         source_label: str,
         cache_write_tiers: Mapping[str, str],
+        cache_write_price_published: bool | None,
     ) -> dict[str, JsonValue]:
         if not model or len(model) > 191 or source not in {"manual", "catalog"}:
             raise ValueError("A configured model name and reference source are required")
@@ -798,10 +814,11 @@ class WalletStore:
                 cache_read_input_token_cost=EXCLUDED.cache_read_input_token_cost,
                 cache_creation_input_token_cost=EXCLUDED.cache_creation_input_token_cost,
                 cache_write_tiers=EXCLUDED.cache_write_tiers,
+                cache_write_price_published=EXCLUDED.cache_write_price_published,
                 source=EXCLUDED.source,catalog_model=EXCLUDED.catalog_model,source_label=EXCLUDED.source_label,
                 version=retail_model_prices.version+1,updated_at=now()
                 RETURNING *""",
-            (model, *rates, source, catalog_model, source_label, Jsonb(dict(cache_write_tiers))),
+            (model, *rates, source, catalog_model, source_label, Jsonb(dict(cache_write_tiers)), cache_write_price_published),
             _ModelPriceRow,
         )
         if row is None:

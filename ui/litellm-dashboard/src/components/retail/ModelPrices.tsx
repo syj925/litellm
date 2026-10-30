@@ -23,7 +23,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/lib/toast";
 import { formatMoney, retailRequest } from "./api";
-import { cacheDurationLabel, cacheTierEntries, validateCacheTierDrafts, type CacheTierDraft } from "./cachePricing";
+import {
+  cacheDurationLabel,
+  cacheTierEntries,
+  cacheWritePriceRows,
+  validateCacheTierDrafts,
+  type CacheTierDraft,
+} from "./cachePricing";
 
 interface SalesPrice {
   model: string;
@@ -56,8 +62,9 @@ const rateFields = [
   { key: "input_per_million", label: "Input" },
   { key: "output_per_million", label: "Output" },
   { key: "cache_read_per_million", label: "Cache read" },
-  { key: "cache_write_per_million", label: "Cache write · unspecified duration" },
+  { key: "cache_write_per_million", label: "Cache write (default)" },
 ] as const;
+const baseRateFields = rateFields.filter(({ key }) => key !== "cache_write_per_million");
 const emptyPrice: SalesPrice = {
   model: "",
   input_per_million: "",
@@ -242,12 +249,12 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
               <TableHeader className="bg-muted/40">
                 <TableRow>
                   <TableHead className="pl-5">Model</TableHead>
-                  {rateFields.map(({ key, label }) => (
+                  {baseRateFields.map(({ key, label }) => (
                     <TableHead key={key} className="text-right">
                       {label} / 1M tokens
                     </TableHead>
                   ))}
-                  <TableHead>Cache write duration prices / 1M</TableHead>
+                  <TableHead>Cache write / 1M tokens</TableHead>
                   <TableHead>Version</TableHead>
                   <TableHead>Reference source</TableHead>
                   <TableHead>Updated</TableHead>
@@ -258,24 +265,22 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                 {prices.data?.items.map((price) => (
                   <TableRow key={price.model}>
                     <TableCell className="pl-5 font-medium">{price.model}</TableCell>
-                    {rateFields.map(({ key }) => (
+                    {baseRateFields.map(({ key }) => (
                       <TableCell key={key} className="text-right tabular-nums">
                         {formatMoney(price[key])}
                       </TableCell>
                     ))}
                     <TableCell className="min-w-40 text-xs tabular-nums">
-                      {cacheTierEntries(price.cache_write_tiers).length ? (
-                        <dl className="space-y-1">
-                          {cacheTierEntries(price.cache_write_tiers).map(([ttl, rate]) => (
-                            <div key={ttl} className="flex justify-between gap-4">
-                              <dt>{cacheDurationLabel(ttl)}</dt>
-                              <dd>{formatMoney(rate)}</dd>
+                      <dl className="space-y-1">
+                        {cacheWritePriceRows(price.cache_write_per_million, price.cache_write_tiers).map(
+                          ({ key, label, amount }) => (
+                            <div key={key} className="flex justify-between gap-4">
+                              <dt>{label}</dt>
+                              <dd>{formatMoney(amount ?? "")}</dd>
                             </div>
-                          ))}
-                        </dl>
-                      ) : (
-                        <span className="text-muted-foreground">No duration prices</span>
-                      )}
+                          ),
+                        )}
+                      </dl>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">v{price.version}</Badge>
@@ -363,8 +368,8 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                 </div>
                 <p className="text-xs leading-5 text-muted-foreground">
                   Set each write duration separately. These are complete write prices, not a surcharge on input. The
-                  unspecified-duration price applies only when upstream usage does not identify a duration. A reported
-                  duration without a configured price remains pending for review.
+                  duration-specific rate takes precedence over the default cache write rate. Use the default rate for
+                  models priced without duration tiers.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {[300, 1800, 3600, 43200].map((ttl) => (
@@ -629,12 +634,13 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                           <TableCell className="text-right text-xs tabular-nums">
                             {chosen ? (
                               <div className="space-y-1">
-                                <p>Unspecified: {formatMoney(chosen.cache_write_per_million)}</p>
-                                {cacheTierEntries(chosen.cache_write_tiers).map(([ttl, rate]) => (
-                                  <p key={ttl}>
-                                    {cacheDurationLabel(ttl)}: {formatMoney(rate)}
-                                  </p>
-                                ))}
+                                {cacheWritePriceRows(chosen.cache_write_per_million, chosen.cache_write_tiers).map(
+                                  ({ key, label, amount }) => (
+                                    <p key={key}>
+                                      {label}: {formatMoney(amount ?? "")}
+                                    </p>
+                                  ),
+                                )}
                               </div>
                             ) : (
                               "Choose reference"
