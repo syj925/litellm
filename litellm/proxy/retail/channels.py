@@ -10,6 +10,13 @@ from litellm.proxy._types import ModelInfoDelete, UserAPIKeyAuth
 from litellm.types.router import Deployment
 
 from .api import Admin, Store, _execute
+from .channel_connection import (
+    ChannelConnectionPatch,
+    ChannelConnectionSummary,
+    ProxyConnectionRuntime,
+    apply_channel_connection,
+    get_channel_connection,
+)
 from .channel_metrics import router as channel_metrics_router
 from .channel_store import ChannelDetails, ChannelMember, ChannelStore, ChannelUpdate
 from .pool_store import deployment_catalog, router_deployments
@@ -44,7 +51,10 @@ class ChannelAddDeployments(BaseModel):
 
 
 class ChannelEdit(ChannelUpdate):
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+
     expected_version: int = Field(ge=1)
+    connection_patch: ChannelConnectionPatch | None = None
 
 
 def _validate_new_deployments(deployments: Sequence[Deployment]) -> None:
@@ -80,7 +90,25 @@ async def admin_create_channel(data: ChannelCreate, admin: Admin, store: Store) 
 
 @router.put("/{channel_id}")
 async def admin_update_channel(channel_id: str, data: ChannelEdit, admin: Admin, store: Store) -> dict[str, JsonValue]:
-    return await _execute(ChannelStore(store).save_existing(data, router_deployments(), channel_id))
+    if data.connection_patch is not None and data.connection_patch.changed:
+        return await _execute(
+            apply_channel_connection(
+                store, channel_id, data, data.connection_patch, admin.user_id or "proxy_admin", ProxyConnectionRuntime()
+            )
+        )
+    channels: Final = ChannelStore(store)
+    async with channels.operation_lock(channel_id):
+        return await _execute(channels.save_existing(data, router_deployments(), channel_id))
+
+
+@router.get("/{channel_id}/connection", response_model=ChannelConnectionSummary)
+async def admin_channel_connection(channel_id: str, admin: Admin, store: Store) -> ChannelConnectionSummary:
+    try:
+        return await get_channel_connection(store, channel_id)
+    except Exception as exc:
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(503, "Channel connection details are temporarily unavailable") from None
 
 
 @router.post("/{channel_id}/deployments")

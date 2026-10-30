@@ -14699,6 +14699,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/channels/{channel_id}/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Channel Connection */
+        get: operations["admin_channel_connection_retail_admin_channels__channel_id__connection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/channels/{channel_id}/deployments": {
         parameters: {
             query?: never;
@@ -29757,6 +29774,39 @@ export interface components {
             /** Deployments */
             deployments: components["schemas"]["Deployment"][];
         };
+        /** ChannelConnectionPatch */
+        ChannelConnectionPatch: {
+            /** Api Base */
+            api_base?: string | null;
+            /** Api Key */
+            api_key?: string | null;
+        };
+        /** ChannelConnectionSummary */
+        ChannelConnectionSummary: {
+            /** Api Base */
+            api_base: string | null;
+            /** Api Base Mixed */
+            api_base_mixed: boolean;
+            /** Can Edit */
+            can_edit: boolean;
+            /** Channel Id */
+            channel_id: string;
+            /**
+             * Credential Mode
+             * @enum {string}
+             */
+            credential_mode: "direct" | "referenced" | "mixed" | "unknown";
+            /** Deployment Count */
+            deployment_count: number;
+            /** Editable Deployment Count */
+            editable_deployment_count: number;
+            /** Has Api Key */
+            has_api_key: boolean | null;
+            /** Reason */
+            reason: string | null;
+            /** Version */
+            version: number;
+        };
         /** ChannelCreate */
         ChannelCreate: {
             /**
@@ -29776,6 +29826,7 @@ export interface components {
         };
         /** ChannelEdit */
         ChannelEdit: {
+            connection_patch?: components["schemas"]["ChannelConnectionPatch"] | null;
             /** Deployment Ids */
             deployment_ids: string[];
             /** Expected Version */
@@ -73523,6 +73574,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: components["schemas"]["JsonValue"];
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_channel_connection_retail_admin_channels__channel_id__connection_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelConnectionSummary"];
                 };
             };
             /** @description Validation Error */

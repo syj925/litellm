@@ -1,3 +1,28 @@
+# Channel connection editor QA
+
+final result: passed for the desktop states reviewed
+
+The existing channel editor now includes an Upstream connection section for changing the API base URL and replacing the API key. It retains the current LiteLLM modal, form controls, typography, neutral borders and dark Save action. The resource pool control shows the readable name and draft state.
+
+| Evidence | Location |
+| --- | --- |
+| Existing editor reference supplied by the user | C:/Users/26933/AppData/Local/Temp/codex-clipboard-a70ab33a-0536-4eba-8e84-995e1b36cb70.png |
+| URL and key behavior reference supplied by the user | C:/Users/26933/AppData/Local/Temp/codex-clipboard-35db4ed3-f741-41a3-a2b1-1435b68d9bc9.png |
+| Final implementation | http://127.0.0.1:4000/ui/channels/ |
+| Final capture | C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/channel-connection-editor-proof.png |
+
+The final capture uses a 1280 x 720 viewport and screenshot at density 1. The user references have different image dimensions and include partial product views, so this is a functional adaptation within the existing dashboard rather than a pixel clone. The final screenshot and URL/key reference were opened together for comparison. Labels, helper text and input values remain readable; controls align within the modal. Existing provider assets and neutral form styling are retained. No decorative assets were introduced.
+
+The actual local editor loaded the safe connection summary for 14 selected deployments. Enabling Change API base URL made the URL editable. The new key field started empty and no saved key or fragment was returned. Discard restored the local draft; scrolling exposed the existing Save channel and Cancel buttons without clipping. Cancel closed the editor without a write. The closed pool selector showed Anthropic (draft). Browser warning/error collection returned an empty list.
+
+Targeted backend coverage passed: 57 connection/channel/store checks, 3 unsafe-existing-URL regressions and 6 non-API-key authentication regressions. Targeted frontend coverage passed: 18 tests. Production TypeScript checking and the webpack production build passed. An isolated PostgreSQL fixture passed 17 checks, including compensation and concurrent-edit protection. An isolated running LiteLLM proxy with local Anthropic mocks passed 12 checks, including immediate routing after URL/key replacement, blank-key preservation and anonymous/ordinary-user denial. These were local mocks, not real vendor authentication calls.
+
+The updated local service is healthy. Before/after fingerprints of all 4 live channels, 56 native model configurations and 56 pool bindings matched exactly. No paid upstream call or live connection edit was required. Shared named credentials, static models and explicit alternate authentication without an API key remain read-only with an explanation. Mobile and dark-theme visual acceptance were not performed.
+
+No actionable desktop P0, P1 or P2 finding remains in the reviewed states. The existing vertically scrolling modal is preserved; the save action is reachable after the deployment list.
+
+---
+
 # Channel analytics design QA
 
 final result: passed

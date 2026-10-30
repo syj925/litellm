@@ -7,6 +7,7 @@ import ChannelsPanel from "./ChannelsPanel";
 import DeploymentChannelIdentity, { ChannelIdentityProvider } from "./DeploymentChannelIdentity";
 import type { ResourcePool } from "../pools/types";
 import type { NamedChannel } from "./types";
+import { chooseSelectOption } from "../../../../tests/test-utils";
 
 const auth = vi.hoisted(() => ({ accessToken: "test-admin", userRole: "Admin", isAuthorized: true, isLoading: false }));
 vi.mock("@/app/(dashboard)/hooks/useAuthorized", () => ({ default: () => auth }));
@@ -39,6 +40,18 @@ const channel: NamedChannel = {
   deployment_count: 2,
   status: "active",
   version: 7,
+};
+const connection = {
+  channel_id: channel.id,
+  version: channel.version,
+  deployment_count: 2,
+  editable_deployment_count: 2,
+  can_edit: true,
+  reason: null,
+  api_base: "https://one.example.test/v1",
+  api_base_mixed: false,
+  has_api_key: true,
+  credential_mode: "direct",
 };
 const deployments = [
   {
@@ -85,8 +98,8 @@ it("names an existing connection and assigns all its models to a single pool", a
   const close = vi.fn();
   mount(<ChannelEditor deployments={deployments} pools={[pool]} accessToken="test-admin" onClose={close} />);
   fireEvent.change(screen.getByRole("textbox", { name: "Channel name" }), { target: { value: channel.name } });
-  fireEvent.change(screen.getByRole("combobox", { name: "Resource pool" }), { target: { value: pool.id } });
   const user = userEvent.setup();
+  await chooseSelectOption(user, screen.getByRole("combobox", { name: "Resource pool" }), pool.name);
   await user.click(screen.getByRole("checkbox", { name: /Select connection one.example.test/ }));
   expect(screen.getByText("2 deployments selected")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Save channel" }));
@@ -95,8 +108,10 @@ it("names an existing connection and assigns all its models to a single pool", a
 });
 
 it("sends the channel revision and keeps a rejected stale edit open", async () => {
-  const fetchMock = vi.fn(
-    async () => new Response(JSON.stringify({ detail: "Channel changed. Reload before saving." }), { status: 409 }),
+  const fetchMock = vi.fn(async (path: string, _options?: RequestInit) =>
+    path.endsWith("/connection")
+      ? new Response(JSON.stringify(connection))
+      : new Response(JSON.stringify({ detail: "Channel changed. Reload before saving." }), { status: 409 }),
   );
   vi.stubGlobal("fetch", fetchMock);
   const close = vi.fn();
@@ -111,12 +126,14 @@ it("sends the channel revision and keeps a rejected stale edit open", async () =
   );
   await userEvent.setup().click(screen.getByRole("button", { name: "Save channel" }));
   expect(await screen.findByText("Channel changed. Reload before saving.")).toBeInTheDocument();
-  expect(JSON.parse(String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body))).toEqual({
+  const write = fetchMock.mock.calls.find(([, options]) => options?.method === "PUT");
+  const expectedWrite = {
     name: channel.name,
     pool_id: pool.id,
     deployment_ids: ["a", "b"],
     expected_version: 7,
-  });
+  };
+  expect(JSON.parse(String(write?.[1]?.body))).toEqual(expectedWrite);
   expect(close).not.toHaveBeenCalled();
 });
 
@@ -180,7 +197,8 @@ it("lets an operator remove a deleted deployment instead of trapping an unsavabl
   const writes: unknown[] = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (_path: string, options?: RequestInit) => {
+    vi.fn(async (path: string, options?: RequestInit) => {
+      if (path.endsWith("/connection")) return new Response(JSON.stringify(connection));
       writes.push(JSON.parse(String(options?.body)));
       return new Response(JSON.stringify(channel));
     }),

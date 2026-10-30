@@ -255,23 +255,35 @@ class ChannelStore:
         self, details: ChannelUpdate, deployments: Sequence[Mapping[str, object]], channel_id: str | None = None
     ) -> dict[str, JsonValue]:
         identifier: Final = channel_id or str(uuid4())
-        members: Final = selected_members(identifier, details.deployment_ids, deployment_catalog(deployments))
         await self.wallet_store.initialize()
         async with self.wallet_store.transaction() as connection:
-            await self.pools._settings(connection, lock=True)
-            current: Final = await self._channel(connection, identifier)
-            if channel_id is not None and current is None:
-                raise HTTPException(404, "Channel does not exist")
-            if current is not None and current.status != "active":
-                raise HTTPException(409, "Recover the unfinished channel deployment operation before editing")
-            if current is not None and details.expected_version != current.version:
-                raise HTTPException(409, "The channel changed. Reload it before saving your edits")
-            pool: Final = await self._pool(connection, details.pool_id)
-            await self._validate_name(connection, details.name, identifier)
-            await self._validate_members(connection, identifier, members)
-            row: Final = await self._save_row(connection, identifier, details, "active")
-            await self._replace_members(connection, row, members, current)
-            return channel_view(row, members, pool.name)
+            return await self.save_existing_in_transaction(
+                connection, details, deployments, identifier, channel_id is not None
+            )
+
+    async def save_existing_in_transaction(
+        self,
+        connection: psycopg.AsyncConnection,
+        details: ChannelUpdate,
+        deployments: Sequence[Mapping[str, object]],
+        channel_id: str,
+        require_existing: bool = True,
+    ) -> dict[str, JsonValue]:
+        members: Final = selected_members(channel_id, details.deployment_ids, deployment_catalog(deployments))
+        await self.pools._settings(connection, lock=True)
+        current: Final = await self._channel(connection, channel_id)
+        if require_existing and current is None:
+            raise HTTPException(404, "Channel does not exist")
+        if current is not None and current.status != "active":
+            raise HTTPException(409, "Recover the unfinished channel deployment operation before editing")
+        if current is not None and details.expected_version != current.version:
+            raise HTTPException(409, "The channel changed. Reload it before saving your edits")
+        pool: Final = await self._pool(connection, details.pool_id)
+        await self._validate_name(connection, details.name, channel_id)
+        await self._validate_members(connection, channel_id, members)
+        row: Final = await self._save_row(connection, channel_id, details, "active")
+        await self._replace_members(connection, row, members, current)
+        return channel_view(row, members, pool.name)
 
     async def reserve_new(
         self, details: ChannelDetails, members: Sequence[ChannelMember], channel_id: str
