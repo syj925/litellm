@@ -9,7 +9,7 @@ export const pageDescriptions: Record<string, string> = {
   "api-keys": "Manage virtual keys for API access and authentication",
   "llm-playground": "Interactive playground for testing LLM requests",
   models: "Configure and manage LLM models and endpoints",
-  "model-catalog": "Browse models available through your authorized resource pools",
+  "model-catalog": "View your available models, resource pools and account pricing",
   channels: "Manage named upstream channels and their deployments",
   "resource-pools": "Configure resource pools, routing access and pool pricing",
   wallet: "View your available balance and wallet transactions",

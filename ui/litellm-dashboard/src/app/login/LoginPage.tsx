@@ -24,6 +24,8 @@ import { useEffect, useId, useState } from "react";
 import { z } from "zod";
 import { useWorker } from "@/hooks/useWorker";
 import { RegistrationLink } from "@/components/retail/SignupPanel";
+import Link from "next/link";
+import { uiHref } from "@/utils/uiHref";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Please enter your username"),
@@ -350,6 +352,11 @@ function LoginPageContent() {
                 </FieldGroup>
               </form>
               <RegistrationLink />
+              <p className="mt-3 text-center text-sm">
+                <Link href={uiHref("models")} className="text-muted-foreground underline hover:text-foreground">
+                  Browse models without signing in
+                </Link>
+              </p>
             </div>
             {uiConfig?.sso_configured && <SsoEnabledNotice />}
           </TooltipProvider>

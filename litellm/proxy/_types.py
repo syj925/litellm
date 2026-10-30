@@ -858,6 +858,7 @@ class LiteLLMRoutes(enum.Enum):
             "/public/mcp_hub",
             "/public/skill_hub",
             "/public/litellm_model_cost_map",
+            "/retail/public/model-catalog",
             "/moyai/connect/exchange",
         )
     )
@@ -909,6 +910,7 @@ class LiteLLMRoutes(enum.Enum):
             "/retail/plans",
             "/retail/model-discounts",
             "/retail/pools",
+            "/retail/model-catalog",
             "/retail/pools/preview",
             "/global/activity",
             "/global/activity/model",
@@ -947,6 +949,7 @@ class LiteLLMRoutes(enum.Enum):
             "/retail/plans",
             "/retail/model-discounts",
             "/retail/pools",
+            "/retail/model-catalog",
             "/retail/pools/preview",
             # Tag usage endpoints scope internal viewers to tags produced by
             # their own keys in tag_management_endpoints.py.

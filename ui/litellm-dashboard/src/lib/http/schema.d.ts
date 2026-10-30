@@ -15168,6 +15168,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/model-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Own Model Catalog */
+        get: operations["own_model_catalog_retail_model_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/model-discounts": {
         parameters: {
             query?: never;
@@ -15230,6 +15247,23 @@ export interface paths {
         put?: never;
         /** Pool Preview */
         post: operations["pool_preview_retail_pools_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/public/model-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Public Catalog */
+        get: operations["public_catalog_retail_public_model_catalog_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -29535,6 +29569,118 @@ export interface components {
              * @default
              */
             trace_ref: string;
+        };
+        /** CatalogCapabilities */
+        CatalogCapabilities: {
+            /** Audio Input */
+            audio_input?: boolean | null;
+            /** Audio Output */
+            audio_output?: boolean | null;
+            /** Pdf Input */
+            pdf_input?: boolean | null;
+            /** Prompt Caching */
+            prompt_caching?: boolean | null;
+            /** Reasoning */
+            reasoning?: boolean | null;
+            /** Structured Output */
+            structured_output?: boolean | null;
+            /** Tools */
+            tools?: boolean | null;
+            /** Vision */
+            vision?: boolean | null;
+        };
+        /** CatalogModel */
+        CatalogModel: {
+            /** Available To Me */
+            available_to_me: boolean;
+            capabilities: components["schemas"]["CatalogCapabilities"];
+            /** Context Length */
+            context_length?: number | null;
+            /** Description */
+            description?: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Input Modalities
+             * @default []
+             */
+            input_modalities: string[];
+            /** Max Output Tokens */
+            max_output_tokens?: number | null;
+            /** Metadata Source */
+            metadata_source?: ("reference_catalog" | "deployment") | null;
+            /** Mode */
+            mode?: string | null;
+            /** Name */
+            name: string;
+            /** Offers */
+            offers: components["schemas"]["CatalogOffer"][];
+            /**
+             * Output Modalities
+             * @default []
+             */
+            output_modalities: string[];
+            /** Provider */
+            provider?: string | null;
+            reference_pricing?: components["schemas"]["CatalogRates"] | null;
+        };
+        /** CatalogOffer */
+        CatalogOffer: {
+            /** Available To Me */
+            available_to_me: boolean;
+            /** Pool Id */
+            pool_id: string;
+            /** Pool Name */
+            pool_name: string;
+            pricing: components["schemas"]["CatalogPricing"];
+            /** Source Kind */
+            source_kind: string;
+        };
+        /** CatalogPage */
+        CatalogPage: {
+            /** Items */
+            items: components["schemas"]["CatalogModel"][];
+            /**
+             * Metadata Note
+             * @default Declared model capabilities come from the reference catalog or configured metadata, not live tests. Missing values are unknown, not evidence that a capability is unsupported. Base reference prices are listed in USD per million tokens. Context, cache duration, tools and other pricing variants can have separate rates.
+             */
+            metadata_note: string;
+        };
+        /** CatalogPricing */
+        CatalogPricing: {
+            /**
+             * Currency
+             * @default USD
+             * @constant
+             */
+            currency: "USD";
+            customer?: components["schemas"]["CatalogRates"] | null;
+            /** Discount */
+            discount?: string | null;
+            reference?: components["schemas"]["CatalogRates"] | null;
+            /** Source Label */
+            source_label?: string | null;
+            /**
+             * Unit
+             * @default million_tokens
+             * @constant
+             */
+            unit: "million_tokens";
+            /** Updated At */
+            updated_at?: string | null;
+            /** Version */
+            version?: number | null;
+        };
+        /** CatalogRates */
+        CatalogRates: {
+            /** Cache Read */
+            cache_read?: string | null;
+            /** Cache Write */
+            cache_write?: string | null;
+            /** Input */
+            input?: string | null;
+            /** Output */
+            output?: string | null;
         };
         /** ChangePasswordRequest */
         ChangePasswordRequest: {
@@ -74309,6 +74455,26 @@ export interface operations {
             };
         };
     };
+    own_model_catalog_retail_model_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogPage"];
+                };
+            };
+        };
+    };
     own_model_discounts_retail_model_discounts_get: {
         parameters: {
             query?: {
@@ -74417,6 +74583,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    public_catalog_retail_public_model_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogPage"];
                 };
             };
         };

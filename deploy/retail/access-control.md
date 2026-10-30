@@ -16,6 +16,16 @@ The retail portal uses LiteLLM roles, account resource grants and per-key polici
 
 Proxy administrator viewers retain supported native read-only administrative views, but cannot create keys, invoke models or access the retail administration pages that require writable proxy-admin authorization. Internal-user viewers cannot mutate keys or other management resources. Native inference permissions for internal-user viewers remain subject to account grants and wallet enforcement.
 
+## Public model discovery and personal models
+
+The top navigation's Models link opens `/ui/models/`, a standalone catalog available without signing in. The sidebar's Models link opens `/ui/model-catalog/` inside the authenticated dashboard and shows only the account's authorized pool/model pairs
+
+`GET /retail/public/model-catalog` describes all configured non-wildcard public request model names, deduplicated across deployments. Model information remains discoverable when a resource pool is disabled or restricted. Public resource offers include only enabled, public pools; private or disabled pool identities and all customer discounts remain omitted. A model can have public reference specifications and prices without publicly listed resources. This is discovery information and does not grant invocation access
+
+`GET /retail/model-catalog` requires authentication and returns only authorized pool/model pairs with the current account's applicable prices. Reference rates use the existing published pricing basis. Customer quotes use the same discount precedence and decimal arithmetic as wallet billing. The public endpoint never reads personal wallet or discount state
+
+Both views reuse branded model identities, query-backed filters, list/table views, comparison and detail panels. Request model IDs remain exact. Unknown specifications stay unknown, and the UI derives factual summaries only from available declared metadata. Performance and benchmark claims require measured data and are not synthesized
+
 ## Customer key rules
 
 - Personal keys default to AI API routes and an explicit `auto` resource policy.

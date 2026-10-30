@@ -31,6 +31,9 @@ import { Ellipsis } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { CommandPaletteTrigger } from "@/components/CommandPalette/CommandPaletteTrigger";
+import Link from "next/link";
+import { uiHref } from "@/utils/uiHref";
+import { NAV_PRODUCT_LINK_CLASS } from "@/components/Navbar/navProductLinkClass";
 
 // Top bar for the dashboard shell. Sits only over the content column (the brand
 // lives in the sidebar header); mirrors the design's breadcrumb-left / tools-right layout.
@@ -79,6 +82,9 @@ export function DashboardHeader({ navigationTrigger }: { navigationTrigger?: Rea
           </>
         )}
         <LiteAdmin />
+        <Link href={uiHref("models")} className={NAV_PRODUCT_LINK_CLASS}>
+          Models
+        </Link>
         <DocsLink />
         <BlogDropdown />
         {!hideCommunityLinks && <CommunityEngagementButtons />}
@@ -100,6 +106,9 @@ export function DashboardHeader({ navigationTrigger }: { navigationTrigger?: Rea
             <div className="flex flex-wrap items-center gap-2">
               <LiteAdmin />
               <ThemeToggle />
+              <Link href={uiHref("models")} className={NAV_PRODUCT_LINK_CLASS}>
+                Models
+              </Link>
               <DocsLink />
               <BlogDropdown />
               {!hideCommunityLinks && <CommunityEngagementButtons />}
