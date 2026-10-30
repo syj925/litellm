@@ -1,6 +1,6 @@
-import { fireEvent, renderHook, screen, waitFor, within, renderWithProviders } from "../../../tests/test-utils";
+import { act, fireEvent, renderHook, screen, waitFor, within, renderWithProviders } from "../../../tests/test-utils";
 import userEvent, { PointerEventsCheckLevel } from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Team } from "../key_team_helpers/key_list";
 import { credentialCreateCall, type CredentialItem } from "../networking";
 import { Providers } from "../provider_info_helpers";
@@ -185,6 +185,67 @@ const createTestProps = (userRole = "proxy_admin", userId = "user-1", isTeamAdmi
 };
 
 describe("AddModelForm", () => {
+  describe("discovered candidates for the current connection", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("keeps unimported and deselected discovered models available until the connection changes", async () => {
+      const mockUseAuthorized = vi.mocked(await import("@/app/(dashboard)/hooks/useAuthorized"));
+      mockUseAuthorized.default.mockReturnValue(mockAuthorizedUser("proxy_admin", "user-1", true));
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                models: ["rare-model", "later-model", "unused-model"],
+                count: 3,
+                truncated: false,
+              }),
+              { status: 200 },
+            ),
+        ),
+      );
+      const props = createTestProps();
+      act(() => {
+        props.form.setValue("custom_llm_provider", "OpenAI");
+        props.form.setValue("litellm_credential_name", "test-credential");
+        props.form.setValue("api_base", "https://first.example/v1");
+        props.form.setValue("model", ["openai/existing-model"]);
+        props.form.setValue("model_mappings", [
+          { public_name: "customer-alias", litellm_model: "openai/existing-model" },
+        ]);
+      });
+      renderWithProviders(<AddModelForm {...props} />);
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Fetch upstream models" }));
+      await user.click(await screen.findByRole("checkbox", { name: "Select rare-model" }));
+      await user.click(screen.getByRole("button", { name: "Import selected" }));
+      await user.click(screen.getByRole("combobox", { name: "Select models" }));
+      expect(screen.getByRole("option", { name: "unused-model", exact: true })).toBeInTheDocument();
+      await user.click(screen.getByRole("option", { name: "later-model", exact: true }));
+      expect(props.form.getValues("model_mappings")).toEqual([
+        { public_name: "customer-alias", litellm_model: "openai/existing-model" },
+        { public_name: "rare-model", litellm_model: "openai/rare-model" },
+        { public_name: "later-model", litellm_model: "openai/later-model" },
+      ]);
+      await user.click(screen.getByRole("option", { name: "rare-model", exact: true }));
+      expect(props.form.getValues("model")).not.toContain("openai/rare-model");
+      expect(screen.getByRole("option", { name: "rare-model", exact: true })).toHaveAttribute("aria-selected", "false");
+      await user.click(screen.getByRole("option", { name: "rare-model", exact: true }));
+      expect(props.form.getValues("model")).toContain("openai/rare-model");
+      await user.click(screen.getByRole("option", { name: "rare-model", exact: true }));
+      await user.keyboard("{Escape}");
+      act(() => props.form.setValue("api_base", "https://second.example/v1"));
+      await user.click(screen.getByRole("combobox", { name: "Select models" }));
+      expect(screen.queryByRole("option", { name: "rare-model", exact: true })).not.toBeInTheDocument();
+      expect(screen.queryByRole("option", { name: "unused-model", exact: true })).not.toBeInTheDocument();
+      expect(props.form.getValues("model_mappings")).toEqual([
+        { public_name: "customer-alias", litellm_model: "openai/existing-model" },
+        { public_name: "later-model", litellm_model: "openai/later-model" },
+      ]);
+    });
+  });
+
   it("should render", async () => {
     const mockUseAuthorized = vi.mocked(await import("@/app/(dashboard)/hooks/useAuthorized"));
     mockUseAuthorized.default.mockReturnValue(mockAuthorizedUser("proxy_admin", "user-1", true));

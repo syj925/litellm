@@ -13,7 +13,7 @@ import { SimpleTooltip } from "@/components/ui/tooltip";
 import { Info } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/shared/Alert";
 import { Button } from "@/components/ui/button";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { FormProvider, useWatch, type UseFormReturn } from "react-hook-form";
 import TeamDropdown from "../common_components/team_dropdown";
 import { requiredRule } from "../common_components/formRules";
@@ -92,6 +92,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
   const [isResultModalVisible, setIsResultModalVisible] = useState<boolean>(false);
   const [isTestingConnection, setIsTestingConnection] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [modelDiscovery, setModelDiscovery] = useState<{ scope: symbol; models: string[] } | null>(null);
   // Using a unique ID to force the ConnectionErrorDisplay to remount and run a fresh test
   const [connectionTestId, setConnectionTestId] = useState<string>("");
 
@@ -106,6 +107,21 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
   const { data: tagsList } = useTags();
   const selectedCredentialName = useWatch({ control: form.control, name: "litellm_credential_name" });
   const pickedProvider = useWatch({ control: form.control, name: "custom_llm_provider" });
+  const [discoveryBase, discoveryKey, discoveryGeminiKey] = useWatch({
+    control: form.control,
+    name: ["api_base", "api_key", "gemini_api_key"],
+  });
+  const discoveryScope = useMemo(
+    () => Symbol(),
+    [selectedProvider, pickedProvider, discoveryBase, discoveryKey, discoveryGeminiKey, selectedCredentialName],
+  );
+  const handleModelsDiscovered = useCallback(
+    (models: string[]) => {
+      setModelDiscovery({ scope: discoveryScope, models });
+    },
+    [discoveryScope],
+  );
+  const discoveredModels = modelDiscovery?.scope === discoveryScope ? modelDiscovery.models : [];
   const queryClient = useQueryClient();
   const [isFederatedCredentialModalOpen, setIsFederatedCredentialModalOpen] = useState(false);
   const canCreateFederatedCredential =
@@ -271,12 +287,14 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                       <LiteLLMModelNameField
                         selectedProvider={selectedProvider}
                         providerModels={providerModels}
+                        discoveredModels={discoveredModels}
                         getPlaceholder={getPlaceholder}
                       />
                       <UpstreamModelPicker
                         selectedProvider={selectedProvider}
                         accessToken={accessToken}
                         canDiscover={isProxyAdminRole(userRole ?? "") && !isViewOnly}
+                        onModelsDiscovered={handleModelsDiscovered}
                       />
                       <DecisionModelNote catalog={decisionCatalog} litellmProvider={pickedLitellmProvider} />
 

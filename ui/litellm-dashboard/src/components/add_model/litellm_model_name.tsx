@@ -12,12 +12,14 @@ import { buildModelChoices, modelDisplayName } from "./modelDisplayName";
 interface LiteLLMModelNameFieldProps {
   selectedProvider: string | null;
   providerModels: string[];
+  discoveredModels?: readonly string[];
   getPlaceholder: (provider: string) => string;
 }
 
 const LiteLLMModelNameField: React.FC<LiteLLMModelNameFieldProps> = ({
   selectedProvider,
   providerModels,
+  discoveredModels = [],
   getPlaceholder,
 }) => {
   const form = useFormContext<MountedFormValues>();
@@ -31,7 +33,9 @@ const LiteLLMModelNameField: React.FC<LiteLLMModelNameFieldProps> = ({
   );
   const availableModels = Array.from(
     new Set(
-      (usesCustomCatalog ? [] : providerModels).filter((model) => model && !["custom", "all-wildcard"].includes(model)),
+      [...(usesCustomCatalog ? [] : providerModels), ...discoveredModels].filter(
+        (model) => model && !["custom", "all-wildcard"].includes(model),
+      ),
     ),
   );
   const choices = buildModelChoices(

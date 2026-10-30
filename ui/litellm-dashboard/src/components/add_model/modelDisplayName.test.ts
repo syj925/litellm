@@ -35,18 +35,19 @@ describe("modelDisplayName", () => {
 });
 
 describe("buildModelChoices", () => {
-  it("prefers an exact selected value over equivalent bare and prefixed catalog entries", () => {
-    const catalog = ["claude-haiku", "anthropic/claude-haiku", "claude-opus"];
+  it("retains distinct catalog values even when their standard display names agree", () => {
+    const catalog = ["claude-haiku", "anthropic/claude-haiku", "claude-opus", "claude-haiku"];
     const selected = ["anthropic/claude-haiku"];
     expect(buildModelChoices(catalog, selected, Providers.Anthropic)).toEqual({
       options: [
         { value: "anthropic/claude-haiku", label: "claude-haiku" },
+        { value: "claude-haiku", label: "claude-haiku" },
         { value: "claude-opus", label: "claude-opus" },
       ],
-      selectAllValues: ["anthropic/claude-haiku", "claude-opus"],
-      catalogCount: 2,
+      selectAllValues: ["anthropic/claude-haiku", "claude-haiku", "claude-opus"],
+      catalogCount: 3,
     });
-    expect(catalog).toEqual(["claude-haiku", "anthropic/claude-haiku", "claude-opus"]);
+    expect(catalog).toEqual(["claude-haiku", "anthropic/claude-haiku", "claude-opus", "claude-haiku"]);
     expect(selected).toEqual(["anthropic/claude-haiku"]);
   });
 
@@ -69,14 +70,20 @@ describe("buildModelChoices", () => {
     });
   });
 
-  it("deduplicates only one adapter prefix and preserves deeper or differently-cased model IDs", () => {
+  it("retains the full raw candidate set including namespaces and differently-cased IDs", () => {
     const result = buildModelChoices(
       ["openai/vendor/model", "vendor/model", "model", "openai/Model", "other/model"],
       ["openai/vendor/model"],
       Providers.OpenAI,
     );
-    expect(result.catalogCount).toBe(4);
-    expect(result.selectAllValues).toEqual(["openai/vendor/model", "model", "openai/Model", "other/model"]);
+    expect(result.catalogCount).toBe(5);
+    expect(result.selectAllValues).toEqual([
+      "openai/vendor/model",
+      "vendor/model",
+      "model",
+      "openai/Model",
+      "other/model",
+    ]);
   });
 
   it("restores the original catalog value after its selected alternative is removed", () => {

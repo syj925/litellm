@@ -13,10 +13,12 @@ function Harness({
   provider = "OpenAI",
   credentialName = "",
   apiBase = "https://upstream.example/custom/v1",
+  onModelsDiscovered,
 }: {
   provider?: string;
   credentialName?: string;
   apiBase?: string;
+  onModelsDiscovered?: (models: string[]) => void;
 }) {
   const form = useForm<MountedFormValues>({
     defaultValues: {
@@ -33,9 +35,23 @@ function Harness({
   const modelName = useWatch({ control: form.control, name: "model_name" });
   return (
     <FormProvider {...form}>
-      <UpstreamModelPicker selectedProvider={provider} accessToken="test-admin-session" canDiscover />
+      <UpstreamModelPicker
+        selectedProvider={provider}
+        accessToken="test-admin-session"
+        canDiscover
+        onModelsDiscovered={onModelsDiscovered}
+      />
       <button type="button" onClick={() => form.setValue("api_base", "https://other-upstream.example/v1")}>
         Change connection
+      </button>
+      <button type="button" onClick={() => form.setValue("api_key", "different-test-key")}>
+        Change API key
+      </button>
+      <button type="button" onClick={() => form.setValue("gemini_api_key", "different-gemini-key")}>
+        Change Gemini key
+      </button>
+      <button type="button" onClick={() => form.setValue("litellm_credential_name", "different-saved-credential")}>
+        Change saved credential
       </button>
       <output aria-label="Current model selection">{JSON.stringify({ model, mappings, modelName })}</output>
     </FormProvider>
@@ -98,6 +114,7 @@ it("aborts the previous discovery when the dialog closes", async () => {
 });
 
 it("ignores an old response after switching providers and fetching a new list", async () => {
+  const onModelsDiscovered = vi.fn();
   let resolveOld: (value: Response) => void = () => {
     throw new Error("The first discovery did not start");
   };
@@ -113,9 +130,10 @@ it("ignores an old response after switching providers and fetching a new list", 
       new Response(JSON.stringify({ models: ["new-provider-model"], count: 1, truncated: false }), { status: 200 }),
     );
   vi.stubGlobal("fetch", fetchModels);
-  const { rerender } = render(<Harness />);
+  const { rerender } = render(<Harness onModelsDiscovered={onModelsDiscovered} />);
   fireEvent.click(screen.getByRole("button", { name: "Fetch upstream models" }));
-  rerender(<Harness provider="Anthropic" />);
+  rerender(<Harness provider="Anthropic" onModelsDiscovered={onModelsDiscovered} />);
+  expect(onModelsDiscovered).toHaveBeenLastCalledWith([]);
   expect(fetchModels.mock.calls[0][1].signal.aborted).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Fetch upstream models" }));
   expect(await screen.findByRole("checkbox", { name: "Select new-provider-model" })).toBeInTheDocument();
@@ -124,6 +142,8 @@ it("ignores an old response after switching providers and fetching a new list", 
   });
   expect(screen.queryByRole("checkbox", { name: "Select old-provider-model" })).not.toBeInTheDocument();
   expect(screen.getByRole("checkbox", { name: "Select new-provider-model" })).toBeInTheDocument();
+  expect(onModelsDiscovered).toHaveBeenLastCalledWith(["anthropic/new-provider-model"]);
+  expect(onModelsDiscovered).not.toHaveBeenCalledWith(["openai/old-provider-model"]);
 });
 
 it("uses saved credentials without forwarding stale hidden connection fields", async () => {
@@ -144,3 +164,21 @@ it("requires an explicit base URL for an OpenAI-compatible third-party connectio
   render(<Harness provider="OpenAI_Compatible" apiBase="" />);
   expect(screen.getByRole("button", { name: "Fetch upstream models" })).toBeDisabled();
 });
+
+it.each(["Change API key", "Change Gemini key", "Change saved credential"])(
+  "clears discovered candidates on %s",
+  async (button) => {
+    const onModelsDiscovered = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ models: ["discovered-model"] }), { status: 200 })),
+    );
+    render(<Harness onModelsDiscovered={onModelsDiscovered} />);
+    fireEvent.click(screen.getByRole("button", { name: "Fetch upstream models" }));
+    await screen.findByRole("checkbox", { name: "Select discovered-model" });
+    expect(onModelsDiscovered).toHaveBeenLastCalledWith(["openai/discovered-model"]);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: button }));
+    expect(onModelsDiscovered).toHaveBeenLastCalledWith([]);
+  },
+);

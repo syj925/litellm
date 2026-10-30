@@ -21,16 +21,10 @@ export function buildModelChoices(
   selectedModels: readonly string[],
   selectedProvider: unknown,
 ): { options: { value: string; label: string }[]; selectAllValues: string[]; catalogCount: number } {
-  const selected = [...new Set(selectedModels)].map((value) => ({
+  const values = [...new Set([...selectedModels, ...catalogModels])];
+  const options = values.map((value) => ({
     value,
     label: modelDisplayName(value, selectedProvider),
   }));
-  const selectedNames = new Set(selected.map((option) => option.label));
-  const catalog = new Map<string, { value: string; label: string }>();
-  for (const value of catalogModels) {
-    const label = modelDisplayName(value, selectedProvider);
-    if (!catalog.has(label)) catalog.set(label, { value, label });
-  }
-  const options = [...selected, ...[...catalog.values()].filter((option) => !selectedNames.has(option.label))];
-  return { options, selectAllValues: options.map((option) => option.value), catalogCount: catalog.size };
+  return { options, selectAllValues: values, catalogCount: new Set(catalogModels).size };
 }

@@ -13,7 +13,7 @@ function SelectionState() {
 }
 
 describe("LitellmModelNameField", () => {
-  it("deduplicates imported and catalog options, preserves their stored targets on bulk select, and supports reselecting", async () => {
+  it("keeps every raw catalog candidate selectable and preserves existing aliases when selecting all", async () => {
     const user = userEvent.setup();
     render(
       <MountedFormHost
@@ -31,29 +31,39 @@ describe("LitellmModelNameField", () => {
       </MountedFormHost>,
     );
     await user.click(screen.getByRole("combobox"));
-    expect(screen.getAllByRole("option", { name: "claude-haiku", exact: true })).toHaveLength(1);
-    await user.keyboard("{Escape}");
-    await user.click(screen.getByRole("button", { name: "Select all 2 catalog models" }));
+    const options = screen.getAllByRole("option", { name: "claude-haiku", exact: true });
+    expect(options).toHaveLength(2);
+    const unselected = options.find((option) => option.getAttribute("aria-selected") === "false");
+    expect(unselected).toBeDefined();
+    await user.click(unselected!);
     expect(JSON.parse(screen.getByTestId("selection-state").textContent!)).toEqual({
-      model: ["anthropic/claude-haiku", "claude-opus"],
+      model: ["anthropic/claude-haiku", "claude-haiku"],
       model_mappings: [
         { public_name: "private-alias", litellm_model: "anthropic/claude-haiku" },
-        { public_name: "claude-opus", litellm_model: "claude-opus" },
-      ],
-    });
-    await user.click(screen.getByRole("combobox"));
-    await user.click(screen.getByRole("option", { name: "claude-haiku", exact: true }));
-    expect(JSON.parse(screen.getByTestId("selection-state").textContent!).model).toEqual(["claude-opus"]);
-    expect(screen.getAllByRole("option", { name: "claude-haiku", exact: true })).toHaveLength(1);
-    await user.click(screen.getByRole("option", { name: "claude-haiku", exact: true }));
-    expect(JSON.parse(screen.getByTestId("selection-state").textContent!)).toEqual({
-      model: ["claude-opus", "claude-haiku"],
-      model_mappings: [
-        { public_name: "claude-opus", litellm_model: "claude-opus" },
         { public_name: "claude-haiku", litellm_model: "claude-haiku" },
       ],
     });
+    await user.click(unselected!);
+    expect(JSON.parse(screen.getByTestId("selection-state").textContent!).model).toEqual(["anthropic/claude-haiku"]);
+    const availableAgain = screen
+      .getAllByRole("option", { name: "claude-haiku", exact: true })
+      .find((option) => option.getAttribute("aria-selected") === "false");
+    expect(availableAgain).toBeDefined();
+    await user.click(availableAgain!);
+    expect(JSON.parse(screen.getByTestId("selection-state").textContent!).model).toEqual([
+      "anthropic/claude-haiku",
+      "claude-haiku",
+    ]);
     await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Select all 3 catalog models" }));
+    expect(JSON.parse(screen.getByTestId("selection-state").textContent!)).toEqual({
+      model: ["anthropic/claude-haiku", "claude-haiku", "claude-opus"],
+      model_mappings: [
+        { public_name: "private-alias", litellm_model: "anthropic/claude-haiku" },
+        { public_name: "claude-haiku", litellm_model: "claude-haiku" },
+        { public_name: "claude-opus", litellm_model: "claude-opus" },
+      ],
+    });
     await user.click(screen.getByRole("button", { name: "Clear selection" }));
     expect(JSON.parse(screen.getByTestId("selection-state").textContent!)).toEqual({ model: [], model_mappings: [] });
   });

@@ -35,6 +35,7 @@ interface UpstreamModelPickerProps {
   selectedProvider: string | null;
   accessToken: string | null;
   canDiscover: boolean;
+  onModelsDiscovered?: (models: string[]) => void;
 }
 
 const textValue = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
@@ -60,7 +61,12 @@ function discoveryResponse(value: unknown): DiscoveryResponse {
   };
 }
 
-export default function UpstreamModelPicker({ selectedProvider, accessToken, canDiscover }: UpstreamModelPickerProps) {
+export default function UpstreamModelPicker({
+  selectedProvider,
+  accessToken,
+  canDiscover,
+  onModelsDiscovered,
+}: UpstreamModelPickerProps) {
   const form = useFormContext<MountedFormValues>();
   const [baseValue, keyValue, geminiKeyValue, credentialValue] = useWatch({
     control: form.control,
@@ -91,8 +97,9 @@ export default function UpstreamModelPicker({ selectedProvider, accessToken, can
     setError(null);
     setQuery("");
     setPage(1);
+    onModelsDiscovered?.([]);
     return () => request.current?.abort();
-  }, [selectedProvider, apiBase, apiKey, credentialName]);
+  }, [selectedProvider, baseValue, keyValue, geminiKeyValue, credentialValue, onModelsDiscovered]);
 
   const fetchModels = async () => {
     request.current?.abort();
@@ -127,7 +134,10 @@ export default function UpstreamModelPicker({ selectedProvider, accessToken, can
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) throw new Error(errorMessage(body, response.status));
       const next = discoveryResponse(body);
-      if (generation.current === current) setResult(next);
+      if (generation.current === current) {
+        setResult(next);
+        onModelsDiscovered?.(next.models.map((model) => `${provider}/${model}`));
+      }
     } catch (failure) {
       if (generation.current === current && !controller.signal.aborted) {
         setError(failure instanceof Error ? failure.message : "Unable to fetch upstream models.");
