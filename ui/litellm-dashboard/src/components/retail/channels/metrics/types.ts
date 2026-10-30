@@ -19,6 +19,8 @@ export interface ChannelPeriodMetrics {
   reasoning_tokens: number | null;
   cache_read_tokens: number | null;
   cache_write_tokens: number | null;
+  cache_write_ttl_tokens?: Record<string, number>;
+  cache_write_unclassified_tokens?: number | null;
   cache_hit_requests: number;
   cache_status_samples: number;
   cache_hit_rate_pct: number | null;

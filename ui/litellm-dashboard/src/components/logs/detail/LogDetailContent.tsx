@@ -1,4 +1,6 @@
 import { useState } from "react";
+import CacheUsageBreakdown from "@/components/retail/CacheUsageBreakdown";
+import { logCacheUsage } from "@/components/retail/cacheUsage";
 import Link from "next/link";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { isProxyDashboardRole } from "@/utils/dashboardAccess";
@@ -14,7 +16,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
 import { LogEntry } from "../types";
 import { formatNumberWithCommas } from "@/utils/dataUtils";
-import { PROMPT_CACHE_CREATION_TOOLTIP, PROMPT_CACHE_READ_TOOLTIP } from "@/utils/promptCacheUsage";
 import GuardrailViewer from "./sections/GuardrailViewer/GuardrailViewer";
 import EvalViewer from "./sections/EvalViewer/EvalViewer";
 import {
@@ -201,6 +202,9 @@ export function LogDetailContent({
 
       {/* Metrics */}
       <MetricsSection logEntry={logEntry} metadata={metadata} showCosts={showCosts} />
+      <div className="mb-6">
+        <CacheUsageBreakdown usage={logCacheUsage(logEntry)} />
+      </div>
 
       {/* Cost Breakdown */}
       {showCosts ? (
@@ -420,7 +424,6 @@ const RESPONSE_CACHE_TOOLTIP =
 const RESPONSE_CACHE_DOCS_URL = "https://docs.litellm.ai/docs/proxy/caching";
 const CACHE_KEY_TOOLTIP =
   "The key LiteLLM computed for this request in the response cache. Requests with the same cache key share a cached response; a different key means the request content did not match any cached entry.";
-const PROMPT_CACHE_DOCS_URL = "https://docs.litellm.ai/docs/completion/prompt_caching";
 
 function MetricLabel({ label, tooltip, docsUrl }: { label: string; tooltip: string; docsUrl: string }) {
   return (
@@ -511,8 +514,6 @@ function MetricsSection({
   const responseCacheKey = logEntry.cache_key && logEntry.cache_key !== "Cache OFF" ? logEntry.cache_key : undefined;
   const isResponseCacheHit = responseCacheValue === "true";
   const showResponseCache = isResponseCacheHit || responseCacheValue === "false" || responseCacheKey != null;
-  const promptCacheReadTokens = Number(metadata?.additional_usage_values?.cache_read_input_tokens) || 0;
-  const promptCacheCreationTokens = Number(metadata?.additional_usage_values?.cache_creation_input_tokens) || 0;
 
   const uncachedInputTokens = getUncachedInputTextTokens(metadata);
   const showAnthropicMessagesInputOutput =
@@ -578,33 +579,6 @@ function MetricsSection({
                 <TruncatedValue value={responseCacheKey} />
               </DescriptionItem>
             )}
-            {promptCacheReadTokens > 0 && (
-              <DescriptionItem
-                label={
-                  <MetricLabel
-                    label="Prompt Cache Read Tokens"
-                    tooltip={PROMPT_CACHE_READ_TOOLTIP}
-                    docsUrl={PROMPT_CACHE_DOCS_URL}
-                  />
-                }
-              >
-                {formatNumberWithCommas(promptCacheReadTokens)}
-              </DescriptionItem>
-            )}
-            {promptCacheCreationTokens > 0 && (
-              <DescriptionItem
-                label={
-                  <MetricLabel
-                    label="Prompt Cache Creation Tokens"
-                    tooltip={PROMPT_CACHE_CREATION_TOOLTIP}
-                    docsUrl={PROMPT_CACHE_DOCS_URL}
-                  />
-                }
-              >
-                {formatNumberWithCommas(promptCacheCreationTokens)}
-              </DescriptionItem>
-            )}
-
             {metadata?.litellm_overhead_time_ms !== undefined && metadata.litellm_overhead_time_ms !== null && (
               <DescriptionItem label="LiteLLM Overhead">
                 {metadata.litellm_overhead_time_ms.toFixed(2)} ms

@@ -9,6 +9,7 @@ from starlette.requests import Request
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.retail.api import (
+    ModelPriceRequest,
     PlanRequest,
     ReferenceImportRequest,
     ResolveRequest,
@@ -17,6 +18,7 @@ from litellm.proxy.retail.api import (
     SignupRequest,
     _per_token_price,
     _PublicLedgerPage,
+    _public_ledger_details,
     _select_references,
     _source_hash,
     _validate_discount_selection,
@@ -24,6 +26,45 @@ from litellm.proxy.retail.api import (
     retail_user,
     router,
 )
+
+
+def test_custom_cache_duration_prices_keep_per_million_units_and_zero_rates() -> None:
+    request: Final = ModelPriceRequest(
+        model="example", input_per_million="2", output_per_million="10",
+        cache_read_per_million="0.2", cache_write_per_million="2.5",
+        cache_write_tiers={"300": "2.5", "3600": "4", "750": "0"},
+    )
+    assert request.cache_write_tiers == {"300": "2.5", "3600": "4", "750": "0"}
+    assert _per_token_price(request.cache_write_tiers["750"]) == "0"
+    assert _per_token_price(request.cache_write_tiers["3600"]) == "0.000004"
+
+
+@pytest.mark.parametrize("tiers", ({"0": "1"}, {"0300": "1"}, {"5m": "1"}, {"300": "NaN"}, {"300": "-1"}))
+def test_custom_cache_duration_prices_reject_ambiguous_or_invalid_rows(tiers: dict[str, str]) -> None:
+    with pytest.raises(ValidationError):
+        ModelPriceRequest(
+            model="example", input_per_million="2", output_per_million="10",
+            cache_read_per_million="0.2", cache_write_per_million="2.5", cache_write_tiers=tiers,
+        )
+
+
+def test_customer_bill_preserves_safe_duration_counts_prices_and_costs_without_internal_data() -> None:
+    details: Final = _public_ledger_details({
+        "usage": {
+            "cache_write_tokens": 11, "cache_write_ttl_tokens": {"300": 4, "3600": 6, "secret": 999},
+            "cache_write_unclassified_tokens": 1, "provider_secret": "private",
+        },
+        "price_snapshot": {"cache_write_tiers": {"300": "0.0000025", "3600": "0.000004"}, "provider_cost": "private"},
+        "cost_breakdown": {"input": "0.1", "cache_write_tiers": {"300": "0.2"}, "upstream": "private"},
+        "provider_cost": "private",
+    })
+    assert details["usage"] == {
+        "cache_write_tokens": 11, "cache_write_unclassified_tokens": 1,
+        "cache_write_ttl_tokens": {"300": 4, "3600": 6},
+    }
+    assert details["price_snapshot"] == {"cache_write_tiers": {"300": "0.0000025", "3600": "0.000004"}}
+    assert details["cost_breakdown"] == {"input": "0.1", "cache_write_tiers": {"300": "0.2"}}
+    assert "private" not in str(details)
 
 
 @pytest.mark.parametrize("field", ("discount", "multiplier"))
@@ -265,7 +306,7 @@ def test_customer_ledger_removes_internal_payloads_and_costs() -> None:
 
 @pytest.mark.parametrize("price", ("NaN", "Infinity", "-1", "1000000000001", "0.0000000000001", "1e-99999999"))
 def test_model_sale_price_rejects_negative_nonfinite_oversized_or_unrepresentable_prices(price: str) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Price"):
         _per_token_price(price)
 
 

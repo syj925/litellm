@@ -315,6 +315,16 @@ class ModelInfoBase(ProviderSpecificModelInfo, total=False):
     cache_creation_input_token_cost_above_272k_tokens_flex: float | None
     cache_creation_input_token_cost_above_272k_tokens_ultrafast: ReadOnly[float | None]
     cache_creation_input_token_cost_above_1hr: float | None
+    cache_creation_input_token_cost_above_12hr: ReadOnly[float | None]
+    cache_creation_input_token_cost_above_12hr_priority: ReadOnly[float | None]
+    cache_creation_input_token_cost_above_12hr_flex: ReadOnly[float | None]
+    cache_creation_input_token_cost_above_12hr_ultrafast: ReadOnly[float | None]
+    cache_creation_input_token_cost_above_12hr_batches: ReadOnly[float | None]
+    cache_creation_input_token_cost_above_12hr_above_272k_tokens: ReadOnly[float | None]
+    cache_creation_input_token_cost_above_12hr_above_272k_tokens_priority: ReadOnly[float | None]
+    cache_creation_input_token_cost_above_12hr_above_272k_tokens_flex: ReadOnly[float | None]
+    cache_creation_input_token_cost_above_12hr_above_272k_tokens_ultrafast: ReadOnly[float | None]
+    cache_creation_input_token_cost_above_12hr_above_272k_tokens_batches: ReadOnly[float | None]
     cache_creation_input_token_cost_flex: float | None  # OpenAI flex service tier pricing
     cache_creation_input_token_cost_priority: float | None  # OpenAI priority service tier pricing
     cache_creation_input_token_cost_ultrafast: ReadOnly[float | None]  # OpenAI ultrafast service tier pricing
@@ -1782,6 +1792,8 @@ class CompletionTokensDetailsWrapper(CompletionTokensDetails):  # wrapper for ol
 class CacheCreationTokenDetails(LiteLLMBaseModel):
     ephemeral_5m_input_tokens: int | None = None
     ephemeral_1h_input_tokens: int | None = None
+    ttl_30m_tokens: int | None = None
+    ttl_12h_tokens: int | None = None
 
 
 class PromptTokensDetailsWrapper(
@@ -1829,6 +1841,8 @@ class PromptTokensDetailsWrapper(
     cache_creation_token_details: CacheCreationTokenDetails | None = None
     """Details of cache creation tokens sent to the model. Used for tracking 5m/1h cache creation tokens for Anthropic prompt caching."""
 
+    cache_write_tokens_details: CacheCreationTokenDetails | None = None
+
     cached_tokens_details: CachedTokensDetails | None = None
     """Details of cached (cache-hit) tokens sent to the model. OpenAI realtime naming; carries the per-modality cache-read split."""
 
@@ -1841,6 +1855,8 @@ class PromptTokensDetailsWrapper(
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
+        if self.cache_creation_token_details is None and self.cache_write_tokens_details is not None:
+            self.cache_creation_token_details = self.cache_write_tokens_details
         extra_fields: Final = self.model_extra
         nested_cache_creation_input_tokens: Final = (
             extra_fields.get("cache_creation_input_tokens") if extra_fields is not None else None
@@ -1856,6 +1872,15 @@ class PromptTokensDetailsWrapper(
                 )
             )
         )
+        if self.cache_write_tokens is None and self.cache_creation_token_details is not None:
+            self.cache_write_tokens = sum(
+                count for count in (
+                    self.cache_creation_token_details.ephemeral_5m_input_tokens,
+                    self.cache_creation_token_details.ephemeral_1h_input_tokens,
+                    self.cache_creation_token_details.ttl_30m_tokens,
+                    self.cache_creation_token_details.ttl_12h_tokens,
+                ) if count is not None
+            )
         if self.character_count is None:
             del self.character_count
         if self.image_count is None:
@@ -1878,6 +1903,8 @@ class PromptTokensDetailsWrapper(
             del self.cache_creation_tokens
         if self.cache_creation_token_details is None:
             del self.cache_creation_token_details
+        if self.cache_write_tokens_details is None:
+            del self.cache_write_tokens_details
         if self.cached_tokens_details is None:
             del self.cached_tokens_details
 
@@ -3619,6 +3646,8 @@ class CostBreakdown(TypedDict, total=False):
     input_cost: float  # Cost of raw (non-cached) input tokens only
     cache_read_cost: float  # Cost of cache-read tokens (discounted rate)
     cache_creation_cost: float  # Cost of cache-write tokens (premium rate)
+    cache_write_costs_by_ttl: ReadOnly[Mapping[str, float]]
+    cache_write_unclassified_cost: ReadOnly[float]
     output_cost: float  # Cost of output/completion tokens (includes reasoning if applicable)
     reasoning_cost: float  # Cost of reasoning tokens (subset of output_cost)
     total_cost: ReadOnly[float]  # Total cost (input + output + tool usage + guardrail)
@@ -3853,6 +3882,16 @@ class CustomPricingLiteLLMParams(MirroredPricingParams):
     input_cost_per_token_balanced: float | None = None
     input_cost_per_token_ultrafast: float | None = None
     cache_creation_input_token_cost_above_1hr: float | None = None
+    cache_creation_input_token_cost_above_12hr: float | None = None
+    cache_creation_input_token_cost_above_12hr_priority: float | None = None
+    cache_creation_input_token_cost_above_12hr_flex: float | None = None
+    cache_creation_input_token_cost_above_12hr_ultrafast: float | None = None
+    cache_creation_input_token_cost_above_12hr_batches: float | None = None
+    cache_creation_input_token_cost_above_12hr_above_272k_tokens: float | None = None
+    cache_creation_input_token_cost_above_12hr_above_272k_tokens_priority: float | None = None
+    cache_creation_input_token_cost_above_12hr_above_272k_tokens_flex: float | None = None
+    cache_creation_input_token_cost_above_12hr_above_272k_tokens_ultrafast: float | None = None
+    cache_creation_input_token_cost_above_12hr_above_272k_tokens_batches: float | None = None
     cache_creation_input_token_cost_above_100k_tokens: float | None = None
     cache_creation_input_token_cost_above_1hr_above_100k_tokens: float | None = None
     cache_creation_input_token_cost_above_200k_tokens: float | None = None

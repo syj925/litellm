@@ -10,6 +10,7 @@ import {
   discountToPercent,
   formatMoney,
   isPositiveAmount,
+  ledgerEntriesCsv,
   ledgerReceiptSections,
   percentToDiscount,
   usdPerTokenToPerMillion,
@@ -120,7 +121,8 @@ describe("customer billing receipts", () => {
           { label: "Input tokens (uncached)", value: "8" },
           { label: "Output tokens", value: "16" },
           { label: "Cache read tokens", value: "0" },
-          { label: "Cache write tokens", value: "2" },
+          { label: "Cache write tokens (total)", value: "2" },
+          { label: "Cache write tokens · unspecified duration", value: "2" },
         ],
       },
       {
@@ -135,11 +137,76 @@ describe("customer billing receipts", () => {
           { label: "Output customer price / 1M", value: "$87.50 USD" },
           { label: "Cache read base price / 1M", value: "$0.50 USD" },
           { label: "Cache read customer price / 1M", value: "$1.75 USD" },
-          { label: "Cache write base price / 1M", value: "$6.25 USD" },
-          { label: "Cache write customer price / 1M", value: "$21.875 USD" },
+          { label: "Cache write · unspecified duration base price / 1M", value: "$6.25 USD" },
+          { label: "Cache write · unspecified duration customer price / 1M", value: "$21.875 USD" },
         ],
       },
     ]);
+  });
+
+  it("keeps total writes separate from duration rows and applies the saved discount to each duration price", () => {
+    const sections = ledgerReceiptSections({
+      usage: {
+        cache_write_tokens: 1000,
+        cache_write_ttl_tokens: { "3600": 600, "300": 300 },
+        cache_write_unclassified_tokens: 100,
+      },
+      price_snapshot: {
+        source: "manual",
+        discount: "0.5",
+        cache_write_tiers: { "300": "0.0000025", "3600": "0.000004" },
+      },
+    });
+    expect(sections[0].rows).toEqual([
+      { label: "Cache write tokens (total)", value: "1000" },
+      { label: "Cache write tokens · 5m", value: "300" },
+      { label: "Cache write tokens · 1h", value: "600" },
+      { label: "Cache write tokens · unspecified duration", value: "100" },
+    ]);
+    expect(sections[1].rows).toEqual(
+      expect.arrayContaining([
+        { label: "Cache write · 5m reference price / 1M", value: "$2.50 USD" },
+        { label: "Cache write · 5m customer price / 1M", value: "$1.25 USD" },
+        { label: "Cache write · 1h reference price / 1M", value: "$4.00 USD" },
+        { label: "Cache write · 1h customer price / 1M", value: "$2.00 USD" },
+      ]),
+    );
+  });
+
+  it("displays server-saved category charges and exports duration columns without recomputing money", () => {
+    const details = {
+      usage: {
+        cache_write_tokens: 10,
+        cache_write_ttl_tokens: { "1800": 2, "43200": 8 },
+        cache_write_unclassified_tokens: 0,
+      },
+      cost_breakdown: {
+        input: "0.00000000001",
+        cache_write_tiers: { "1800": "0.000012345678901234", "43200": "0.000098765432109876" },
+        rounding_adjustment: "0.000000000879",
+      },
+    };
+    const charges = ledgerReceiptSections(details).find(({ title }) => title === "Charge breakdown");
+    expect(charges?.rows).toContainEqual({ label: "Cache write charge · 12h", value: "$0.000098765432109876 USD" });
+    expect(charges?.rows).toContainEqual({ label: "Final rounding adjustment", value: "$0.000000000879 USD" });
+    const csv = ledgerEntriesCsv([
+      {
+        id: "record",
+        kind: "charge",
+        amount: "-0.000111112",
+        balance_after: "1",
+        request_id: "request",
+        model: "=unsafe()",
+        created_at: "2026-01-01T00:00:00Z",
+        description: "fixture",
+        details,
+      },
+    ]);
+    expect(csv).toContain('"Cache write tokens · 30m"');
+    expect(csv).toContain('"Cache write tokens · 12h"');
+    expect(csv).toContain('"Cache write charge · 12h"');
+    expect(csv).toContain('"$0.000098765432109876 USD"');
+    expect(csv).toContain('"\'=unsafe()"');
   });
 
   it("shows the saved customer override and exact effective rates instead of applying a current plan", () => {

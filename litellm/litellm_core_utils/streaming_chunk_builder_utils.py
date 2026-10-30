@@ -200,7 +200,17 @@ def attach_cache_creation_token_details(
     )
     if existing is not None:
         return prompt_tokens_details
-    return prompt_tokens_details.model_copy(update={"cache_creation_token_details": cache_creation_token_details})
+    return prompt_tokens_details.model_copy(
+        update={
+            "cache_creation_token_details": cache_creation_token_details,
+            **(
+                {"cache_write_tokens_details": cache_creation_token_details}
+                if cache_creation_token_details.ttl_30m_tokens is not None
+                or cache_creation_token_details.ttl_12h_tokens is not None
+                else {}
+            ),
+        }
+    )
 
 
 def apply_grounding_request_counts(

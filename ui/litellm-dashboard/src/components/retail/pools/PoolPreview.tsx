@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { discountDescription, formatMoney, ModelDiscountSource, modelDiscountSourceLabel, retailRequest } from "../api";
 import { PoolBinding, ResourcePool } from "./types";
+import { cacheDurationLabel, cacheTierEntries } from "../cachePricing";
 
 interface RoutePreview {
   pool_id: string;
@@ -34,6 +35,7 @@ interface RoutePreview {
     output_per_million: string;
     cache_read_per_million: string;
     cache_write_per_million: string;
+    cache_write_tiers?: Record<string, string>;
   } | null;
 }
 
@@ -176,13 +178,19 @@ export default function PoolPreview({
                       { key: "input_per_million" as const, label: "Input reference / 1M" },
                       { key: "output_per_million" as const, label: "Output reference / 1M" },
                       { key: "cache_read_per_million" as const, label: "Cache read reference / 1M" },
-                      { key: "cache_write_per_million" as const, label: "Cache write reference / 1M" },
+                      { key: "cache_write_per_million" as const, label: "Cache write · unspecified duration / 1M" },
                     ].map((item) => (
                       <div key={item.key}>
                         {item.label}
                         <span className="mt-1 block text-foreground">
                           {formatMoney(preview.data?.reference_prices?.[item.key] ?? "")}
                         </span>
+                      </div>
+                    ))}
+                    {cacheTierEntries(preview.data.reference_prices.cache_write_tiers).map(([ttl, price]) => (
+                      <div key={ttl}>
+                        Cache write · {cacheDurationLabel(ttl)} / 1M
+                        <span className="mt-1 block text-foreground">{formatMoney(price)}</span>
                       </div>
                     ))}
                   </div>

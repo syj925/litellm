@@ -12,7 +12,7 @@ from uuid import uuid4
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from .models import (
     IdempotencyConflict,
@@ -30,6 +30,7 @@ from .models import (
     nanos_to_amount,
     parse_discount,
 )
+from .pricing import validated_cache_write_tiers
 
 
 class _WalletRow(BaseModel):
@@ -126,6 +127,7 @@ class _ModelPriceRow(BaseModel):
     output_cost_per_token: Decimal
     cache_read_input_token_cost: Decimal
     cache_creation_input_token_cost: Decimal
+    cache_write_tiers: dict[str, str] = Field(default_factory=dict)
     version: int
     updated_at: datetime
     source: str = "legacy"
@@ -159,8 +161,8 @@ _MODEL_PRICE_KEYS: Final = (
 )
 _MODEL_PRICE_INSERT: Final = """
     INSERT INTO retail_model_prices(model,input_cost_per_token,output_cost_per_token,
-           cache_read_input_token_cost,cache_creation_input_token_cost,source,catalog_model,source_label)
-    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+           cache_read_input_token_cost,cache_creation_input_token_cost,source,catalog_model,source_label,cache_write_tiers)
+    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
 """
 
 
@@ -257,6 +259,7 @@ def _model_price_view(row: _ModelPriceRow) -> dict[str, JsonValue]:
         "output_cost_per_token": format(row.output_cost_per_token, "f"),
         "cache_read_input_token_cost": format(row.cache_read_input_token_cost, "f"),
         "cache_creation_input_token_cost": format(row.cache_creation_input_token_cost, "f"),
+        "cache_write_tiers": {key: value for key, value in row.cache_write_tiers.items()},
         "version": row.version,
         "updated_at": row.updated_at.isoformat(),
         "source": row.source,
@@ -279,6 +282,13 @@ def _model_price_rates(rates: Mapping[str, JsonValue]) -> tuple[Decimal, ...]:
         return parsed
     except (InvalidOperation, ValueError, TypeError, KeyError) as exc:
         raise InvalidAmount("All four token prices are required as decimal USD values") from exc
+
+
+def _model_price_tiers(rates: Mapping[str, JsonValue]) -> dict[str, str]:
+    try:
+        return validated_cache_write_tiers(rates.get("cache_write_tiers", {}))
+    except ValueError as exc:
+        raise InvalidAmount(str(exc)) from exc
 
 
 def model_discount_view(
@@ -546,6 +556,17 @@ class WalletStore:
                 raise ReservationNotFound("The request reservation could not be created")
             return _reservation_view(reservation)
 
+    async def record_pending_usage(self, request_id: str, details: Mapping[str, JsonValue]) -> None:
+        async with self.transaction() as connection:
+            reservation: Final = await self._lock_reservation(connection, request_id)
+            if reservation.status != "reserved":
+                return
+            saved: Final = {**reservation.details, **details, "price_snapshot": reservation.price_snapshot}
+            await connection.execute(
+                "UPDATE retail_reservations SET details=%s,updated_at=now() WHERE request_id=%s AND status='reserved'",
+                (Jsonb(saved), request_id),
+            )
+
     async def settle(self, request_id: str, cost: str, details: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
         nanos: Final = cost_to_nanos(cost)
         async with self.transaction() as connection:
@@ -699,6 +720,7 @@ class WalletStore:
                         initial_snapshot.get("source", "legacy"),
                         initial_snapshot.get("catalog_model"),
                         initial_snapshot.get("source_label", "Existing reference, review required"),
+                        Jsonb(_model_price_tiers(initial_snapshot)),
                     ),
                 )
             row: Final = await _one(
@@ -720,7 +742,7 @@ class WalletStore:
         *,
         source: str = "manual",
         catalog_model: str | None = None,
-        source_label: str = "Manual official reference",
+        source_label: str = "Custom reference price",
     ) -> dict[str, JsonValue]:
         if not model or len(model) > 191:
             raise ValueError("A model name of at most 191 characters is required")
@@ -733,6 +755,7 @@ class WalletStore:
                 source,
                 catalog_model,
                 source_label,
+                _model_price_tiers(rates),
             )
 
     async def save_reference_prices(self, cards: Sequence[Mapping[str, JsonValue]]) -> dict[str, JsonValue]:
@@ -747,6 +770,7 @@ class WalletStore:
                         "catalog",
                         str(card["catalog_model"]),
                         str(card["source_label"]),
+                        _model_price_tiers(card),
                     )
                     for card, rates in parsed
                 ]
@@ -761,6 +785,7 @@ class WalletStore:
         source: str,
         catalog_model: str | None,
         source_label: str,
+        cache_write_tiers: Mapping[str, str],
     ) -> dict[str, JsonValue]:
         if not model or len(model) > 191 or source not in {"manual", "catalog"}:
             raise ValueError("A configured model name and reference source are required")
@@ -772,10 +797,11 @@ class WalletStore:
                 output_cost_per_token=EXCLUDED.output_cost_per_token,
                 cache_read_input_token_cost=EXCLUDED.cache_read_input_token_cost,
                 cache_creation_input_token_cost=EXCLUDED.cache_creation_input_token_cost,
+                cache_write_tiers=EXCLUDED.cache_write_tiers,
                 source=EXCLUDED.source,catalog_model=EXCLUDED.catalog_model,source_label=EXCLUDED.source_label,
                 version=retail_model_prices.version+1,updated_at=now()
                 RETURNING *""",
-            (model, *rates, source, catalog_model, source_label),
+            (model, *rates, source, catalog_model, source_label, Jsonb(dict(cache_write_tiers))),
             _ModelPriceRow,
         )
         if row is None:

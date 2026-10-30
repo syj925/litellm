@@ -2926,6 +2926,8 @@ class LiteLLMCompletionResponsesConfig:
                     cached_tokens_details if isinstance(cached_tokens_details, CachedTokensDetails) else None
                 ),
                 **cache_write_extra,
+                cache_write_tokens_details=getattr(prompt_details, "cache_write_tokens_details", None),
+                cache_creation_token_details=getattr(prompt_details, "cache_creation_token_details", None),
                 **grounding_request_counts,
             )
 

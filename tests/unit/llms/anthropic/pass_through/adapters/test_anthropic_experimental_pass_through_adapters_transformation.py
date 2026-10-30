@@ -45,6 +45,21 @@ from litellm.types.utils import (
 )
 
 
+def test_anthropic_usage_bridge_preserves_cache_duration_counts() -> None:
+    usage: Final = Usage(
+        prompt_tokens=13, completion_tokens=2, total_tokens=15,
+        prompt_tokens_details={
+            "cached_tokens": 3, "cache_write_tokens": 7,
+            "cache_creation_token_details": {"ephemeral_5m_input_tokens": 2, "ephemeral_1h_input_tokens": 5},
+        },
+    )
+    returned: Final = LiteLLMAnthropicMessagesAdapter.translate_openai_usage_to_anthropic_usage_delta(usage)
+    assert returned == {
+        "input_tokens": 3, "output_tokens": 2, "cache_read_input_tokens": 3, "cache_creation_input_tokens": 7,
+        "cache_creation": {"ephemeral_5m_input_tokens": 2, "ephemeral_1h_input_tokens": 5},
+    }
+
+
 def test_translate_openai_response_to_anthropic_empty_choices() -> None:
     response: Final = ModelResponse(
         id="chatcmpl-empty",

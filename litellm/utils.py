@@ -3214,6 +3214,7 @@ _BEDROCK_REGION_PREFIXES: Final = (
 _CACHE_PRICING_FIELDS: Final = (
     "cache_creation_input_token_cost",
     "cache_creation_input_token_cost_above_1hr",
+    "cache_creation_input_token_cost_above_12hr",
     "cache_creation_input_token_cost_above_200k_tokens",
     "cache_read_input_token_cost",
     "cache_read_input_token_cost_above_200k_tokens",
@@ -6406,6 +6407,11 @@ def get_model_info_helper(
                 cache_creation_input_token_cost_above_1hr=_model_info.get(
                     "cache_creation_input_token_cost_above_1hr", None
                 ),
+                **{
+                    key: _model_info.get(key)
+                    for key in ModelInfoBase.__annotations__
+                    if key.startswith("cache_creation_input_token_cost_above_12hr")
+                },
                 off_peak_pricing=_model_info.get("off_peak_pricing", None),
                 input_cost_per_character=_model_info.get("input_cost_per_character", None),
                 input_cost_per_token_above_128k_tokens=_model_info.get("input_cost_per_token_above_128k_tokens", None),

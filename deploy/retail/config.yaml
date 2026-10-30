@@ -3,5 +3,6 @@ litellm_settings:
   callbacks:
     - litellm.proxy.retail.billing.wallet_callback
     - litellm.proxy.retail.model_observations.model_observation_callback
+    - litellm.proxy.retail.cache_observations.cache_observation_callback
 general_settings:
   enable_chat_ui: true

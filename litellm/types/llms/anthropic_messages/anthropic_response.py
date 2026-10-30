@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, TypeAlias
 
 from typing_extensions import NotRequired, ReadOnly, TypedDict
@@ -77,6 +77,7 @@ class AnthropicUsage(TypedDict, total=False):
     """
     cache_creation_input_tokens: int
     cache_read_input_tokens: int
+    cache_creation: ReadOnly[Mapping[str, int]]
 
     """
     Server-side tool usage (e.g. web search request counts)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, CircleAlert, FileText, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleAlert, Download, FileText, RefreshCw } from "lucide-react";
 import { parseAsInteger, parseAsStringLiteral, useQueryStates } from "nuqs";
 import { useState } from "react";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
@@ -14,7 +14,15 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatMoney, ledgerReceiptSections, LedgerEntry, PageResult, retailKeys, retailRequest } from "./api";
+import {
+  formatMoney,
+  ledgerEntriesCsv,
+  ledgerReceiptSections,
+  LedgerEntry,
+  PageResult,
+  retailKeys,
+  retailRequest,
+} from "./api";
 
 const transactionTypes = ["all", "credit", "charge", "release"] as const;
 const typeLabels = {
@@ -183,6 +191,18 @@ export function LedgerTable({
                       </div>
                     ))}
                   </dl>
+                  {section.title === "Token usage" && (
+                    <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+                      Cache write total includes the duration breakdown below it. Unspecified duration means no reliable
+                      duration was recorded; it is not inferred from the model name.
+                    </p>
+                  )}
+                  {section.title === "Charge breakdown" && (
+                    <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+                      Saved amounts already include your negotiated discount. The total is rounded once; category
+                      amounts are not recalculated from today&apos;s prices.
+                    </p>
+                  )}
                   {section.title === "Pricing snapshot" && (
                     <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
                       These are the reference prices, customer discount, and effective token prices saved for this
@@ -217,6 +237,15 @@ export default function BillingPanel() {
   });
   const total = ledger.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const exportPage = () => {
+    const blob = new Blob(["\uFEFF", ledgerEntriesCsv(ledger.data?.items ?? [])], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `billing-page-${page}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="flex flex-col gap-6 p-6 lg:p-8">
@@ -230,10 +259,15 @@ export default function BillingPanel() {
             Credits, settled usage charges, and released reservations for your account.
           </PageHeaderDescription>
         </PageHeader>
-        <Button variant="outline" disabled={ledger.isFetching} onClick={() => void ledger.refetch()}>
-          <RefreshCw className={ledger.isFetching ? "animate-spin" : ""} />
-          Refresh
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" disabled={ledger.isFetching || !ledger.data?.items.length} onClick={exportPage}>
+            <Download /> Export current page
+          </Button>
+          <Button variant="outline" disabled={ledger.isFetching} onClick={() => void ledger.refetch()}>
+            <RefreshCw className={ledger.isFetching ? "animate-spin" : ""} />
+            Refresh
+          </Button>
+        </div>
       </div>
       <div className="overflow-hidden rounded-xl border">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">

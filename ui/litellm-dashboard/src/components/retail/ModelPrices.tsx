@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, CircleAlert, Download, Plus, RefreshCw, Tags } from "lucide-react";
+import { ChevronDown, CircleAlert, Download, Plus, RefreshCw, Tags, Trash2 } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/shared/Alert";
 import { LoadingState } from "@/components/shared/LoadingState";
@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/lib/toast";
 import { formatMoney, retailRequest } from "./api";
+import { cacheDurationLabel, cacheTierEntries, validateCacheTierDrafts, type CacheTierDraft } from "./cachePricing";
 
 interface SalesPrice {
   model: string;
@@ -30,6 +31,7 @@ interface SalesPrice {
   output_per_million: string;
   cache_read_per_million: string;
   cache_write_per_million: string;
+  cache_write_tiers?: Record<string, string>;
 }
 
 interface SavedSalesPrice extends SalesPrice {
@@ -54,7 +56,7 @@ const rateFields = [
   { key: "input_per_million", label: "Input" },
   { key: "output_per_million", label: "Output" },
   { key: "cache_read_per_million", label: "Cache read" },
-  { key: "cache_write_per_million", label: "Cache write" },
+  { key: "cache_write_per_million", label: "Cache write · unspecified duration" },
 ] as const;
 const emptyPrice: SalesPrice = {
   model: "",
@@ -64,10 +66,16 @@ const emptyPrice: SalesPrice = {
   cache_write_per_million: "0",
 };
 
+function referenceKind(source: SavedSalesPrice["source"]): string {
+  if (source === "catalog") return "Catalog reference";
+  return source === "manual" ? "Custom reference" : "Legacy, unverified";
+}
+
 export default function ModelPrices({ accessToken, enabled }: { accessToken: string | null; enabled: boolean }) {
   const client = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState<SalesPrice>(emptyPrice);
+  const [cacheTiers, setCacheTiers] = useState<CacheTierDraft[]>([]);
   const [validation, setValidation] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [selected, setSelected] = useState<Record<string, { catalog_model: string; source_label: string }>>({});
@@ -81,12 +89,16 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
     mutationFn: () =>
       retailRequest<SavedSalesPrice>("/admin/model-prices", accessToken, {
         method: "POST",
-        body: JSON.stringify({ ...values, model: values.model.trim() }),
+        body: JSON.stringify({
+          ...values,
+          model: values.model.trim(),
+          cache_write_tiers: validateCacheTierDrafts(cacheTiers).tiers,
+        }),
       }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["retail", "model-prices"] });
       setEditing(false);
-      toast.success("Official reference price saved");
+      toast.success("Custom reference price saved");
     },
   });
   const catalog = useQuery({
@@ -139,6 +151,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
       cache_read_per_million: price.cache_read_per_million,
       cache_write_per_million: price.cache_write_per_million,
     });
+    setCacheTiers(cacheTierEntries(price.cache_write_tiers).map(([ttl_seconds, price]) => ({ ttl_seconds, price })));
     setValidation(null);
     mutation.reset();
     setEditing(true);
@@ -150,16 +163,29 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
       setValidation("Enter a model name and non-negative decimal USD prices, with no more than 9 decimal places.");
       return;
     }
+    const durationPrices = validateCacheTierDrafts(cacheTiers);
+    if (durationPrices.error) {
+      setValidation(durationPrices.error);
+      return;
+    }
     setValidation(null);
     mutation.mutate();
   };
+  const openImport = () => {
+    setSelected({});
+    setCatalogSearch("");
+    importMutation.reset();
+    setImporting(true);
+  };
+  const showPrices = !prices.isPending && !prices.error && prices.data?.items.length !== 0;
+  const showCatalog = !catalog.isPending && !catalog.error;
 
   return (
     <>
       <details className="group overflow-hidden rounded-xl border" open>
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-sm font-medium">
           <span>
-            Official reference prices{" "}
+            Reference prices{" "}
             <Badge variant="secondary" className="ml-2">
               {prices.data?.items.length ?? "..."}
             </Badge>
@@ -183,16 +209,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
               >
                 <RefreshCw className={prices.isFetching ? "animate-spin" : ""} />
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSelected({});
-                  setCatalogSearch("");
-                  importMutation.reset();
-                  setImporting(true);
-                }}
-              >
+              <Button variant="outline" size="sm" onClick={openImport}>
                 <Download />
                 Import catalog references
               </Button>
@@ -202,9 +219,8 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
               </Button>
             </div>
           </div>
-          {prices.isPending ? (
-            <LoadingState title="Loading model prices" description="Retrieving reference rates." />
-          ) : prices.error ? (
+          {prices.isPending && <LoadingState title="Loading model prices" description="Retrieving reference rates." />}
+          {!prices.isPending && prices.error && (
             <StateMessage
               role="alert"
               tone="destructive"
@@ -212,14 +228,16 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
               title="Unable to load reference prices"
               description={prices.error.message}
             />
-          ) : prices.data?.items.length === 0 ? (
+          )}
+          {!prices.isPending && !prices.error && prices.data?.items.length === 0 && (
             <StateMessage
               role="status"
               icon={<Tags className="size-5" />}
               title="No reference prices yet"
-              description="Import rates from the LiteLLM reference catalog, or enter a manually verified official reference. A configured channel cost is never used as the official reference."
+              description="Import rates from the LiteLLM reference catalog, or configure custom reference rates for your customers. Channel procurement costs remain separate."
             />
-          ) : (
+          )}
+          {showPrices && (
             <Table>
               <TableHeader className="bg-muted/40">
                 <TableRow>
@@ -229,6 +247,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                       {label} / 1M tokens
                     </TableHead>
                   ))}
+                  <TableHead>Cache write duration prices / 1M</TableHead>
                   <TableHead>Version</TableHead>
                   <TableHead>Reference source</TableHead>
                   <TableHead>Updated</TableHead>
@@ -244,20 +263,28 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                         {formatMoney(price[key])}
                       </TableCell>
                     ))}
+                    <TableCell className="min-w-40 text-xs tabular-nums">
+                      {cacheTierEntries(price.cache_write_tiers).length ? (
+                        <dl className="space-y-1">
+                          {cacheTierEntries(price.cache_write_tiers).map(([ttl, rate]) => (
+                            <div key={ttl} className="flex justify-between gap-4">
+                              <dt>{cacheDurationLabel(ttl)}</dt>
+                              <dd>{formatMoney(rate)}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      ) : (
+                        <span className="text-muted-foreground">No duration prices</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Badge variant="outline">v{price.version}</Badge>
                     </TableCell>
                     <TableCell className="max-w-64 text-xs text-muted-foreground">
-                      <Badge variant="outline">
-                        {price.source === "catalog"
-                          ? "Catalog reference"
-                          : price.source === "manual"
-                            ? "Manual reference"
-                            : "Legacy, unverified"}
-                      </Badge>
+                      <Badge variant="outline">{referenceKind(price.source)}</Badge>
                       <p className="mt-1 break-words">
                         {price.source_label ??
-                          "Existing base price, review before treating it as an official reference"}
+                          "Existing reference price, review before publishing it to customers"}
                       </p>
                       {price.catalog_model && <p className="mt-1 break-all font-mono">{price.catalog_model}</p>}
                     </TableCell>
@@ -282,12 +309,11 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
           if (!mutation.isPending) setEditing(open);
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Save official reference price</DialogTitle>
+            <DialogTitle>Save custom reference price</DialogTitle>
             <DialogDescription>
-              Enter a manually verified official rate in USD per one million tokens. Customer discounts apply
-              separately.
+              Configure your reference rate in USD per one million tokens. Customer discounts apply separately.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={savePrice} className="flex flex-col gap-5">
@@ -320,6 +346,100 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                   </Field>
                 ))}
               </div>
+              <section className="space-y-3 rounded-lg border p-4" aria-labelledby="cache-duration-prices-title">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 id="cache-duration-prices-title" className="text-sm font-medium">
+                    Cache write duration prices
+                  </h3>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={mutation.isPending || cacheTiers.length >= 16}
+                    onClick={() => setCacheTiers([...cacheTiers, { ttl_seconds: "", price: "" }])}
+                  >
+                    <Plus /> Add duration
+                  </Button>
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Set each write duration separately. These are complete write prices, not a surcharge on input. The
+                  unspecified-duration price applies only when upstream usage does not identify a duration. A reported
+                  duration without a configured price remains pending for review.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {[300, 1800, 3600, 43200].map((ttl) => (
+                    <Button
+                      key={ttl}
+                      type="button"
+                      size="xs"
+                      variant="secondary"
+                      disabled={
+                        mutation.isPending ||
+                        cacheTiers.length >= 16 ||
+                        cacheTiers.some((tier) => Number(tier.ttl_seconds) === ttl)
+                      }
+                      onClick={() => setCacheTiers([...cacheTiers, { ttl_seconds: String(ttl), price: "" }])}
+                    >
+                      + {cacheDurationLabel(ttl)}
+                    </Button>
+                  ))}
+                </div>
+                {cacheTiers.map((tier, index) => (
+                  <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3">
+                    <Field>
+                      <FieldLabel htmlFor={`cache-ttl-${index}`}>Duration {index + 1} (seconds)</FieldLabel>
+                      <Input
+                        id={`cache-ttl-${index}`}
+                        inputMode="numeric"
+                        value={tier.ttl_seconds}
+                        disabled={mutation.isPending}
+                        onChange={(event) =>
+                          setCacheTiers(
+                            cacheTiers.map((row, position) =>
+                              position === index ? { ...row, ttl_seconds: event.target.value } : row,
+                            ),
+                          )
+                        }
+                        placeholder="300"
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor={`cache-tier-price-${index}`}>
+                        {tier.ttl_seconds ? cacheDurationLabel(tier.ttl_seconds) : "Write"} price (USD / 1M)
+                      </FieldLabel>
+                      <Input
+                        id={`cache-tier-price-${index}`}
+                        inputMode="decimal"
+                        value={tier.price}
+                        disabled={mutation.isPending}
+                        onChange={(event) =>
+                          setCacheTiers(
+                            cacheTiers.map((row, position) =>
+                              position === index ? { ...row, price: event.target.value } : row,
+                            ),
+                          )
+                        }
+                        placeholder="0.00"
+                      />
+                    </Field>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Remove cache duration ${index + 1}`}
+                      disabled={mutation.isPending}
+                      onClick={() => setCacheTiers(cacheTiers.filter((_, position) => position !== index))}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                ))}
+                {!cacheTiers.length && (
+                  <p className="text-xs text-muted-foreground">
+                    No duration prices configured. Add the durations supported by this model.
+                  </p>
+                )}
+              </section>
             </FieldGroup>
             {(validation || mutation.error) && (
               <Alert variant="error">
@@ -351,22 +471,24 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
       >
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-5xl">
           <DialogHeader>
-            <DialogTitle>Import official reference prices</DialogTitle>
+            <DialogTitle>Import catalog reference prices</DialogTitle>
             <DialogDescription>
               Review the LiteLLM reference catalog before applying it. This is a reference catalog, not a live check of
               provider websites. Importing replaces selected models&apos; reference rates for new requests only.
             </DialogDescription>
           </DialogHeader>
-          {catalog.isPending ? (
+          {catalog.isPending && (
             <LoadingState
               title="Loading reference catalog"
               description="Matching configured public models to catalog rates."
             />
-          ) : catalog.error ? (
+          )}
+          {!catalog.isPending && catalog.error && (
             <Alert variant="error">
               <AlertTitle>{catalog.error.message}</AlertTitle>
             </Alert>
-          ) : (
+          )}
+          {showCatalog && (
             <>
               <div className="flex flex-wrap gap-2">
                 <Input
@@ -423,7 +545,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                       <TableHead className="text-right">Input / 1M</TableHead>
                       <TableHead className="text-right">Output / 1M</TableHead>
                       <TableHead className="text-right">Cache read / 1M</TableHead>
-                      <TableHead className="text-right">Cache write / 1M</TableHead>
+                      <TableHead className="text-right">Cache write prices / 1M</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -505,7 +627,18 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                             {chosen ? formatMoney(chosen.cache_read_per_million) : "Choose reference"}
                           </TableCell>
                           <TableCell className="text-right text-xs tabular-nums">
-                            {chosen ? formatMoney(chosen.cache_write_per_million) : "Choose reference"}
+                            {chosen ? (
+                              <div className="space-y-1">
+                                <p>Unspecified: {formatMoney(chosen.cache_write_per_million)}</p>
+                                {cacheTierEntries(chosen.cache_write_tiers).map(([ttl, rate]) => (
+                                  <p key={ttl}>
+                                    {cacheDurationLabel(ttl)}: {formatMoney(rate)}
+                                  </p>
+                                ))}
+                              </div>
+                            ) : (
+                              "Choose reference"
+                            )}
                           </TableCell>
                         </TableRow>
                       );

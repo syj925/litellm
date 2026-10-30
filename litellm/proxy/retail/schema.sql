@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS retail_signup_limits (
 ALTER TABLE retail_model_prices ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'legacy';
 ALTER TABLE retail_model_prices ADD COLUMN IF NOT EXISTS catalog_model TEXT;
 ALTER TABLE retail_model_prices ADD COLUMN IF NOT EXISTS source_label TEXT NOT NULL DEFAULT 'Existing reference, review required';
+ALTER TABLE retail_model_prices ADD COLUMN IF NOT EXISTS cache_write_tiers JSONB NOT NULL DEFAULT '{}';
 
 CREATE TABLE IF NOT EXISTS retail_signup_identities (
     email_normalized TEXT PRIMARY KEY,
@@ -226,3 +227,15 @@ CREATE TABLE IF NOT EXISTS retail_model_observations (
     CHECK (started_at <= first_output_at AND first_output_at <= ended_at)
 );
 CREATE INDEX IF NOT EXISTS retail_model_observations_started_at ON retail_model_observations(started_at);
+
+CREATE TABLE IF NOT EXISTS retail_cache_observations (
+    litellm_call_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    started_at TIMESTAMP(3) NOT NULL,
+    cache_read_tokens BIGINT NOT NULL CHECK (cache_read_tokens >= 0),
+    cache_write_tokens BIGINT NOT NULL CHECK (cache_write_tokens >= 0),
+    cache_write_ttl_tokens JSONB NOT NULL DEFAULT '{}',
+    cache_write_unclassified_tokens BIGINT NOT NULL CHECK (cache_write_unclassified_tokens >= 0),
+    PRIMARY KEY (litellm_call_id,user_id,started_at)
+);
+CREATE INDEX IF NOT EXISTS retail_cache_observations_started_at ON retail_cache_observations(started_at);

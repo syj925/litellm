@@ -1328,6 +1328,8 @@ def _store_cost_breakdown_in_logging_obj(
     data_residency: str | None = None,
     vertex_location: str | None = None,
     billed_token_rates: BilledTokenRates | None = None,
+    cache_write_costs_by_ttl: Mapping[str, float] | None = None,
+    cache_write_unclassified_cost: float | None = None,
 ) -> None:
     """
     Helper function to store cost breakdown in the logging object.
@@ -1373,6 +1375,8 @@ def _store_cost_breakdown_in_logging_obj(
             data_residency=data_residency,
             vertex_location=vertex_location,
             billed_token_rates=billed_token_rates,
+            cache_write_costs_by_ttl=cache_write_costs_by_ttl,
+            cache_write_unclassified_cost=cache_write_unclassified_cost,
         )
 
     except Exception as breakdown_error:
@@ -2009,6 +2013,8 @@ def completion_cost(
                     _cache_read_cost: float | None = None
                     _cache_creation_cost: float | None = None
                     _billed_token_rates: BilledTokenRates | None = None
+                    _cache_write_costs_by_ttl: Mapping[str, float] | None = None
+                    _cache_write_unclassified_cost: float | None = None
                     if cost_per_token_usage_object is not None and model:
                         _breakdown_provider: str | None = (
                             custom_llm_provider if isinstance(custom_llm_provider, str) else None
@@ -2027,6 +2033,8 @@ def completion_cost(
                         _cache_read_cost = _token_type_breakdown.cache_read_cost
                         _cache_creation_cost = _token_type_breakdown.cache_creation_cost
                         _billed_token_rates = _token_type_breakdown.rates
+                        _cache_write_costs_by_ttl = _token_type_breakdown.cache_write_costs_by_ttl
+                        _cache_write_unclassified_cost = _token_type_breakdown.cache_write_unclassified_cost
                     _store_cost_breakdown_in_logging_obj(
                         litellm_logging_obj=litellm_logging_obj,
                         prompt_tokens_cost_usd_dollar=prompt_tokens_cost_usd_dollar,
@@ -2047,6 +2055,8 @@ def completion_cost(
                         data_residency=data_residency,
                         vertex_location=vertex_location,
                         billed_token_rates=_billed_token_rates,
+                        cache_write_costs_by_ttl=_cache_write_costs_by_ttl,
+                        cache_write_unclassified_cost=_cache_write_unclassified_cost,
                     )
 
                 return _final_cost

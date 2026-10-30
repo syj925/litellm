@@ -1783,6 +1783,8 @@ class Logging(LiteLLMLoggingBaseClass):
         data_residency: str | None = None,
         vertex_location: str | None = None,
         billed_token_rates: "BilledTokenRates | None" = None,
+        cache_write_costs_by_ttl: Mapping[str, float] | None = None,
+        cache_write_unclassified_cost: float | None = None,
     ) -> None:
         """
         Helper method to store cost breakdown in the logging object.
@@ -1819,6 +1821,10 @@ class Logging(LiteLLMLoggingBaseClass):
             self.cost_breakdown["cache_read_cost"] = cache_read_cost
         if cache_creation_cost is not None and cache_creation_cost > 0:
             self.cost_breakdown["cache_creation_cost"] = cache_creation_cost
+        if cache_write_costs_by_ttl is not None:
+            self.cost_breakdown["cache_write_costs_by_ttl"] = dict(cache_write_costs_by_ttl)
+        if cache_write_unclassified_cost is not None:
+            self.cost_breakdown["cache_write_unclassified_cost"] = cache_write_unclassified_cost
         if reasoning_cost is not None and reasoning_cost > 0:
             self.cost_breakdown["reasoning_cost"] = reasoning_cost
 
@@ -2535,7 +2541,10 @@ class Logging(LiteLLMLoggingBaseClass):
         if isinstance(result, ResponsesAPIResponse):
             result = result.model_copy()
             transformed_usage = ResponseAPILoggingUtils.transform_response_api_usage_to_chat_usage(result.usage)
-            setattr(result, "usage", transformed_usage)
+            # Keep the native typed usage on callback responses. Assigning chat Usage
+            # into ResponseAPIUsage silently drops input/output and cache details
+            # when Pydantic serializes the response. The standard log payload still
+            # gets the explicitly normalized chat representation below.
             if (standard_logging_payload := self.model_call_details.get("standard_logging_object")) is not None:
                 response_dict: Final = result.model_dump() if hasattr(result, "model_dump") else dict(result)
                 # Ensure usage is properly included with transformed chat format

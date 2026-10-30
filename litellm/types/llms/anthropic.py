@@ -1,4 +1,4 @@
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum
 from typing import Any, Final, Literal, TypeAlias
 
@@ -561,6 +561,7 @@ class UsageDelta(TypedDict, total=False):
     output_tokens: int
     cache_creation_input_tokens: int
     cache_read_input_tokens: int
+    cache_creation: ReadOnly[Mapping[str, int]]
     server_tool_use: ReadOnly[ServerToolUsage]
 
 

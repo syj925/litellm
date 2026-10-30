@@ -89,66 +89,65 @@ function serveApi(activeModels = modelDiscounts.map((row) => row.model), pools: 
         writes.push({ path: `${path}${url.search}`, body });
         return new Response(JSON.stringify(path.endsWith("import") ? { items: [] } : wallet), { status: 200 });
       }
-      const data = path.endsWith("/model-discounts")
-        ? {
+      function readData() {
+        if (path.endsWith("/model-discounts")) {
+          let items = modelDiscounts;
+          if (poolId)
+            items = modelDiscounts.map((row) => ({
+              ...row,
+              discount: poolId === "source-a" ? "0.5" : "0.9",
+              discount_source: "pool_default",
+              customer_discount: null,
+              plan_discount: null,
+              pool_id: poolId,
+              pool_default_discount: poolId === "source-a" ? "0.5" : "0.9",
+            }));
+          else if (path.includes("/admin/plans/"))
+            items = modelDiscounts.map((row) => ({
+              ...row,
+              discount: row.plan_discount ?? "1",
+              discount_source: row.plan_discount ? "plan_model" : "standard",
+            }));
+          return {
             user_id: wallet.user_id,
             plan_id: plan.id,
-            items: poolId
-              ? modelDiscounts.map((row) => ({
-                  ...row,
-                  discount: poolId === "source-a" ? "0.5" : "0.9",
-                  discount_source: "pool_default",
-                  customer_discount: null,
-                  plan_discount: null,
-                  pool_id: poolId,
-                  pool_default_discount: poolId === "source-a" ? "0.5" : "0.9",
-                }))
-              : path.includes("/admin/plans/")
-                ? modelDiscounts.map((row) => ({
-                    ...row,
-                    discount: row.plan_discount ?? "1",
-                    discount_source: row.plan_discount ? "plan_model" : "standard",
-                  }))
-                : modelDiscounts,
-          }
-        : path.endsWith("/pool-discount")
-          ? {
-              discount: null,
-              plan_discount: null,
-              pool_default_discount: "0.5",
-              effective_discount: "0.5",
-              discount_source: "pool_default",
-            }
-          : path.endsWith("/pools")
-            ? { items: pools, routing_enabled: pools.length > 0 }
-            : path.endsWith("/discount-models")
-              ? { models: activeModels }
-              : path.endsWith("/plans")
-                ? { items: [plan] }
-                : path.endsWith("/wallets")
-                  ? { items: [wallet], total: 1 }
-                  : path.endsWith("/wallet")
-                    ? wallet
-                    : path.endsWith("/model-prices")
-                      ? {
-                          items: [
-                            {
-                              ...rate,
-                              model: "legacy-model",
-                              version: 1,
-                              updated_at: "2026-01-01T00:00:00Z",
-                              source: "legacy",
-                              source_label: "Existing unverified base price",
-                            },
-                          ],
-                        }
-                      : path.endsWith("/reference-prices")
-                        ? {
-                            items: candidates,
-                            unavailable: [{ model: "unpriced-model", reason: "Manual reference required" }],
-                          }
-                        : { items: [], total: 0 };
-      return new Response(JSON.stringify(data), { status: 200 });
+            items,
+          };
+        }
+        if (path.endsWith("/pool-discount"))
+          return {
+            discount: null,
+            plan_discount: null,
+            pool_default_discount: "0.5",
+            effective_discount: "0.5",
+            discount_source: "pool_default",
+          };
+        if (path.endsWith("/pools")) return { items: pools, routing_enabled: pools.length > 0 };
+        if (path.endsWith("/discount-models")) return { models: activeModels };
+        if (path.endsWith("/plans")) return { items: [plan] };
+        if (path.endsWith("/wallets")) return { items: [wallet], total: 1 };
+        if (path.endsWith("/wallet")) return wallet;
+        if (path.endsWith("/model-prices"))
+          return {
+            items: [
+              {
+                ...rate,
+                model: "legacy-model",
+                version: 1,
+                updated_at: "2026-01-01T00:00:00Z",
+                source: "legacy",
+                source_label: "Existing unverified base price",
+              },
+            ],
+          };
+        if (path.endsWith("/reference-prices"))
+          return {
+            items: candidates,
+            unavailable: [{ model: "unpriced-model", reason: "Manual reference required" }],
+          };
+        return { items: [], total: 0 };
+      }
+      return new Response(JSON.stringify(readData()), { status: 200 });
     }),
   );
   return writes;
@@ -346,4 +345,41 @@ it("shows different effective discounts for each customer model without an accou
   expect(screen.getByText("80% of reference price (20% off)")).toBeInTheDocument();
   expect(screen.getByText("100% of reference price (0% off)")).toBeInTheDocument();
   expect(screen.getByText("Standard")).toBeInTheDocument();
+});
+
+it("saves independent cache duration rates and rejects duplicate durations without a write", async () => {
+  const writes = serveApi();
+  renderPanel();
+  fireEvent.click(await screen.findByRole("button", { name: "Add reference price" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Public model name" }), { target: { value: "cache-model" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Input (USD / 1M)" }), { target: { value: "2" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Output (USD / 1M)" }), { target: { value: "10" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Cache read (USD / 1M)" }), { target: { value: "0.2" } });
+  fireEvent.click(screen.getByRole("button", { name: "+ 5m" }));
+  fireEvent.click(screen.getByRole("button", { name: "+ 1h" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "5m price (USD / 1M)" }), { target: { value: "2.5" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "1h price (USD / 1M)" }), { target: { value: "4" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add duration" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Duration 3 (seconds)" }), { target: { value: "300" } });
+  fireEvent.change(screen.getAllByRole("textbox", { name: "5m price (USD / 1M)" })[1], { target: { value: "0" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save reference price" }));
+  expect(screen.getByRole("alert")).toHaveTextContent("only one price");
+  expect(writes).toEqual([]);
+  fireEvent.change(screen.getByRole("textbox", { name: "Duration 3 (seconds)" }), { target: { value: "75" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save reference price" }));
+  await waitFor(() =>
+    expect(writes).toEqual([
+      {
+        path: "/retail/admin/model-prices",
+        body: {
+          model: "cache-model",
+          input_per_million: "2",
+          output_per_million: "10",
+          cache_read_per_million: "0.2",
+          cache_write_per_million: "0",
+          cache_write_tiers: { "300": "2.5", "3600": "4", "75": "0" },
+        },
+      },
+    ]),
+  );
 });

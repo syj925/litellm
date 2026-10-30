@@ -2032,11 +2032,10 @@ def test_calculate_cache_writing_cost():
         cache_creation_cost=3e-06,
     )
 
-    # Expected calculation: 0 (for None 5m tokens) + (100 * 6e-06) = 0.0006
-    expected_cost_partial = (0.0) + (100 * 6e-06)
+    expected_cost_partial = (400 * 3e-06) + (100 * 6e-06)
 
     assert round(result_partial, 6) == round(expected_cost_partial, 6)
-    assert round(result_partial, 6) == 0.0006
+    assert round(result_partial, 6) == round(expected_cost_partial, 6)
 
     # Test case 4: Zero costs
     result_zero = calculate_cache_writing_cost(

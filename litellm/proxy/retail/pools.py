@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 from litellm.proxy._types import LitellmUserRoles
 
 from .api import Admin, Store, User, _execute, _model_price_view, _StoredModelPrice, _validated_discount
+from .cache_usage_metrics import router as cache_usage_metrics_router
 from .catalog import router as catalog_router
 from .catalog_sources import catalog_sources_lifespan
 from .catalog_sources import router as catalog_sources_router
@@ -27,6 +28,7 @@ router.include_router(channels_router)
 router.include_router(catalog_router)
 router.include_router(catalog_sources_router)
 router.include_router(model_metrics_router)
+router.include_router(cache_usage_metrics_router)
 
 
 class PoolUpsert(PoolDefinition):

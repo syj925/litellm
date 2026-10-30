@@ -494,15 +494,16 @@ describe("LogDetailContent", () => {
       />,
     );
 
-    expect(screen.getByText("Prompt Cache Read Tokens")).toBeInTheDocument();
+    expect(screen.getByText("Cache read tokens")).toBeInTheDocument();
     expect(screen.getByText("34,462")).toBeInTheDocument();
-    expect(screen.getByText("Prompt Cache Creation Tokens")).toBeInTheDocument();
-    expect(screen.getByText("83")).toBeInTheDocument();
+    expect(screen.getByText("Cache write tokens · total")).toBeInTheDocument();
+    expect(screen.getByText("Cache write · unspecified duration")).toBeInTheDocument();
+    expect(screen.getAllByText("83")).toHaveLength(2);
     expect(screen.getByText("Miss")).toBeInTheDocument();
     expect(screen.queryByText("Cache Hit")).not.toBeInTheDocument();
   });
 
-  it("should display Prompt Cache Creation Tokens even when there are no cache read tokens", () => {
+  it("keeps historical cache writes unspecified even when no cache reads are recorded", () => {
     render(
       <LogDetailContent
         logEntry={createLogEntry({
@@ -518,8 +519,9 @@ describe("LogDetailContent", () => {
       />,
     );
 
-    expect(screen.getByText("Prompt Cache Creation Tokens")).toBeInTheDocument();
-    expect(screen.getByText("83")).toBeInTheDocument();
+    expect(screen.getByText("Cache write tokens · total")).toBeInTheDocument();
+    expect(screen.getByText("Cache write · unspecified duration")).toBeInTheDocument();
+    expect(screen.getAllByText("83")).toHaveLength(2);
   });
 
   it("should link the Response Cache tooltip to the response caching docs", async () => {
@@ -537,8 +539,7 @@ describe("LogDetailContent", () => {
     );
   });
 
-  it("should link the prompt cache tooltips to the prompt caching docs", async () => {
-    const user = userEvent.setup();
+  it("links the duration breakdown to the prompt caching docs", () => {
     render(
       <LogDetailContent
         logEntry={createLogEntry({
@@ -551,12 +552,8 @@ describe("LogDetailContent", () => {
       />,
     );
 
-    expect(screen.getByText("Prompt Cache Read Tokens")).toBeInTheDocument();
-    const infoIcons = screen.getAllByRole("img", { name: /info/i });
-    expect(infoIcons).toHaveLength(1);
-    await user.hover(infoIcons[0]);
-
-    expect(await screen.findByRole("link", { name: "Docs" })).toHaveAttribute(
+    expect(screen.getByText("Cache read tokens")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Prompt caching docs" })).toHaveAttribute(
       "href",
       "https://docs.litellm.ai/docs/completion/prompt_caching",
     );

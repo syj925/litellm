@@ -1,4 +1,5 @@
 "use client";
+import CacheUsageBreakdown from "../CacheUsageBreakdown";
 
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -225,6 +226,7 @@ export default function ModelPerformance({
             periods have no measured latency or speed.
           </p>
           <PerformanceCharts result={result} />
+          <CacheUsageBreakdown usage={summary} />
           {result.notes?.length ? (
             <details className="rounded-lg border px-4 py-3 text-xs text-muted-foreground">
               <summary className="cursor-pointer font-medium">Measurement details</summary>

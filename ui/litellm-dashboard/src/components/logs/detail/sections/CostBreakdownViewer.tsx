@@ -2,11 +2,14 @@ import React, { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { formatNumberWithCommas } from "@/utils/dataUtils";
+import { cacheDurationLabel, cacheTierEntries } from "@/components/retail/cachePricing";
 
 export interface CostBreakdown {
   input_cost?: number;
   cache_read_cost?: number;
   cache_creation_cost?: number;
+  cache_write_costs_by_ttl?: Record<string, number>;
+  cache_write_unclassified_cost?: number;
   output_cost?: number;
   total_cost?: number;
   tool_usage_cost?: number;
@@ -116,7 +119,8 @@ export const CostBreakdownViewer: React.FC<CostBreakdownViewerProps> = ({
             <div className="space-y-2 max-w-2xl">
               {(() => {
                 const hasCacheBreakdown =
-                  costBreakdown?.cache_read_cost !== undefined || costBreakdown?.cache_creation_cost !== undefined;
+                  costBreakdown?.cache_read_cost !== undefined || costBreakdown?.cache_creation_cost !== undefined ||
+                  cacheTierEntries(costBreakdown?.cache_write_costs_by_ttl).length > 0;
                 if (hasCacheBreakdown) {
                   // Separate line items: Input / Cache Read / Cache Write
                   const rawCost = isCached
@@ -152,7 +156,7 @@ export const CostBreakdownViewer: React.FC<CostBreakdownViewerProps> = ({
                       )}
                       {(costBreakdown?.cache_creation_cost ?? 0) > 0 && (
                         <div className="flex text-sm">
-                          <span className="text-muted-foreground font-medium w-1/3">Prompt Cache Write Cost:</span>
+                          <span className="text-muted-foreground font-medium w-1/3">Prompt Cache Write Cost · total:</span>
                           <span className="text-foreground">
                             {formatCost(isCached ? 0 : costBreakdown?.cache_creation_cost)}
                             {(cacheCreationTokens ?? 0) > 0 && (
@@ -162,6 +166,27 @@ export const CostBreakdownViewer: React.FC<CostBreakdownViewerProps> = ({
                             )}
                           </span>
                         </div>
+                      )}
+                      {cacheTierEntries(costBreakdown?.cache_write_costs_by_ttl).map(([ttl, cost]) => (
+                        <div key={ttl} className="flex text-sm">
+                          <span className="w-1/3 font-medium text-muted-foreground">
+                            Cache write · {cacheDurationLabel(ttl)}:
+                          </span>
+                          <span className="text-foreground">{formatCost(isCached ? 0 : cost)}</span>
+                        </div>
+                      ))}
+                      {costBreakdown?.cache_write_unclassified_cost !== undefined && (
+                        <div className="flex text-sm">
+                          <span className="w-1/3 font-medium text-muted-foreground">Cache write · unspecified:</span>
+                          <span className="text-foreground">
+                            {formatCost(isCached ? 0 : costBreakdown.cache_write_unclassified_cost)}
+                          </span>
+                        </div>
+                      )}
+                      {costBreakdown?.cache_write_costs_by_ttl && (
+                        <p className="text-xs text-muted-foreground">
+                          Duration amounts are parts of the total cache write cost, not additional charges.
+                        </p>
                       )}
                     </>
                   );

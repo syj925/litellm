@@ -40,7 +40,7 @@ from .models import (
     amount_to_nanos,
     parse_discount,
 )
-from .pricing import as_mapping, catalog_candidates
+from .pricing import as_mapping, catalog_candidates, validated_cache_write_tiers
 from .store import WalletStore, get_store
 
 router: Final = APIRouter(prefix="/retail", tags=["Retail accounts"])
@@ -140,6 +140,13 @@ class ModelPriceRequest(BaseModel):
     output_per_million: str = Field(min_length=1, max_length=40)
     cache_read_per_million: str = Field(min_length=1, max_length=40)
     cache_write_per_million: str = Field(min_length=1, max_length=40)
+    cache_write_tiers: dict[str, str] = Field(default_factory=dict, max_length=16)
+
+    @field_validator("cache_write_tiers")
+    @classmethod
+    def valid_cache_write_tiers(cls, value: dict[str, str]) -> dict[str, str]:
+        validated_cache_write_tiers({key: _per_token_price(amount) for key, amount in value.items()})
+        return value
 
 
 class _StoredModelPrice(BaseModel):
@@ -152,6 +159,7 @@ class _StoredModelPrice(BaseModel):
     output_cost_per_token: str
     cache_read_input_token_cost: str
     cache_creation_input_token_cost: str
+    cache_write_tiers: dict[str, str] = Field(default_factory=dict)
     source: str = "legacy"
     catalog_model: str | None = None
     source_label: str = "Existing reference, review required"
@@ -223,6 +231,41 @@ class _PublicLedgerPage(BaseModel):
     offset: int
 
 
+def _public_ttl_prices(value: object) -> dict[str, JsonValue]:
+    try:
+        return {key: amount for key, amount in validated_cache_write_tiers(value).items()}
+    except ValueError:
+        return {}
+
+
+def _public_cost_breakdown(value: object) -> dict[str, JsonValue]:
+    raw: Final = as_mapping(value)
+    allowed: Final = ("input", "output", "cache_read", "cache_write_unclassified", "rounding_adjustment")
+    amounts: Final = {
+        key: amount for key, amount in raw.items()
+        if key in allowed and isinstance(amount, str) and len(amount) <= 80 and _finite_decimal(amount)
+    }
+    tiers: Final = {
+        key: amount for key, amount in as_mapping(raw.get("cache_write_tiers")).items()
+        if _public_ttl_key(key) and isinstance(amount, str) and len(amount) <= 80 and _finite_decimal(amount)
+    }
+    return {
+        **amounts,
+        **({"cache_write_tiers": tiers} if "cache_write_tiers" in raw else {}),
+    }
+
+
+def _public_ttl_key(value: str) -> bool:
+    return value.isascii() and value.isdecimal() and str(int(value)) == value and 1 <= int(value) <= 31_536_000
+
+
+def _finite_decimal(value: str) -> bool:
+    try:
+        return Decimal(value).is_finite()
+    except InvalidOperation:
+        return False
+
+
 def _public_ledger_details(value: object) -> dict[str, JsonValue]:
     if not isinstance(value, Mapping):
         return {}
@@ -234,6 +277,7 @@ def _public_ledger_details(value: object) -> dict[str, JsonValue]:
         "output_tokens",
         "cache_read_tokens",
         "cache_write_tokens",
+        "cache_write_unclassified_tokens",
         "total_tokens",
     )
     allowed_prices: Final = (
@@ -274,15 +318,27 @@ def _public_ledger_details(value: object) -> dict[str, JsonValue]:
         if isinstance(snapshot, dict)
         else {}
     )
+    ttl_counts: Final = as_mapping(usage).get("cache_write_ttl_tokens")
+    if isinstance(ttl_counts, dict):
+        usage_details["cache_write_ttl_tokens"] = {
+            key: count
+            for key, count in ttl_counts.items()
+            if _public_ttl_key(key)
+            and isinstance(count, int) and not isinstance(count, bool) and count >= 0
+        }
+    tiers: Final = _public_ttl_prices(as_mapping(snapshot).get("cache_write_tiers", {}))
+    if tiers:
+        price_details["cache_write_tiers"] = {key: amount for key, amount in tiers.items()}
     scalar_details: Final[dict[str, JsonValue]] = {
         key: item
         for key, item in source.items()
-        if key in ("billing_basis", "gateway_call_id", "reason") and isinstance(item, str)
+        if key in ("billing_basis", "gateway_call_id", "reason", "billing_error") and isinstance(item, str)
     }
     return {
         **scalar_details,
         **({"usage": usage_details} if usage_details else {}),
         **({"price_snapshot": price_details} if price_details else {}),
+        **({"cost_breakdown": _public_cost_breakdown(source["cost_breakdown"])} if "cost_breakdown" in source else {}),
     }
 
 
@@ -414,6 +470,9 @@ def _model_price_view(card: _StoredModelPrice) -> dict[str, JsonValue]:
         "output_per_million": format(Decimal(card.output_cost_per_token) * 1000000, "f"),
         "cache_read_per_million": format(Decimal(card.cache_read_input_token_cost) * 1000000, "f"),
         "cache_write_per_million": format(Decimal(card.cache_creation_input_token_cost) * 1000000, "f"),
+        "cache_write_tiers": {
+            key: format(Decimal(value) * 1_000_000, "f") for key, value in card.cache_write_tiers.items()
+        },
     }
 
 
@@ -630,6 +689,10 @@ def _reference_price_view(card: Mapping[str, JsonValue]) -> dict[str, JsonValue]
         "output_per_million": format(Decimal(str(card["output_cost_per_token"])) * 1000000, "f"),
         "cache_read_per_million": format(Decimal(str(card["cache_read_input_token_cost"])) * 1000000, "f"),
         "cache_write_per_million": format(Decimal(str(card["cache_creation_input_token_cost"])) * 1000000, "f"),
+        "cache_write_tiers": {
+            key: format(Decimal(value) * 1_000_000, "f")
+            for key, value in validated_cache_write_tiers(card.get("cache_write_tiers", {})).items()
+        },
     }
 
 
@@ -692,6 +755,9 @@ async def admin_save_model_price(data: ModelPriceRequest, admin: Admin, store: S
             "output_cost_per_token": _per_token_price(data.output_per_million),
             "cache_read_input_token_cost": _per_token_price(data.cache_read_per_million),
             "cache_creation_input_token_cost": _per_token_price(data.cache_write_per_million),
+            "cache_write_tiers": {
+                key: _per_token_price(value) for key, value in data.cache_write_tiers.items()
+            },
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

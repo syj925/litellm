@@ -192,7 +192,20 @@ describe("CostBreakdownViewer", () => {
     await expandCostBreakdown();
 
     expect(screen.getByText("Prompt Cache Read Cost:")).toBeInTheDocument();
-    expect(screen.getByText("Prompt Cache Write Cost:")).toBeInTheDocument();
+    expect(screen.getByText("Prompt Cache Write Cost · total:")).toBeInTheDocument();
+  });
+
+  it("shows cache duration costs as subsets while preserving the original total", async () => {
+    renderWithProviders(<CostBreakdownViewer costBreakdown={{
+      input_cost: 0.01, output_cost: 0.02, cache_creation_cost: 0.0045,
+      cache_write_costs_by_ttl: { "1800": 0.001, "43200": 0.003 }, cache_write_unclassified_cost: 0.0005,
+    }} totalSpend={0.03} />);
+    await expandCostBreakdown();
+    expect(screen.getByText("Cache write · 30m:")).toBeInTheDocument();
+    expect(screen.getByText("Cache write · 12h:")).toBeInTheDocument();
+    expect(screen.getByText("Cache write · unspecified:")).toBeInTheDocument();
+    expect(screen.getByText(/Duration amounts are parts of the total/)).toBeInTheDocument();
+    expect(screen.getByText("Prompt Cache Write Cost · total:")).toBeInTheDocument();
   });
 
   it("shows '(Cached)' in the header when cacheHit is true", () => {

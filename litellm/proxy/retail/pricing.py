@@ -1,22 +1,20 @@
 import json
-from collections.abc import Mapping, Sequence
+import re
+from collections.abc import Iterator, Mapping, Sequence
 from decimal import Decimal, InvalidOperation
 from typing import Final
 
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, Field, JsonValue
 
 from litellm.litellm_core_utils.get_model_cost_map import GetModelCostMap, get_model_cost_map_source_info
 
+from .cache_usage import MAX_TTL_TIERS, CacheUsage, cache_usage, token_count, ttl_seconds_key
 from .models import cost_to_nanos, nanos_to_amount
 
 
-class UsageFacts(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    input_tokens: int
-    output_tokens: int
-    cache_read_tokens: int = 0
-    cache_write_tokens: int = 0
+class UsageFacts(CacheUsage):
+    input_tokens: int = Field(ge=0, strict=True)
+    output_tokens: int = Field(ge=0, strict=True)
 
 
 def as_mapping(value: object) -> Mapping[str, object]:
@@ -27,14 +25,14 @@ def as_mapping(value: object) -> Mapping[str, object]:
     return {}
 
 
-def _count(value: object) -> int:
-    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-        return value
-    raise ValueError("A reported token count must be a non-negative integer")
-
-
 def usage_facts(response: object, *, allow_input_only: bool = False) -> UsageFacts | None:
     payload: Final = as_mapping(response)
+    gemini: Final = as_mapping(payload.get("usageMetadata"))
+    if gemini:
+        try:
+            return _gemini_usage(gemini, allow_input_only)
+        except ValueError:
+            return None
     usage: Final = as_mapping(payload.get("usage"))
     if not usage:
         return None
@@ -49,21 +47,51 @@ def usage_facts(response: object, *, allow_input_only: bool = False) -> UsageFac
 
 
 def _valid_usage(usage: Mapping[str, object]) -> UsageFacts:
-    read: Final = _count(usage.get("cache_read_input_tokens") or 0)
-    write: Final = _count(usage.get("cache_creation_input_tokens") or 0)
-    details: Final = as_mapping(usage.get("prompt_tokens_details") or usage.get("input_tokens_details"))
-    cached: Final = max(read, _count(details.get("cached_tokens") or 0))
-    created: Final = max(write, _count(details.get("cache_creation_tokens") or 0))
+    cache: Final = cache_usage(usage)
     aggregate: Final = "prompt_tokens" in usage or "input_tokens_details" in usage
-    prompt: Final = _count(usage.get("prompt_tokens", usage.get("input_tokens")))
-    if aggregate and cached + created > prompt:
+    prompt: Final = token_count(usage.get("prompt_tokens", usage.get("input_tokens")))
+    cached_input: Final = cache.cache_read_tokens + cache.cache_write_tokens
+    if aggregate and cached_input > prompt:
         raise ValueError("Cached input cannot exceed the reported aggregate input")
     return UsageFacts(
-        input_tokens=max(0, prompt - cached - created) if aggregate else prompt,
-        output_tokens=_count(usage.get("completion_tokens", usage.get("output_tokens", 0))),
-        cache_read_tokens=cached,
-        cache_write_tokens=created,
+        input_tokens=prompt - cached_input if aggregate else prompt,
+        output_tokens=token_count(usage.get("completion_tokens", usage.get("output_tokens", 0))),
+        cache_read_tokens=cache.cache_read_tokens,
+        cache_write_tokens=cache.cache_write_tokens,
+        cache_write_ttl_tokens=cache.cache_write_ttl_tokens,
     )
+
+
+def _gemini_usage(usage: Mapping[str, object], allow_input_only: bool) -> UsageFacts | None:
+    if "promptTokenCount" not in usage or (not allow_input_only and "candidatesTokenCount" not in usage):
+        return None
+    prompt: Final = token_count(usage["promptTokenCount"]) + token_count(usage.get("toolUsePromptTokenCount", 0))
+    read: Final = token_count(usage.get("cachedContentTokenCount", 0))
+    if read > prompt:
+        raise ValueError("Cached input cannot exceed the reported aggregate input")
+    return UsageFacts(
+        input_tokens=prompt - read,
+        output_tokens=token_count(usage.get("candidatesTokenCount", 0)) + token_count(usage.get("thoughtsTokenCount", 0)),
+        cache_read_tokens=read,
+    )
+
+
+def validated_cache_write_tiers(value: object) -> dict[str, str]:
+    if not isinstance(value, Mapping) or len(value) > MAX_TTL_TIERS:
+        raise ValueError("Cache write prices must contain at most sixteen duration tiers")
+    return {ttl_seconds_key(key): _validated_tier_price(rate) for key, rate in value.items()}
+
+
+def _validated_tier_price(value: object) -> str:
+    rate: Final = _rate(value)
+    if rate is None or rate > 1_000_000:
+        raise ValueError("Cache write prices must be finite non-negative decimal USD values")
+    try:
+        if rate.quantize(Decimal("0.000000000000000001")) != rate:
+            raise ValueError("Cache write prices must have at most eighteen decimals")
+    except InvalidOperation as exc:
+        raise ValueError("Cache write prices must have at most eighteen decimals") from exc
+    return format(rate, "f")
 
 
 def _rate(value: object) -> Decimal | None:
@@ -107,12 +135,42 @@ def _catalog_model(
     return suffix if suffix and suffix in catalog else None
 
 
+def catalog_cache_write_tiers(name: str, rates: Mapping[str, object]) -> dict[str, str]:
+    supplied: Final = rates.get("cache_write_tiers")
+    if supplied is not None:
+        return validated_cache_write_tiers(supplied)
+    provider: Final = str(rates.get("litellm_provider", ""))
+    anthropic: Final = provider == "anthropic" or name.startswith("anthropic/") or (
+        "claude" in name and provider in {"bedrock", "vertex_ai", "vertex_ai-anthropic_models"}
+    )
+    openai: Final = provider == "openai" or name.startswith("openai/")
+    if not anthropic and not openai:
+        return {}
+    base: Final = rates.get("cache_creation_input_token_cost")
+    duration_key: Final = (
+        "cache_creation_input_token_cost_above_1hr" if anthropic else "cache_creation_input_token_cost_above_12hr"
+    )
+    long: Final = rates.get(duration_key)
+    return validated_cache_write_tiers(
+        {
+            **({"300" if anthropic else "1800": base} if base is not None else {}),
+            **({"3600" if anthropic else "43200": long} if long is not None else {}),
+        }
+    )
+
+
 def _catalog_card(name: str, rates: Mapping[str, object]) -> dict[str, JsonValue] | None:
+    try:
+        tiers: Final = catalog_cache_write_tiers(name, rates)
+    except ValueError:
+        return None
     supported_rates: Final = {
         "input_cost_per_token",
         "output_cost_per_token",
         "cache_read_input_token_cost",
         "cache_creation_input_token_cost",
+        *(("cache_creation_input_token_cost_above_1hr",) if "3600" in tiers else ()),
+        *(("cache_creation_input_token_cost_above_12hr",) if "43200" in tiers else ()),
     }
     if rates.get("mode") not in {None, "chat", "completion", "embedding"}:
         return None
@@ -140,6 +198,7 @@ def _catalog_card(name: str, rates: Mapping[str, object]) -> dict[str, JsonValue
         "output_cost_per_token": str(output_rate),
         "cache_read_input_token_cost": str(read_rate),
         "cache_creation_input_token_cost": str(write_rate),
+        "cache_write_tiers": dict(tiers),
     }
 
 
@@ -157,17 +216,86 @@ def catalog_snapshot(
         raise ValueError(
             "A single supported catalog reference is required. Import the model's official reference price in Customer wallets"
         )
-    return {"version": "flat-token-v1", "multiplier": multiplier, **candidates[0]}
+    return {"version": "token-v2", "multiplier": multiplier, **candidates[0]}
 
 
-def charge_for_usage(snapshot: Mapping[str, object], usage: UsageFacts) -> str:
-    amount: Final = (
+def _cache_write_cost(snapshot: Mapping[str, object], usage: UsageFacts) -> Decimal:
+    if snapshot.get("version") != "token-v2":
+        return Decimal(str(snapshot["cache_creation_input_token_cost"])) * usage.cache_write_tokens
+    tiers: Final = validated_cache_write_tiers(snapshot.get("cache_write_tiers", {}))
+    missing: Final = tuple(key for key in usage.cache_write_ttl_tokens if key not in tiers)
+    if missing:
+        raise ValueError("Cache write prices are missing for TTL seconds: " + ", ".join(missing))
+    return (
+        Decimal(str(snapshot["cache_creation_input_token_cost"])) * usage.cache_write_unclassified_tokens
+        + sum((Decimal(tiers[key]) * tokens for key, tokens in usage.cache_write_ttl_tokens.items()), Decimal(0))
+    )
+
+
+def _usage_amount(snapshot: Mapping[str, object], usage: UsageFacts) -> Decimal:
+    return (
         Decimal(str(snapshot["input_cost_per_token"])) * usage.input_tokens
         + Decimal(str(snapshot["output_cost_per_token"])) * usage.output_tokens
         + Decimal(str(snapshot["cache_read_input_token_cost"])) * usage.cache_read_tokens
-        + Decimal(str(snapshot["cache_creation_input_token_cost"])) * usage.cache_write_tokens
+        + _cache_write_cost(snapshot, usage)
     ) * Decimal(str(snapshot.get("discount", snapshot.get("multiplier"))))
-    return nanos_to_amount(cost_to_nanos(amount))
+
+
+def charge_for_usage(snapshot: Mapping[str, object], usage: UsageFacts) -> str:
+    return nanos_to_amount(cost_to_nanos(_usage_amount(snapshot, usage)))
+
+
+def cost_breakdown(snapshot: Mapping[str, object], usage: UsageFacts) -> dict[str, JsonValue]:
+    discount: Final = Decimal(str(snapshot.get("discount", snapshot.get("multiplier"))))
+    tiers: Final = validated_cache_write_tiers(snapshot.get("cache_write_tiers", {}))
+    current: Final = snapshot.get("version") == "token-v2"
+    _cache_write_cost(snapshot, usage)
+    return {
+        "input": format(Decimal(str(snapshot["input_cost_per_token"])) * usage.input_tokens * discount, "f"),
+        "output": format(Decimal(str(snapshot["output_cost_per_token"])) * usage.output_tokens * discount, "f"),
+        "cache_read": format(
+            Decimal(str(snapshot["cache_read_input_token_cost"])) * usage.cache_read_tokens * discount, "f"
+        ),
+        "cache_write_unclassified": format(
+            Decimal(str(snapshot["cache_creation_input_token_cost"]))
+            * (usage.cache_write_unclassified_tokens if current else usage.cache_write_tokens) * discount,
+            "f",
+        ),
+        "cache_write_tiers": {
+            key: format(Decimal(tiers[key]) * count * discount, "f")
+            for key, count in usage.cache_write_ttl_tokens.items() if current
+        },
+        "rounding_adjustment": format(
+            Decimal(charge_for_usage(snapshot, usage)) - _usage_amount(snapshot, usage), "f"
+        ),
+    }
+
+
+def validate_requested_cache_ttls(snapshot: Mapping[str, object], data: Mapping[str, object]) -> None:
+    if snapshot.get("version") != "token-v2":
+        return
+    tiers: Final = validated_cache_write_tiers(snapshot.get("cache_write_tiers", {}))
+    missing: Final = tuple(sorted(frozenset(_requested_cache_ttls(data)) - tiers.keys(), key=int))
+    if missing:
+        raise ValueError("Configure cache write prices for TTL seconds before sending this request: " + ", ".join(missing))
+
+
+def _requested_cache_ttls(value: object) -> Iterator[str]:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if key in {"cache_control", "prompt_cache_options", "prompt_cache_breakpoint"}:
+                control: Final = as_mapping(item)
+                if control.get("mode") in {"off", "disabled", "read_only"}:
+                    continue
+                ttl: Final = control.get("ttl")
+                if isinstance(ttl, str) and (match := re.fullmatch(r"(\d+)([smhd])", ttl)):
+                    scale: Final = {"s": 1, "m": 60, "h": 3600, "d": 86400}[match.group(2)]
+                    yield ttl_seconds_key(str(int(match.group(1)) * scale))
+            else:
+                yield from _requested_cache_ttls(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _requested_cache_ttls(item)
 
 
 def reserve_quote(
@@ -186,6 +314,7 @@ def reserve_quote(
         Decimal(str(snapshot["input_cost_per_token"])),
         Decimal(str(snapshot["cache_read_input_token_cost"])),
         Decimal(str(snapshot["cache_creation_input_token_cost"])),
+        *(Decimal(value) for value in validated_cache_write_tiers(snapshot.get("cache_write_tiers", {})).values()),
     )
     amount: Final = (
         input_rate * upper_input + Decimal(str(snapshot["output_cost_per_token"])) * output_limit

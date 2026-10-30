@@ -6,7 +6,7 @@ from typing import Final, Literal
 
 import psycopg
 from fastapi import APIRouter, HTTPException, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from litellm.litellm_core_utils.get_model_cost_map import GetModelCostMap
 
@@ -24,7 +24,7 @@ from .pool_store import (
     effective_account_grants,
     router_deployments,
 )
-from .pricing import _catalog_model, as_mapping, catalog_snapshot
+from .pricing import _catalog_model, as_mapping, catalog_cache_write_tiers, catalog_snapshot
 from .store import WalletStore, _many, _ModelPriceRow
 
 router: Final = APIRouter(tags=["Model catalog"])
@@ -37,6 +37,7 @@ class CatalogRates(BaseModel):
     output: str | None = None
     cache_read: str | None = None
     cache_write: str | None = None
+    cache_write_tiers: dict[str, str] = Field(default_factory=dict)
 
 
 class CatalogPricing(BaseModel):
@@ -244,11 +245,22 @@ def _per_million(value: object) -> str | None:
         return None
 
 
-def _rates(card: Mapping[str, object] | None) -> CatalogRates | None:
+def _rates(card: Mapping[str, object] | None, catalog_name: str | None = None) -> CatalogRates | None:
     if card is None:
         return None
     values: Final = {field: _per_million(card.get(key)) for field, key in _RATE_FIELDS.items()}
-    return CatalogRates.model_validate(values) if any(value is not None for value in values.values()) else None
+    tiers: Final = (
+        as_mapping(card.get("cache_write_tiers"))
+        if "cache_write_tiers" in card
+        else catalog_cache_write_tiers(catalog_name or "", card)
+    )
+    tier_rates: Final = {
+        key: amount for key, value in tiers.items() if (amount := _per_million(value)) is not None
+    }
+    return (
+        CatalogRates.model_validate({**values, "cache_write_tiers": tier_rates})
+        if any(value is not None for value in values.values()) or tier_rates else None
+    )
 
 
 def _discounted(rates: CatalogRates | None, discount: str | None) -> CatalogRates | None:
@@ -256,8 +268,14 @@ def _discounted(rates: CatalogRates | None, discount: str | None) -> CatalogRate
         return None
     return CatalogRates.model_validate(
         {
-            key: format(Decimal(value) * Decimal(discount), "f") if value is not None else None
-            for key, value in rates.model_dump().items()
+            **{
+                key: format(Decimal(value) * Decimal(discount), "f") if value is not None else None
+                for key, value in rates.model_dump(exclude={"cache_write_tiers"}).items()
+            },
+            "cache_write_tiers": {
+                key: format(Decimal(value) * Decimal(discount), "f")
+                for key, value in rates.cache_write_tiers.items()
+            },
         }
     )
 
@@ -285,11 +303,11 @@ def _reference_rates(
     if model in stored_prices:
         return _rates(stored_prices[model])
     if model in catalog:
-        return _rates(catalog[model])
+        return _rates(catalog[model], model)
     names: Final = tuple(dict.fromkeys(_catalog_model(deployment, catalog) for deployment in deployments))
     if not names or any(name is None for name in names):
         return None
-    candidates: Final = tuple(_rates(catalog[name]) for name in names if name is not None)
+    candidates: Final = tuple(_rates(catalog[name], name) for name in names if name is not None)
     first: Final = candidates[0]
     return first if all(item == first for item in candidates) else None
 

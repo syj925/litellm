@@ -1,8 +1,30 @@
+import { cacheDurationLabel, cacheTierEntries } from "../cachePricing";
+
 export interface CatalogTokenPrice {
   input: string | null;
   output: string | null;
   cache_read: string | null;
   cache_write: string | null;
+  cache_write_tiers?: Record<string, string>;
+}
+
+export function catalogPriceRows(
+  price: CatalogTokenPrice | null | undefined,
+): { key: string; label: string; amount: string | null }[] {
+  const baseRows = [
+    { key: "input", label: "Input", amount: price?.input ?? null },
+    { key: "output", label: "Output", amount: price?.output ?? null },
+    { key: "cache_read", label: "Cache read", amount: price?.cache_read ?? null },
+    { key: "cache_write", label: "Cache write · unspecified duration", amount: price?.cache_write ?? null },
+  ];
+  return [
+    ...baseRows,
+    ...cacheTierEntries(price?.cache_write_tiers).map(([ttl, amount]) => ({
+      key: `cache_write_${ttl}`,
+      label: `Cache write · ${cacheDurationLabel(ttl)}`,
+      amount,
+    })),
+  ];
 }
 
 export interface CatalogPricing {
@@ -93,6 +115,10 @@ export interface ModelPerformanceMetrics {
   input_tokens: number | null;
   output_tokens: number | null;
   total_tokens: number | null;
+  cache_read_tokens?: number | null;
+  cache_write_tokens?: number | null;
+  cache_write_ttl_tokens?: Record<string, number>;
+  cache_write_unclassified_tokens?: number | null;
   latency_p50_ms: number | null;
   latency_p95_ms: number | null;
   ttft_p50_ms: number | null;
@@ -126,7 +152,7 @@ export function formatCatalogPrice(value: string | null | undefined): string {
 export function modelPrice(
   model: CatalogModel,
   basis: CatalogPriceBasis,
-  field: keyof CatalogTokenPrice,
+  field: Exclude<keyof CatalogTokenPrice, "cache_write_tiers">,
 ): number | null {
   const values = model.offers.flatMap((offer) => {
     if (basis === "customer" && !offer.available_to_me) return [];

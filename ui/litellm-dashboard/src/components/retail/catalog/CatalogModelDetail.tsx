@@ -20,6 +20,7 @@ import ModelPerformance from "./ModelPerformance";
 import ModelBenchmarks from "./ModelBenchmarks";
 import {
   catalogDetailTabs,
+  catalogPriceRows,
   discountLabel,
   formatCatalogPrice,
   modelPrice,
@@ -192,9 +193,7 @@ function CatalogOverview({
               ))}
             </div>
           )}
-          <p className="mt-4 text-xs leading-6 text-muted-foreground">
-            {integrationAccessNote(model, publicView)}
-          </p>
+          <p className="mt-4 text-xs leading-6 text-muted-foreground">{integrationAccessNote(model, publicView)}</p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Button size="sm" onClick={() => onTabChange("api")}>
               {protocols.length ? "View API examples" : "View integration reference"} <ArrowUpRight />
@@ -316,12 +315,8 @@ function CatalogResources({ model, publicView }: ModelSectionProps) {
 }
 
 function PricingTable({ offer, publicView }: { offer: CatalogOffer; publicView: boolean }) {
-  const rows = [
-    { key: "input", label: "Input" },
-    { key: "output", label: "Output" },
-    { key: "cache_read", label: "Cache read" },
-    { key: "cache_write", label: "Cache write" },
-  ] as const;
+  const rows = catalogPriceRows(offer.pricing.reference);
+  const customerRows = new Map(catalogPriceRows(offer.pricing.customer).map(({ key, amount }) => [key, amount]));
   return (
     <div className="overflow-hidden rounded-lg border">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/25 p-4">
@@ -337,15 +332,13 @@ function PricingTable({ offer, publicView }: { offer: CatalogOffer; publicView: 
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map(({ key, label }) => (
+          {rows.map(({ key, label, amount }) => (
             <TableRow key={key}>
               <TableCell>{label}</TableCell>
-              <TableCell className="text-right tabular-nums">
-                {formatCatalogPrice(offer.pricing.reference?.[key])}
-              </TableCell>
+              <TableCell className="text-right tabular-nums">{formatCatalogPrice(amount)}</TableCell>
               {!publicView && (
                 <TableCell className="text-right tabular-nums">
-                  {offer.available_to_me ? formatCatalogPrice(offer.pricing.customer?.[key]) : "Access required"}
+                  {offer.available_to_me ? formatCatalogPrice(customerRows.get(key)) : "Access required"}
                 </TableCell>
               )}
             </TableRow>
@@ -387,10 +380,10 @@ function CatalogPricingPanel({ model, publicView }: ModelSectionProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(["input", "output", "cache_read", "cache_write"] as const).map((key) => (
+              {catalogPriceRows(model.reference_pricing).map(({ key, label, amount }) => (
                 <TableRow key={key}>
-                  <TableCell className="capitalize">{key.replaceAll("_", " ")}</TableCell>
-                  <TableCell className="text-right">{formatCatalogPrice(model.reference_pricing?.[key])}</TableCell>
+                  <TableCell>{label}</TableCell>
+                  <TableCell className="text-right">{formatCatalogPrice(amount)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -403,8 +396,9 @@ function CatalogPricingPanel({ model, publicView }: ModelSectionProps) {
         </p>
       )}
       <p className="text-xs leading-6 text-muted-foreground">
-        Reference prices show base rates in USD per 1M tokens. Additional context and cache-duration tiers may apply.
-        Not listed means no price is published for that usage type.
+        Prices are in USD per 1M tokens. Each cache write duration is charged at its complete write price, without
+        adding ordinary input again. Unspecified duration means the upstream did not identify a write duration.
+        Additional context tiers may apply. Not listed means no price is published for that usage type.
         {!publicView && (
           <>
             {" "}

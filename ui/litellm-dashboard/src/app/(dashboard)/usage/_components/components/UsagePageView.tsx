@@ -25,6 +25,7 @@ import { useCurrentUser } from "@/app/(dashboard)/hooks/users/useCurrentUser";
 import { hasCapability } from "@/utils/capabilities";
 import { internalUserRoles, isProxyAdminRole } from "@/utils/roles";
 import { ChannelActivityPanel } from "@/components/retail/channels/metrics/ChannelActivityPanel";
+import CacheUsageMetricsPanel from "@/components/retail/CacheUsageMetricsPanel";
 import { isProxyDashboardRole } from "@/utils/dashboardAccess";
 import { ActivityMetrics, processActivityData } from "@/components/activity_metrics";
 import CloudZeroExportModal from "@/components/cloudzero_export_modal";
@@ -429,6 +430,15 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
                   )}
                 </div>
                 <TabsContent value="cost" keepMounted={activeUsageTab !== "channels"}>
+                  {activeUsageTab === "cost" && (
+                    <CacheUsageMetricsPanel
+                      accessToken={accessToken}
+                      startTime={startTime}
+                      endTime={endTime}
+                      scope={isAdmin ? "global" : "self"}
+                      userId={effectiveUserId}
+                    />
+                  )}
                   <UsageOverview
                     results={sortedDailyResults}
                     totals={totals}
@@ -485,6 +495,18 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
 
                 {/* Activity Panel */}
                 <TabsContent value="models" keepMounted={activeUsageTab !== "channels"}>
+                  {activeUsageTab === "models" && (
+                    <CacheUsageMetricsPanel
+                      accessToken={accessToken}
+                      startTime={startTime}
+                      endTime={endTime}
+                      scope={isAdmin ? "global" : "self"}
+                      userId={effectiveUserId}
+                      modelKeys={trimmedModelQuery ? Object.keys(filteredModelMetrics) : undefined}
+                      modelDimension={modelViewType === "groups" ? "model_groups" : "models"}
+                      pending={loading}
+                    />
+                  )}
                   <div className="mt-2 mb-4 flex flex-wrap items-center justify-between gap-3">
                     <InputGroup className="max-w-md">
                       <InputGroupAddon>

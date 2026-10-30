@@ -9,11 +9,12 @@ from typing import Final, Literal
 
 import psycopg
 from fastapi import APIRouter, HTTPException, Query, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .api import Store, User
+from .cache_observations import TTL_AGGREGATE, legacy_cache_sql
 from .catalog import _listed_request_name, _request_name
-from .channel_metrics import _HELPER
+from .channel_metrics import _HELPER, _READ, _WRITE
 from .pool_store import (
     PoolAccess,
     PoolStore,
@@ -52,6 +53,10 @@ class ModelMetricSummary(BaseModel):
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    cache_write_ttl_tokens: dict[str, int] = Field(default_factory=dict)
+    cache_write_unclassified_tokens: int | None = None
     latency_p50_ms: float | None = None
     latency_p95_ms: float | None = None
     ttft_p50_ms: float | None = None
@@ -99,6 +104,8 @@ _NOTES: Final = (
     "Windows use request start time and UTC buckets. The first and last buckets may be partial. Empty buckets "
     "have zero requests and unknown rates or timings. Asynchronous logging can delay recent observations. "
     "Aggregates may be cached for 20 seconds; resource access is checked on every request.",
+    "Cache write durations come from verified returned usage. Known TTL categories are subsets of the write total, "
+    "and historical writes without duration detail remain unspecified.",
 )
 
 
@@ -172,6 +179,11 @@ _QUERY: Final = f"""WITH observed AS (
  CASE WHEN s.prompt_tokens>=0 THEN s.prompt_tokens END AS input_tokens,
  CASE WHEN s.completion_tokens>=0 THEN s.completion_tokens END AS output_tokens,
  CASE WHEN s.total_tokens>=0 THEN s.total_tokens END AS total_tokens,
+ COALESCE(co.cache_read_tokens,{_READ}) AS cache_read_tokens,
+ COALESCE(co.cache_write_tokens,legacy_cache.cache_write_tokens) AS cache_write_tokens,
+ COALESCE(co.cache_write_ttl_tokens,legacy_cache.cache_write_ttl_tokens) AS cache_write_ttl_tokens,
+ COALESCE(co.cache_write_unclassified_tokens,legacy_cache.cache_write_unclassified_tokens)
+      AS cache_write_unclassified_tokens,
  CASE WHEN jsonb_typeof(s.metadata->'observed_stream')='boolean'
       THEN (s.metadata->>'observed_stream')::boolean END AS stream,
  CASE WHEN lower(s.cache_hit) IN ('true','false') THEN lower(s.cache_hit)='true' END AS cache_hit,
@@ -190,6 +202,9 @@ _QUERY: Final = f"""WITH observed AS (
  FROM \"LiteLLM_SpendLogs\" s
  LEFT JOIN retail_model_observations o ON o.litellm_call_id=s.litellm_call_id
       AND o.user_id=COALESCE(s.\"user\",'') AND o.started_at=date_trunc('milliseconds',s.\"startTime\")
+ LEFT JOIN retail_cache_observations co ON co.litellm_call_id=s.litellm_call_id
+      AND co.user_id=COALESCE(s.\"user\",'') AND co.started_at=date_trunc('milliseconds',s.\"startTime\")
+ {legacy_cache_sql(_WRITE)}
  WHERE s.\"startTime\">=%s AND s.\"startTime\"<%s
  AND COALESCE(NULLIF(s.model_group,''),NULLIF(s.model,''),'')=%s
  AND (%s::text IS NULL OR s.\"user\"=%s)
@@ -207,6 +222,9 @@ SELECT grouping(bucket)=1 AS is_summary,bucket,
  count(*) FILTER(WHERE status IS NULL OR status NOT IN ('success','failure')) AS unknown_status_requests,
  sum(input_tokens)::bigint AS input_tokens,sum(output_tokens)::bigint AS output_tokens,
  sum(total_tokens)::bigint AS total_tokens,count(total_tokens) AS usage_samples,
+ sum(cache_read_tokens)::bigint AS cache_read_tokens,sum(cache_write_tokens)::bigint AS cache_write_tokens,
+ sum(cache_write_unclassified_tokens)::bigint AS cache_write_unclassified_tokens,
+ {TTL_AGGREGATE},
  percentile_cont(0.5) WITHIN GROUP(ORDER BY latency)::double precision AS latency_p50_ms,
  percentile_cont(0.95) WITHIN GROUP(ORDER BY latency)::double precision AS latency_p95_ms,
  percentile_cont(0.5) WITHIN GROUP(ORDER BY stream_ttft)::double precision AS ttft_p50_ms,

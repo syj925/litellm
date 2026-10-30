@@ -9,6 +9,8 @@ import { copyToClipboard, getSpendString } from "@/utils/dataUtils";
 
 import { getProviderLogoAndName } from "../../provider_info_helpers";
 import { sourceKindLabel } from "../../retail/pools/types";
+import { cacheDurationLabel, cacheTierEntries } from "../../retail/cachePricing";
+import { logCacheUsage } from "../../retail/cacheUsage";
 import { recordedResourceRoute } from "../resourceRoute";
 import { getBatchIdFromRequestId, getBatchRequestCounts, isBatchCallType } from "../batchLogUtils";
 import type { LogEntry } from "../types";
@@ -370,6 +372,28 @@ export const getRequestLogsTableColumns = ({
             </span>
           </span>
           {showSessionTotal && <span className="text-[10px] text-muted-foreground">session total</span>}
+        </div>
+      );
+    },
+  },
+  {
+    id: "prompt_cache_usage",
+    header: "Prompt cache",
+    size: 220,
+    enableSorting: false,
+    cell: ({ row }) => {
+      const usage = logCacheUsage(row.original);
+      const parts = cacheTierEntries(usage.cache_write_ttl_tokens);
+      const recorded = usage.cache_read_tokens != null || usage.cache_write_tokens != null;
+      if (!recorded) return <span className="text-muted-foreground">—</span>;
+      return (
+        <div className="space-y-1 text-xs tabular-nums">
+          <p>Read {usage.cache_read_tokens?.toLocaleString() ?? "—"} · Write {usage.cache_write_tokens?.toLocaleString() ?? "—"}</p>
+          {parts.map(([ttl, tokens]) => <p key={ttl}>{cacheDurationLabel(ttl)}: {tokens.toLocaleString()}</p>)}
+          {(usage.cache_write_unclassified_tokens ?? 0) > 0 && (
+            <p className="text-muted-foreground">Unspecified: {usage.cache_write_unclassified_tokens?.toLocaleString()}</p>
+          )}
+          {(row.original.session_total_count ?? 1) > 1 && <p className="text-muted-foreground">Representative request</p>}
         </div>
       );
     },

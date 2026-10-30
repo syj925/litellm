@@ -1,3 +1,27 @@
+# Cache duration pricing and usage QA
+
+final result: passed for the reviewed local desktop states on 2026-10-30
+
+The public model pricing table now separates unspecified-duration writes, Claude 5m/1h writes and OpenAI 30m/12h writes. The reference-price editor supports those presets and custom integer-second durations. Bills, CSV, log rows/details, native cost breakdowns, model/channel detail statistics and Usage Overview/Model Activity retain the same duration categories. Historical records with reliable explicit fields can be separated; missing duration information remains unspecified
+
+Before: C:/Users/26933/AppData/Local/Temp/codex-clipboard-61da58c2-f2c0-4df8-b02c-a63499f875c0.png
+
+Claude pricing after: C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/cache-claude-pricing-proof.png
+
+OpenAI pricing after: C:/Users/26933/Documents/Codex/2026-10-29/https-github-com-quantumnous-new-api/work/cache-openai-pricing-proof.png
+
+The actual anonymous local browser showed both duration tables with the existing navigation, typography, provider icons and table styling. Both pages had no captured browser warnings or errors. Authentication was preserved. Administrator editing, customer bills, exports, logs and statistics have scoped integration coverage; their authenticated visual states were not reviewed in this pass. Mobile and dark-theme acceptance were not performed
+
+The combined retail backend run passed 282 tests. Separate PostgreSQL integrations verified price migration, immutable request snapshots, idempotent settlement, exact observation identity, historical duration parsing, aggregation without double counting, public model alias filtering and account isolation. Native targeted tests covered duration-aware cost calculation, protocol bridges and the Responses logging normalization regression. Scoped UI tests passed, followed by generated OpenAPI types, production TypeScript and the webpack build
+
+A running isolated proxy with scripted local upstreams passed 14 HTTP checks. Anthropic stream/nonstream, OpenAI Chat and Responses requests each settled once and retained every duration subset in the native observation and model aggregates. Synthetic rates and a 0.65 pool discount produced charges of USD 0.002431 for each Anthropic request, USD 0.001846 for Chat and USD 0.002821 for Responses. Invalid price durations and an unpriced requested duration were rejected. These were local protocol fixtures, not paid provider calls. The temporary database and proxy were removed
+
+The HTTP verification caught a native logging issue: assigning chat Usage into a typed Responses usage field caused serialization to retain only total_tokens. Callback responses now keep the native typed usage while the standard logging payload receives its separate normalized chat representation. A regression exercises the real success-helper normalization before the observation callback
+
+The local deployment is healthy and the new aggregate route returns 401 without authentication. Before/after fingerprints matched for four channels, fifty-six native models, fifty-six pool bindings, reference prices and four wallets. No existing business rates, balances or bills were rewritten. Batch cost handling and Gemini storage token-hour lifecycle fees were not expanded
+
+---
+
 # Model overview integration card QA
 
 final result: passed for the reviewed desktop state on 2026-10-30

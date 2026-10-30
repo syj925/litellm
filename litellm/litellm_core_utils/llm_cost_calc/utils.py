@@ -910,23 +910,57 @@ def calculate_cache_writing_cost(
     cache_creation_token_details: CacheCreationTokenDetails | None,
     cache_creation_cost_above_1hr: float,
     cache_creation_cost: float,
+    cache_creation_cost_above_12hr: float | None = None,
 ) -> float:
-    """
-    Adjust cost of cache creation tokens based on the cache creation token details.
-    """
-    total_cost: float = 0.0
-    if cache_creation_token_details is not None:
-        # get the number of 5m and 1h cache creation tokens
-        cache_creation_tokens_5m: Final = cache_creation_token_details.ephemeral_5m_input_tokens
-        cache_creation_tokens_1h: Final = cache_creation_token_details.ephemeral_1h_input_tokens
-        # add the number of 5m and 1h cache creation tokens to the cache creation tokens
-        total_cost += cache_creation_tokens_5m * cache_creation_cost if cache_creation_tokens_5m is not None else 0.0
-        total_cost += (
-            cache_creation_tokens_1h * cache_creation_cost_above_1hr if cache_creation_tokens_1h is not None else 0.0
-        )
-    else:
-        total_cost += cache_creation_tokens * cache_creation_cost
-    return total_cost
+    if cache_creation_token_details is None:
+        return cache_creation_tokens * cache_creation_cost
+    short_tokens: Final = (
+        (cache_creation_token_details.ephemeral_5m_input_tokens or 0)
+        + (cache_creation_token_details.ttl_30m_tokens or 0)
+    )
+    one_hour_tokens: Final = cache_creation_token_details.ephemeral_1h_input_tokens or 0
+    twelve_hour_tokens: Final = cache_creation_token_details.ttl_12h_tokens or 0
+    classified: Final = short_tokens + one_hour_tokens + twelve_hour_tokens
+    if min(
+        cache_creation_tokens,
+        cache_creation_token_details.ephemeral_5m_input_tokens or 0,
+        cache_creation_token_details.ttl_30m_tokens or 0,
+        one_hour_tokens,
+        twelve_hour_tokens,
+    ) < 0:
+        raise ValueError("Cache write duration counts must not be negative")
+    if cache_creation_tokens > 0 and classified > cache_creation_tokens:
+        raise ValueError("Cache write duration counts exceed the reported total")
+    if twelve_hour_tokens and cache_creation_cost_above_12hr is None:
+        raise ValueError("The 12-hour cache write price is not available")
+    return (
+        (short_tokens + max(cache_creation_tokens - classified, 0)) * cache_creation_cost
+        + one_hour_tokens * cache_creation_cost_above_1hr
+        + twelve_hour_tokens * (cache_creation_cost_above_12hr or 0.0)
+    )
+
+
+def _cache_write_12hr_rate(
+    model_info: ModelInfo, usage: Usage, service_tier: str | None, current_time: datetime | None = None
+) -> float | None:
+    base_key: Final = "cache_creation_input_token_cost_above_12hr"
+    priced_tier: Final = _select_priced_tier(model_info=model_info, usage=usage)
+    if priced_tier is not None:
+        tier_value: Final = priced_tier.get(base_key)
+        return float(tier_value) if isinstance(tier_value, (int, float)) and not isinstance(tier_value, bool) else None
+    tier_suffix: Final = get_service_tier_cost_key("", service_tier)
+    context_keys: Final = frozenset(
+        key[:key.index("_tokens") + len("_tokens")]
+        for key in model_info
+        if key.startswith(base_key + "_above_") and "_tokens" in key
+        and (not key.endswith(_NON_STANDARD_THRESHOLD_SUFFIXES) or (tier_suffix and key.endswith(tier_suffix)))
+    )
+    eligible: Final = tuple(key for key in context_keys if usage.prompt_tokens > _parse_above_token_threshold(key))
+    selected_key: Final = max(eligible, key=_parse_above_token_threshold) if eligible else base_key
+    rate: Final = get_cost_per_unit(model_info, get_service_tier_cost_key(selected_key, service_tier), None)
+    if rate is None:
+        return None
+    return _off_peak_rate(_open_off_peak_block(model_info, current_time) or MappingProxyType({}), base_key, rate)
 
 
 class PromptTokensDetailsResult(TypedDict):
@@ -962,6 +996,10 @@ def parse_prompt_tokens_details(usage: Usage) -> PromptTokensDetailsResult:
         )
         or None
     )
+    if cache_creation_token_details is not None and cache_creation_tokens < _classified_write_tokens(
+        cache_creation_token_details
+    ):
+        raise ValueError("Cache write duration counts exceed the reported total")
     cached_tokens_details: Final = getattr(usage.prompt_tokens_details, "cached_tokens_details", None)
     cached_audio_tokens: Final = min(
         _get_token_detail_value(cached_tokens_details, "audio_tokens") or 0, cache_hit_tokens
@@ -1029,6 +1067,15 @@ def parse_prompt_tokens_details(usage: Usage) -> PromptTokensDetailsResult:
         video_length_seconds=float(video_length_seconds),
         audio_length_seconds=float(audio_length_seconds),
         query_count=query_count,
+    )
+
+
+def _classified_write_tokens(details: CacheCreationTokenDetails | None) -> int:
+    if details is None:
+        return 0
+    return (
+        (details.ephemeral_5m_input_tokens or 0) + (details.ephemeral_1h_input_tokens or 0)
+        + (details.ttl_30m_tokens or 0) + (details.ttl_12h_tokens or 0)
     )
 
 
@@ -1113,6 +1160,7 @@ def _calculate_input_cost(
     cache_creation_cost: float,
     cache_creation_cost_above_1hr: float,
     service_tier: str | None = None,
+    cache_creation_cost_above_12hr: float | None = None,
 ) -> float:
     """
     Calculates the input cost for a given model, prompt tokens, and completion tokens.
@@ -1183,6 +1231,7 @@ def _calculate_input_cost(
             cache_creation_token_details=prompt_tokens_details["cache_creation_token_details"],
             cache_creation_cost_above_1hr=cache_creation_cost_above_1hr,
             cache_creation_cost=cache_creation_cost,
+            cache_creation_cost_above_12hr=cache_creation_cost_above_12hr,
         )
 
     ### CHARACTER COST
@@ -1458,6 +1507,7 @@ def generic_cost_per_token(
         cache_creation_cost=cache_creation_cost,
         cache_creation_cost_above_1hr=cache_creation_cost_above_1hr,
         service_tier=service_tier,
+        cache_creation_cost_above_12hr=_cache_write_12hr_rate(resolved_model_info, usage, service_tier, billing_time),
     )
 
     ## CALCULATE OUTPUT COST
@@ -1561,6 +1611,7 @@ class BilledTokenRates:
     cache_creation_input_token_cost: float
     cache_creation_input_token_cost_above_1hr: float
     output_cost_per_reasoning_token: float
+    cache_creation_input_token_cost_above_12hr: float | None = None
 
     def scaled(self, multiplier: float) -> "BilledTokenRates":
         if multiplier == 1.0:
@@ -1573,6 +1624,10 @@ class BilledTokenRates:
             cache_creation_input_token_cost=self.cache_creation_input_token_cost * multiplier,
             cache_creation_input_token_cost_above_1hr=self.cache_creation_input_token_cost_above_1hr * multiplier,
             output_cost_per_reasoning_token=self.output_cost_per_reasoning_token * multiplier,
+            cache_creation_input_token_cost_above_12hr=(
+                self.cache_creation_input_token_cost_above_12hr * multiplier
+                if self.cache_creation_input_token_cost_above_12hr is not None else None
+            ),
         )
 
 
@@ -1584,6 +1639,8 @@ class TokenTypeCostBreakdown:
     rates: BilledTokenRates | None = None
     """Rates these lines were billed at, so a caller reporting both cannot resolve them a second,
     differently-argued way. None when the model's pricing could not be resolved."""
+    cache_write_costs_by_ttl: Mapping[str, float] | None = None
+    cache_write_unclassified_cost: float | None = None
 
 
 def _reasoning_token_count(usage: Usage) -> int:
@@ -1623,6 +1680,7 @@ def _custom_pricing_rates(custom_cost_per_token: CostPerToken) -> BilledTokenRat
         cache_creation_input_token_cost=cache_creation_rate,
         cache_creation_input_token_cost_above_1hr=cache_creation_rate,
         output_cost_per_reasoning_token=output_rate,
+        cache_creation_input_token_cost_above_12hr=cache_creation_rate,
     )
 
 
@@ -1676,6 +1734,9 @@ def _cost_map_billed_rates(
         cache_creation_input_token_cost=cache_creation_cost_rate,
         cache_creation_input_token_cost_above_1hr=cache_creation_cost_above_1hr_rate,
         output_cost_per_reasoning_token=reasoning_rate,
+        cache_creation_input_token_cost_above_12hr=_cache_write_12hr_rate(
+            model_info, usage, service_tier, billing_time
+        ),
     ).scaled(multiplier)
 
 
@@ -1764,8 +1825,10 @@ def get_token_type_cost_breakdown(
             cache_creation_token_details=cache_creation_token_details,
             cache_creation_cost_above_1hr=rates.cache_creation_input_token_cost_above_1hr,
             cache_creation_cost=rates.cache_creation_input_token_cost,
+            cache_creation_cost_above_12hr=rates.cache_creation_input_token_cost_above_12hr,
         )
     )
+    duration_costs: Final = _cache_write_duration_costs(cache_creation_token_details, rates)
     return TokenTypeCostBreakdown(
         reasoning_cost=float(_reasoning_token_count(usage)) * rates.output_cost_per_reasoning_token,
         cache_read_cost=(
@@ -1774,6 +1837,26 @@ def get_token_type_cost_breakdown(
         ),
         cache_creation_cost=cache_creation_cost,
         rates=rates,
+        cache_write_costs_by_ttl=duration_costs,
+        cache_write_unclassified_cost=max(cache_creation_tokens - _classified_write_tokens(cache_creation_token_details), 0)
+        * rates.cache_creation_input_token_cost,
+    )
+
+
+def _cache_write_duration_costs(
+    details: CacheCreationTokenDetails | None, rates: BilledTokenRates
+) -> Mapping[str, float]:
+    if details is None:
+        return MappingProxyType({})
+    return MappingProxyType(
+        {
+            duration: count * rate for duration, count, rate in (
+                ("300", details.ephemeral_5m_input_tokens or 0, rates.cache_creation_input_token_cost),
+                ("3600", details.ephemeral_1h_input_tokens or 0, rates.cache_creation_input_token_cost_above_1hr),
+                ("1800", details.ttl_30m_tokens or 0, rates.cache_creation_input_token_cost),
+                ("43200", details.ttl_12h_tokens or 0, rates.cache_creation_input_token_cost_above_12hr or 0.0),
+            ) if count > 0
+        }
     )
 
 
@@ -1811,6 +1894,8 @@ def calculate_prompt_caching_savings(
         CacheCreationTokenDetails(
             ephemeral_5m_input_tokens=max(details.ephemeral_5m_input_tokens or 0, 0),
             ephemeral_1h_input_tokens=max(details.ephemeral_1h_input_tokens or 0, 0),
+            ttl_30m_tokens=max(details.ttl_30m_tokens or 0, 0),
+            ttl_12h_tokens=max(details.ttl_12h_tokens or 0, 0),
         )
         if details is not None
         else None
@@ -1821,6 +1906,10 @@ def calculate_prompt_caching_savings(
         cache_creation_token_details=cache_creation_details,
         cache_creation_cost_above_1hr=write_rate_1h - prompt_base_cost,
         cache_creation_cost=write_rate - prompt_base_cost,
+        cache_creation_cost_above_12hr=(
+            rate_12h - prompt_base_cost
+            if (rate_12h := _cache_write_12hr_rate(model_info, usage, service_tier, billed_at)) is not None else None
+        ),
     )
     uplift: Final = get_regional_uplift_multiplier(model_info, data_residency) * get_vertex_regional_endpoint_uplift(
         model_info, vertex_location

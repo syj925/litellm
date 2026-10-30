@@ -15202,6 +15202,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/cache-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cache Usage Metrics */
+        get: operations["cache_usage_metrics_retail_cache_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/config": {
         parameters: {
             query?: never;
@@ -29496,6 +29513,34 @@ export interface components {
              */
             uncached_input_tokens: number;
         };
+        /** CacheUsageMetrics */
+        CacheUsageMetrics: {
+            /** Cache Read Tokens */
+            cache_read_tokens?: number | null;
+            /**
+             * Cache Usage Samples
+             * @default 0
+             */
+            cache_usage_samples: number;
+            /**
+             * Cache Usage Unknown Requests
+             * @default 0
+             */
+            cache_usage_unknown_requests: number;
+            /** Cache Write Tokens */
+            cache_write_tokens?: number | null;
+            /** Cache Write Ttl Tokens */
+            cache_write_ttl_tokens?: {
+                [key: string]: number;
+            };
+            /** Cache Write Unclassified Tokens */
+            cache_write_unclassified_tokens?: number | null;
+            /**
+             * Request Count
+             * @default 0
+             */
+            request_count: number;
+        };
         /** CachedTokensDetails */
         CachedTokensDetails: {
             /** Audio Tokens */
@@ -29846,6 +29891,10 @@ export interface components {
             cache_read?: string | null;
             /** Cache Write */
             cache_write?: string | null;
+            /** Cache Write Tiers */
+            cache_write_tiers?: {
+                [key: string]: string;
+            };
             /** Input */
             input?: string | null;
             /** Output */
@@ -37244,6 +37293,26 @@ export interface components {
             cache_creation_input_token_cost_above_100k_tokens?: number | null;
             /** Cache Creation Input Token Cost Above 100K Tokens Batches */
             cache_creation_input_token_cost_above_100k_tokens_batches?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr */
+            cache_creation_input_token_cost_above_12hr?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Above 272K Tokens */
+            cache_creation_input_token_cost_above_12hr_above_272k_tokens?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Above 272K Tokens Batches */
+            cache_creation_input_token_cost_above_12hr_above_272k_tokens_batches?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Above 272K Tokens Flex */
+            cache_creation_input_token_cost_above_12hr_above_272k_tokens_flex?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Above 272K Tokens Priority */
+            cache_creation_input_token_cost_above_12hr_above_272k_tokens_priority?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Above 272K Tokens Ultrafast */
+            cache_creation_input_token_cost_above_12hr_above_272k_tokens_ultrafast?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Batches */
+            cache_creation_input_token_cost_above_12hr_batches?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Flex */
+            cache_creation_input_token_cost_above_12hr_flex?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Priority */
+            cache_creation_input_token_cost_above_12hr_priority?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Ultrafast */
+            cache_creation_input_token_cost_above_12hr_ultrafast?: number | null;
             /** Cache Creation Input Token Cost Above 1Hr */
             cache_creation_input_token_cost_above_1hr?: number | null;
             /** Cache Creation Input Token Cost Above 1Hr Above 100K Tokens */
@@ -40665,6 +40734,16 @@ export interface components {
         ModelMetricHours: 24 | 168 | 720;
         /** ModelMetricSummary */
         ModelMetricSummary: {
+            /** Cache Read Tokens */
+            cache_read_tokens?: number | null;
+            /** Cache Write Tokens */
+            cache_write_tokens?: number | null;
+            /** Cache Write Ttl Tokens */
+            cache_write_ttl_tokens?: {
+                [key: string]: number;
+            };
+            /** Cache Write Unclassified Tokens */
+            cache_write_unclassified_tokens?: number | null;
             /**
              * Failed Requests
              * @default 0
@@ -40742,6 +40821,16 @@ export interface components {
         };
         /** ModelMetricsTrend */
         ModelMetricsTrend: {
+            /** Cache Read Tokens */
+            cache_read_tokens?: number | null;
+            /** Cache Write Tokens */
+            cache_write_tokens?: number | null;
+            /** Cache Write Ttl Tokens */
+            cache_write_ttl_tokens?: {
+                [key: string]: number;
+            };
+            /** Cache Write Unclassified Tokens */
+            cache_write_unclassified_tokens?: number | null;
             /**
              * Failed Requests
              * @default 0
@@ -40838,6 +40927,10 @@ export interface components {
             cache_read_per_million: string;
             /** Cache Write Per Million */
             cache_write_per_million: string;
+            /** Cache Write Tiers */
+            cache_write_tiers?: {
+                [key: string]: string;
+            };
             /** Input Per Million */
             input_per_million: string;
             /** Model */
@@ -42957,6 +43050,12 @@ export interface components {
             cache_status_samples: number;
             /** Cache Write Tokens */
             cache_write_tokens?: number | null;
+            /** Cache Write Ttl Tokens */
+            cache_write_ttl_tokens?: {
+                [key: string]: number;
+            };
+            /** Cache Write Unclassified Tokens */
+            cache_write_unclassified_tokens?: number | null;
             /** Error Rate Pct */
             error_rate_pct?: number | null;
             /**
@@ -53306,6 +53405,26 @@ export interface components {
             cache_creation_input_token_cost_above_100k_tokens?: number | null;
             /** Cache Creation Input Token Cost Above 100K Tokens Batches */
             cache_creation_input_token_cost_above_100k_tokens_batches?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr */
+            cache_creation_input_token_cost_above_12hr?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Above 272K Tokens */
+            cache_creation_input_token_cost_above_12hr_above_272k_tokens?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Above 272K Tokens Batches */
+            cache_creation_input_token_cost_above_12hr_above_272k_tokens_batches?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Above 272K Tokens Flex */
+            cache_creation_input_token_cost_above_12hr_above_272k_tokens_flex?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Above 272K Tokens Priority */
+            cache_creation_input_token_cost_above_12hr_above_272k_tokens_priority?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Above 272K Tokens Ultrafast */
+            cache_creation_input_token_cost_above_12hr_above_272k_tokens_ultrafast?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Batches */
+            cache_creation_input_token_cost_above_12hr_batches?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Flex */
+            cache_creation_input_token_cost_above_12hr_flex?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Priority */
+            cache_creation_input_token_cost_above_12hr_priority?: number | null;
+            /** Cache Creation Input Token Cost Above 12Hr Ultrafast */
+            cache_creation_input_token_cost_above_12hr_ultrafast?: number | null;
             /** Cache Creation Input Token Cost Above 1Hr */
             cache_creation_input_token_cost_above_1hr?: number | null;
             /** Cache Creation Input Token Cost Above 1Hr Above 100K Tokens */
@@ -75189,6 +75308,46 @@ export interface operations {
                     "application/json": {
                         [key: string]: components["schemas"]["JsonValue"];
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cache_usage_metrics_retail_cache_usage_get: {
+        parameters: {
+            query: {
+                start_date: string;
+                end_date: string;
+                scope?: "global" | "self";
+                user_id?: string | null;
+                api_key?: string | null;
+                team_id?: string | null;
+                model?: string | null;
+                model_group?: string | null;
+                models?: string[];
+                model_groups?: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CacheUsageMetrics"];
                 };
             };
             /** @description Validation Error */

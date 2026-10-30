@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from litellm.proxy._types import UserAPIKeyAuth
 
+from .cache_observations import cache_usage_view, legacy_cache_usage
 from .customer_access import is_retail_customer, safe_customer_key_info
 
 _Payload = TypeVar("_Payload")
@@ -88,6 +89,7 @@ def _log_row(value: object) -> dict[str, object]:
     metadata: Final = _mapping(row.get("metadata"))
     public_model: Final = row.get("model_group")
     safe_metadata: Final = {key: item for key, item in metadata.items() if key in _LOG_METADATA_FIELDS}
+    cache_usage: Final = cache_usage_view(row.get("cache_usage")) or legacy_cache_usage(row)
     return {
         **{key: item for key, item in row.items() if key in _LOG_FIELDS},
         "model": public_model if isinstance(public_model, str) and public_model else None,
@@ -96,6 +98,7 @@ def _log_row(value: object) -> dict[str, object]:
             **safe_metadata,
             **({"error_information": _PUBLIC_ERROR} if metadata.get("error_information") else {}),
         },
+        **({"cache_usage": cache_usage} if cache_usage is not None else {}),
     }
 
 
@@ -151,11 +154,13 @@ def customer_log_detail(payload: _Payload, auth: UserAPIKeyAuth) -> _Payload | o
     row: Final = _mapping(payload)
     request: Final = _safe_request(row.get("proxy_server_request"))
     public_model: Final = _mapping(request.get("body")).get("model", row.get("model_group"))
+    cache_usage: Final = cache_usage_view(row.get("cache_usage"))
     return {
         **{key: item for key, item in row.items() if key in {"request_id", "session_id", "status"}},
         "messages": row.get("messages"),
         "response": _safe_completion(row.get("response"), public_model),
         "proxy_server_request": request,
+        **({"cache_usage": cache_usage} if cache_usage is not None else {}),
     }
 
 

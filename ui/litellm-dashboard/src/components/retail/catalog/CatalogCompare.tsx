@@ -10,6 +10,7 @@ import { formatContext, getModelIdentity } from "./modelIdentity";
 import { formatCatalogPrice, modelPrice, type CatalogModel, type CatalogPriceBasis } from "./types";
 import SpecificationCharts from "./SpecificationCharts";
 import ModelBenchmarks from "./ModelBenchmarks";
+import { cacheDurationLabel, cacheTierEntries } from "../cachePricing";
 
 interface CatalogCompareProps {
   models: CatalogModel[];
@@ -72,7 +73,42 @@ const rows: CompareRow[] = [
 ];
 
 export default function CatalogCompare({ models, open, onOpenChange, basis, publicView = false }: CatalogCompareProps) {
-  const visibleRows = rows.filter((row) => !publicView || (!row.personal && row.basis !== "customer"));
+  const durations = [
+    ...new Set(
+      models.flatMap((model) => [
+        ...cacheTierEntries(model.reference_pricing?.cache_write_tiers).map(([ttl]) => ttl),
+        ...model.offers.flatMap((offer) =>
+          cacheTierEntries(offer.pricing.reference?.cache_write_tiers).map(([ttl]) => ttl),
+        ),
+      ]),
+    ),
+  ].sort((left, right) => Number(left) - Number(right));
+  const cacheRows: CompareRow[] = durations.flatMap((ttl) =>
+    (["reference", "customer"] as const).map((priceBasis) => ({
+      label: `${priceBasis === "reference" ? "Reference" : "Your"} cache write · ${cacheDurationLabel(ttl)} / 1M tokens`,
+      basis: priceBasis,
+      value: (model: CatalogModel) => {
+        const rates: (string | undefined)[] = model.offers.flatMap((offer) =>
+          priceBasis === "customer" && !offer.available_to_me
+            ? []
+            : [offer.pricing[priceBasis]?.cache_write_tiers?.[ttl]],
+        );
+        const candidates =
+          priceBasis === "reference" && !rates.some((value) => value != null)
+            ? [...rates, model.reference_pricing?.cache_write_tiers?.[ttl]]
+            : rates;
+        const listed = candidates.flatMap((value) =>
+          value != null && value.trim() !== "" && Number.isFinite(Number(value)) && Number(value) >= 0
+            ? [Number(value)]
+            : [],
+        );
+        return listed.length ? `From ${formatCatalogPrice(String(Math.min(...listed)))}` : "Not listed";
+      },
+    })),
+  );
+  const visibleRows = [...rows, ...cacheRows].filter(
+    (row) => !publicView || (!row.personal && row.basis !== "customer"),
+  );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden sm:w-[calc(100vw-3rem)] sm:max-w-6xl">
@@ -87,7 +123,9 @@ export default function CatalogCompare({ models, open, onOpenChange, basis, publ
         <div className="min-h-0 min-w-0 max-h-[65dvh] overflow-auto rounded-md border">
           <SpecificationCharts models={models} />
           {models.some((model) => model.benchmarks?.length) && (
-            <div className="border-b px-4 pb-4"><ModelBenchmarks models={models} /></div>
+            <div className="border-b px-4 pb-4">
+              <ModelBenchmarks models={models} />
+            </div>
           )}
           <Table className="min-w-[44rem] table-fixed">
             <TableHeader>

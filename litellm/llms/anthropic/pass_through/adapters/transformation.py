@@ -1510,10 +1510,18 @@ class LiteLLMAnthropicMessagesAdapter:
             (usage.prompt_tokens or 0) - cache_read_input_tokens - cache_creation_input_tokens,
             0,
         )
+        cache_details: Final = getattr(usage.prompt_tokens_details, "cache_creation_token_details", None)
+        duration_tokens: Final = {
+            key: count for key, count in (
+                ("ephemeral_5m_input_tokens", getattr(cache_details, "ephemeral_5m_input_tokens", None)),
+                ("ephemeral_1h_input_tokens", getattr(cache_details, "ephemeral_1h_input_tokens", None)),
+            ) if isinstance(count, int) and not isinstance(count, bool) and count >= 0
+        }
 
         usage_delta: Final = UsageDelta(
             input_tokens=input_tokens,
             output_tokens=usage.completion_tokens or 0,
+            **({"cache_creation": duration_tokens} if duration_tokens else {}),
         )
         if cache_creation_input_tokens > 0:
             usage_delta["cache_creation_input_tokens"] = cache_creation_input_tokens

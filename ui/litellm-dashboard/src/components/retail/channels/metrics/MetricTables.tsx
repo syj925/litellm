@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/shared/table_cells";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { uiHref } from "@/utils/uiHref";
 import { channelDetailHref, type ChannelHours } from "./route";
+import { cacheDurationLabel, cacheTierEntries } from "../../cachePricing";
 import {
   formatChannelCount,
   formatChannelConfigState,
@@ -27,7 +28,7 @@ import type {
 const numeric = { numeric: true } as const;
 
 function periodColumn<T extends { metrics: ChannelPeriodMetrics }>(
-  id: Exclude<keyof ChannelPeriodMetrics, "native_spend_usd">,
+  id: Exclude<keyof ChannelPeriodMetrics, "native_spend_usd" | "cache_write_ttl_tokens">,
   label: string,
   format: (value: number | null | undefined) => string,
 ): ColumnDef<T> {
@@ -37,6 +38,24 @@ function periodColumn<T extends { metrics: ChannelPeriodMetrics }>(
     header: ({ column }) => <DataTableSortHeader column={column} title={label} />,
     meta: { ...numeric, title: label },
     cell: ({ row }) => format(row.original.metrics[id]),
+  };
+}
+
+function cacheDurationsColumn<T extends { metrics: ChannelPeriodMetrics }>(): ColumnDef<T> {
+  return {
+    id: "cache_write_ttl_tokens",
+    header: "Cache write by duration",
+    meta: { title: "Cache write by duration" },
+    cell: ({ row }) => (
+      <div className="space-y-1 text-xs tabular-nums">
+        {cacheTierEntries(row.original.metrics.cache_write_ttl_tokens).map(([ttl, tokens]) => (
+          <p key={ttl}>{cacheDurationLabel(ttl)}: {formatChannelCount(tokens)}</p>
+        ))}
+        <p className="text-muted-foreground">
+          Unspecified: {formatChannelCount(row.original.metrics.cache_write_unclassified_tokens)}
+        </p>
+      </div>
+    ),
   };
 }
 
@@ -111,6 +130,7 @@ export function channelSummaryColumns(hours: ChannelHours): ColumnDef<ChannelMet
     periodColumn("ttft_p95_ms", "TTFT p95", formatChannelDuration),
     periodColumn("cache_read_tokens", "Cache read", formatChannelCount),
     periodColumn("cache_write_tokens", "Cache write", formatChannelCount),
+    cacheDurationsColumn(),
     {
       id: "upstream_error_events",
       accessorKey: "upstream_error_events",
@@ -165,6 +185,7 @@ const modelColumns: ColumnDef<ChannelModelMetric>[] = [
   periodColumn("reasoning_tokens", "Reasoning", formatChannelCount),
   periodColumn("cache_read_tokens", "Cache read", formatChannelCount),
   periodColumn("cache_write_tokens", "Cache write", formatChannelCount),
+  cacheDurationsColumn(),
   periodColumn("latency_p50_ms", "Latency p50", formatChannelDuration),
   periodColumn("latency_avg_ms", "Latency avg", formatChannelDuration),
   periodColumn("latency_p95_ms", "Latency p95", formatChannelDuration),

@@ -10,9 +10,10 @@ from typing import Final, Literal
 
 import psycopg
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .api import Admin, Store
+from .cache_observations import TTL_AGGREGATE, legacy_cache_sql
 from .store import WalletStore, _many
 
 
@@ -50,6 +51,8 @@ class PeriodMetrics(BaseModel):
     total_tokens: int | None = None
     cache_read_tokens: int | None = None
     cache_write_tokens: int | None = None
+    cache_write_ttl_tokens: dict[str, int] = Field(default_factory=dict)
+    cache_write_unclassified_tokens: int | None = None
     reasoning_tokens: int | None = None
     cache_hit_requests: int = 0
     cache_hit_rate_pct: float | None = None
@@ -210,6 +213,8 @@ _NOTES: Final = (
     "separate from final request failures and may include retries. Recent errors contain generated safe summaries only.",
     "Empty trend buckets have no logged observations. Provisioning status is channel configuration state, not health. "
     "Results may be cached for 8 seconds; no active probes are run.",
+    "Cache usage describes final request logs, excluding retry helper rows. Write totals include each token once. "
+    "TTL categories are subsets of that total; historical writes without a duration remain unspecified.",
 )
 
 
@@ -299,6 +304,11 @@ def _integer_json(path: str) -> str:
     return f"CASE WHEN ({path}) ~ '^[0-9]{{1,18}}$' THEN ({path})::bigint END"
 
 
+def _usage_count(paths: tuple[str, ...]) -> str:
+    counts: Final = (_integer_json(f"s.metadata #>> '{{additional_usage_values,{path}}}'") for path in paths)
+    return "GREATEST(" + ",".join(counts) + ")"
+
+
 _SAFE_ERROR_TYPES: Final = frozenset(
     {
         "APIError",
@@ -343,8 +353,14 @@ _UPSTREAM_STATUS: Final = _status_sql("e.status_code")
 _HELPER: Final = """COALESCE(s.request_id ~ '-attempt-[0-9]+$' AND
     substring(s.request_id from '-attempt-[0-9]+$') =
     substring(COALESCE(s.litellm_call_id,'') from '-attempt-[0-9]+$'),false)"""
-_READ: Final = _integer_json("s.metadata #>> '{additional_usage_values,cache_read_input_tokens}'")
-_WRITE: Final = _integer_json("s.metadata #>> '{additional_usage_values,cache_creation_input_tokens}'")
+_READ: Final = _usage_count((
+    "cache_read_input_tokens", "cached_tokens", "prompt_tokens_details,cached_tokens", "input_tokens_details,cached_tokens",
+))
+_WRITE: Final = _usage_count((
+    "cache_creation_input_tokens", "cache_write_tokens", "cache_creation_tokens",
+    "prompt_tokens_details,cache_write_tokens", "prompt_tokens_details,cache_creation_tokens",
+    "input_tokens_details,cache_write_tokens", "input_tokens_details,cache_creation_tokens",
+))
 _REASONING: Final = _integer_json(
     "s.metadata #>> '{additional_usage_values,completion_tokens_details,reasoning_tokens}'"
 )
@@ -355,7 +371,12 @@ _BASE: Final = f"""WITH observed AS (
  CASE WHEN s.prompt_tokens>=0 THEN s.prompt_tokens END AS input_tokens,
  CASE WHEN s.completion_tokens>=0 THEN s.completion_tokens END AS output_tokens,
  CASE WHEN s.total_tokens>=0 THEN s.total_tokens END AS total_tokens,
- {_READ} AS cache_read_tokens, {_WRITE} AS cache_write_tokens, {_REASONING} AS reasoning_tokens,
+ COALESCE(co.cache_read_tokens,{_READ}) AS cache_read_tokens,
+ COALESCE(co.cache_write_tokens,legacy_cache.cache_write_tokens) AS cache_write_tokens,
+ COALESCE(co.cache_write_ttl_tokens,legacy_cache.cache_write_ttl_tokens) AS cache_write_ttl_tokens,
+ COALESCE(co.cache_write_unclassified_tokens,legacy_cache.cache_write_unclassified_tokens)
+      AS cache_write_unclassified_tokens,
+ {_REASONING} AS reasoning_tokens,
  CASE WHEN lower(s.cache_hit) IN ('true','false') THEN lower(s.cache_hit)='true' END AS cache_hit,
  CASE WHEN jsonb_typeof(s.metadata->'observed_stream')='boolean'
       THEN (s.metadata->>'observed_stream')::boolean END AS stream,
@@ -367,6 +388,9 @@ _BASE: Final = f"""WITH observed AS (
  {_REQUEST_ERROR_TYPE} AS error_type, {_REQUEST_STATUS} AS status_code
  FROM \"LiteLLM_SpendLogs\" s
  JOIN retail_channel_deployments m ON m.deployment_id=s.model_id
+ LEFT JOIN retail_cache_observations co ON co.litellm_call_id=s.litellm_call_id
+      AND co.user_id=COALESCE(s.\"user\",'') AND co.started_at=date_trunc('milliseconds',s.\"startTime\")
+ {legacy_cache_sql(_WRITE)}
  WHERE s.\"startTime\">=%s AND s.\"startTime\"<%s
  AND (%s::text IS NULL OR m.channel_id=%s)
 ), samples AS (
@@ -376,14 +400,21 @@ _BASE: Final = f"""WITH observed AS (
       THEN ttft END AS stream_ttft FROM observed
 )"""
 
-_AGGREGATES: Final = """
+_FINAL_TTL_AGGREGATE: Final = TTL_AGGREGATE.replace(
+    "array_agg(cache_write_ttl_tokens)", "array_agg(cache_write_ttl_tokens) FILTER(WHERE NOT helper)"
+)
+_AGGREGATES: Final = f"""
  count(*) FILTER(WHERE NOT helper) AS requests,
  count(*) FILTER(WHERE NOT helper AND status='success') AS successful_requests,
  count(*) FILTER(WHERE NOT helper AND status='failure') AS failed_requests,
  count(*) FILTER(WHERE NOT helper AND (status IS NULL OR status NOT IN ('success','failure'))) AS unknown_status_requests,
  sum(input_tokens)::bigint AS input_tokens, sum(output_tokens)::bigint AS output_tokens,
- sum(total_tokens)::bigint AS total_tokens, sum(cache_read_tokens)::bigint AS cache_read_tokens,
- sum(cache_write_tokens)::bigint AS cache_write_tokens, sum(reasoning_tokens)::bigint AS reasoning_tokens,
+ sum(total_tokens)::bigint AS total_tokens,
+ sum(cache_read_tokens) FILTER(WHERE NOT helper)::bigint AS cache_read_tokens,
+ sum(cache_write_tokens) FILTER(WHERE NOT helper)::bigint AS cache_write_tokens,
+ sum(reasoning_tokens)::bigint AS reasoning_tokens,
+ sum(cache_write_unclassified_tokens) FILTER(WHERE NOT helper)::bigint AS cache_write_unclassified_tokens,
+ {_FINAL_TTL_AGGREGATE},
  count(*) FILTER(WHERE NOT helper AND cache_hit IS TRUE) AS cache_hit_requests,
  count(cache_hit) FILTER(WHERE NOT helper) AS cache_status_samples,
  count(*) FILTER(WHERE NOT helper AND stream IS TRUE) AS streaming_requests,

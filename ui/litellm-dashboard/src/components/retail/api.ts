@@ -1,4 +1,5 @@
 import { getGlobalLitellmHeaderName, getProxyBaseUrl } from "@/components/networking";
+import { cacheDurationLabel, cacheTierEntries } from "./cachePricing";
 
 export interface PricingPlan {
   id: string;
@@ -153,12 +154,9 @@ function shiftDecimal(value: string, places: number): string | null {
   const [, whole, fraction = "", exponent = "0"] = matched;
   const digits = whole + fraction;
   const point = whole.length + places + parseInt(exponent, 10);
-  const shifted =
-    point <= 0
-      ? `0.${"0".repeat(-point)}${digits}`
-      : point >= digits.length
-        ? digits.padEnd(point, "0")
-        : `${digits.slice(0, point)}.${digits.slice(point)}`;
+  let shifted = `${digits.slice(0, point)}.${digits.slice(point)}`;
+  if (point <= 0) shifted = `0.${"0".repeat(-point)}${digits}`;
+  else if (point >= digits.length) shifted = digits.padEnd(point, "0");
   const [integer, decimals = ""] = shifted.split(".");
   const normalizedInteger = integer.replace(/^0+(?=\d)/, "");
   const normalizedDecimals = decimals.replace(/0+$/, "");
@@ -229,7 +227,7 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
     { key: "input_tokens", label: "Input tokens (uncached)" },
     { key: "output_tokens", label: "Output tokens" },
     { key: "cache_read_tokens", label: "Cache read tokens" },
-    { key: "cache_write_tokens", label: "Cache write tokens" },
+    { key: "cache_write_tokens", label: "Cache write tokens (total)" },
     { key: "total_tokens", label: "Total tokens" },
   ].flatMap(({ key, label }) => {
     const value = usage[key];
@@ -237,11 +235,29 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
       ? [{ label, value: String(value) }]
       : [];
   });
+  const cacheWrites = cacheTierEntries(detailRecord(usage.cache_write_ttl_tokens)).flatMap(([ttl, count]) =>
+    typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? [{ ttl, count }] : [],
+  );
+  const totalWrites = usage.cache_write_tokens;
+  const unclassified = usage.cache_write_unclassified_tokens;
+  const knownWrites = cacheWrites.reduce((sum, item) => sum + item.count, 0);
+  let unclassifiedWrites: number | null = null;
+  if (typeof unclassified === "number" && Number.isSafeInteger(unclassified) && unclassified >= 0)
+    unclassifiedWrites = unclassified;
+  else if (typeof totalWrites === "number" && Number.isSafeInteger(totalWrites) && totalWrites >= knownWrites)
+    unclassifiedWrites = totalWrites - knownWrites;
+  const durationUsageRows = cacheWrites.map(({ ttl, count }) => ({
+    label: `Cache write tokens · ${cacheDurationLabel(ttl)}`,
+    value: String(count),
+  }));
+  if (unclassifiedWrites !== null && (unclassifiedWrites > 0 || cacheWrites.length === 0)) {
+    durationUsageRows.push({ label: "Cache write tokens · unspecified duration", value: String(unclassifiedWrites) });
+  }
   const prices = [
     { key: "input_cost_per_token", label: "Input base price / 1M" },
     { key: "output_cost_per_token", label: "Output base price / 1M" },
     { key: "cache_read_input_token_cost", label: "Cache read base price / 1M" },
-    { key: "cache_creation_input_token_cost", label: "Cache write base price / 1M" },
+    { key: "cache_creation_input_token_cost", label: "Cache write · unspecified duration base price / 1M" },
   ];
   const priceRows = prices.flatMap(({ key, label }) => {
     const value = snapshot[key];
@@ -257,6 +273,26 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
             : [{ label: label.replace("base price", "customer price"), value: `${formatMoney(effective)} USD` }]),
         ];
   });
+  const durationPriceRows = cacheTierEntries(detailRecord(snapshot.cache_write_tiers)).flatMap(([ttl, price]) => {
+    const scaled = typeof price === "string" ? usdPerTokenToPerMillion(price) : null;
+    const effective = scaled !== null && typeof discount === "string" ? multiplyDecimals(scaled, discount) : null;
+    return scaled === null
+      ? []
+      : [
+          {
+            label: `Cache write · ${cacheDurationLabel(ttl)} ${hasReference ? "reference" : "base"} price / 1M`,
+            value: `${formatMoney(scaled)} USD`,
+          },
+          ...(effective === null
+            ? []
+            : [
+                {
+                  label: `Cache write · ${cacheDurationLabel(ttl)} customer price / 1M`,
+                  value: `${formatMoney(effective)} USD`,
+                },
+              ]),
+        ];
+  });
   const planRows = [
     { key: "plan_id", label: "Discount plan" },
     { key: "price_version", label: "Price version" },
@@ -267,7 +303,7 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
   });
   const discountRows =
     typeof discount === "string" ? [{ label: "Customer discount", value: discountDescription(discount) }] : [];
-  const sourceRows =
+  const isKnownDiscountSource =
     typeof snapshot.discount_source === "string" &&
     [
       "customer_model",
@@ -280,16 +316,18 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
       "customer_pool_default",
       "plan_pool_default",
       "pool_default",
-    ].includes(snapshot.discount_source)
-      ? [{ label: "Discount source", value: modelDiscountSourceLabel(snapshot.discount_source as ModelDiscountSource) }]
-      : snapshot.discount_source === "customer" || snapshot.discount_source === "plan"
-        ? [
-            {
-              label: "Discount source",
-              value: snapshot.discount_source === "customer" ? "Customer override" : "Shared plan",
-            },
-          ]
-        : [];
+    ].includes(snapshot.discount_source);
+  const sourceRows = [];
+  if (isKnownDiscountSource)
+    sourceRows.push({
+      label: "Discount source",
+      value: modelDiscountSourceLabel(snapshot.discount_source as ModelDiscountSource),
+    });
+  else if (snapshot.discount_source === "customer" || snapshot.discount_source === "plan")
+    sourceRows.push({
+      label: "Discount source",
+      value: snapshot.discount_source === "customer" ? "Customer override" : "Shared plan",
+    });
   const modelRows =
     typeof snapshot.discount_model === "string" ? [{ label: "Discount model", value: snapshot.discount_model }] : [];
   const referenceRows =
@@ -304,13 +342,74 @@ export function ledgerReceiptSections(details: Record<string, unknown>): Receipt
           },
         ]
       : [];
+  const charged = detailRecord(details.cost_breakdown);
+  const chargedRows = [
+    { key: "input", label: "Uncached input charge" },
+    { key: "output", label: "Output charge" },
+    { key: "cache_read", label: "Cache read charge" },
+    { key: "cache_write_unclassified", label: "Cache write charge · unspecified duration" },
+  ].flatMap(({ key, label }) => {
+    const amount = charged[key];
+    return typeof amount === "string" && /^\d+(?:\.\d+)?$/.test(amount)
+      ? [{ label, value: `${formatMoney(amount)} USD` }]
+      : [];
+  });
+  const chargedTierRows = cacheTierEntries(detailRecord(charged.cache_write_tiers)).flatMap(([ttl, amount]) =>
+    typeof amount === "string" && /^\d+(?:\.\d+)?$/.test(amount)
+      ? [{ label: `Cache write charge · ${cacheDurationLabel(ttl)}`, value: `${formatMoney(amount)} USD` }]
+      : [],
+  );
+  const rounding = charged.rounding_adjustment;
+  const roundingRows =
+    typeof rounding === "string" && /^-?\d+(?:\.\d+)?$/.test(rounding)
+      ? [{ label: "Final rounding adjustment", value: `${formatMoney(rounding)} USD` }]
+      : [];
   return [
-    { title: "Token usage", rows: usageRows },
+    { title: "Token usage", rows: [...usageRows, ...durationUsageRows] },
+    { title: "Charge breakdown", rows: [...chargedRows, ...chargedTierRows, ...roundingRows] },
     {
       title: "Pricing snapshot",
-      rows: [...planRows, ...poolRows, ...discountRows, ...modelRows, ...sourceRows, ...referenceRows, ...priceRows],
+      rows: [
+        ...planRows,
+        ...poolRows,
+        ...discountRows,
+        ...modelRows,
+        ...sourceRows,
+        ...referenceRows,
+        ...priceRows,
+        ...durationPriceRows,
+      ],
     },
   ].filter(({ rows }) => rows.length > 0);
+}
+
+export function ledgerEntriesCsv(entries: LedgerEntry[]): string {
+  const baseFields = ["Transaction ID", "Date", "Type", "Model", "Amount (USD)", "Balance after (USD)", "Request ID"];
+  const receipts = entries.map((entry) => ledgerReceiptSections(entry.details).flatMap((section) => section.rows));
+  const receiptFields = [...new Set(receipts.flatMap((rows) => rows.map(({ label }) => label)))];
+  const escape = (value: string) => {
+    const safe =
+      /^[=+@\t\r]/.test(value) || (/^-/.test(value) && !/^-\d+(?:\.\d+)?$/.test(value)) ? `'${value}` : value;
+    return `"${safe.replaceAll('"', '""')}"`;
+  };
+  return [
+    [...baseFields, ...receiptFields],
+    ...entries.map((entry, index) => {
+      const receipt = new Map(receipts[index].map(({ label, value }) => [label, value]));
+      return [
+        entry.id,
+        entry.created_at,
+        entry.kind,
+        entry.model ?? "",
+        entry.amount,
+        entry.balance_after,
+        entry.request_id ?? "",
+        ...receiptFields.map((label) => receipt.get(label) ?? ""),
+      ];
+    }),
+  ]
+    .map((row) => row.map(escape).join(","))
+    .join("\r\n");
 }
 
 export const retailKeys = {

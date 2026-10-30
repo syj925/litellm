@@ -3,14 +3,20 @@ from typing import Final
 
 import pytest
 
+from litellm.types.llms.openai import ResponseAPIUsage
+from litellm.types.utils import Usage
 from litellm.proxy.retail.billing import reservation_id
 from litellm.proxy.retail.pricing import (
     UsageFacts,
     catalog_candidates,
+    catalog_cache_write_tiers,
     catalog_snapshot,
     charge_for_usage,
+    cost_breakdown,
     reserve_quote,
     usage_facts,
+    validate_requested_cache_ttls,
+    validated_cache_write_tiers,
 )
 
 SNAPSHOT = {
@@ -158,5 +164,87 @@ def test_unsupported_or_invalid_catalog_prices_cannot_silently_become_flat_or_fr
     }
     deployments: Final = ({"litellm_params": {"model": "model-a"}},)
     assert catalog_candidates("public-model", deployments, catalog) == ()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="single supported catalog reference"):
         catalog_snapshot("public-model", deployments, "1", catalog)
+
+
+def test_real_chat_and_responses_usage_types_keep_mixed_write_ttls_and_input_partition() -> None:
+    details: Final = {
+        "cached_tokens": 2,
+        "cache_write_tokens": 4,
+        "cache_write_tokens_details": {"ttl_30m_tokens": 1, "ttl_12h_tokens": 3},
+    }
+    response_usage: Final = ResponseAPIUsage(input_tokens=10, output_tokens=1, total_tokens=11, input_tokens_details=details)
+    chat_usage: Final = Usage(prompt_tokens=10, completion_tokens=1, total_tokens=11, prompt_tokens_details=details)
+    expected: Final = UsageFacts(
+        input_tokens=4, output_tokens=1, cache_read_tokens=2, cache_write_tokens=4,
+        cache_write_ttl_tokens={"1800": 1, "43200": 3},
+    )
+    assert usage_facts({"usage": response_usage}) == expected
+    assert usage_facts({"usage": chat_usage}) == expected
+
+
+def test_duration_rates_discount_and_rounding_are_applied_once_with_reconstructable_details() -> None:
+    snapshot: Final = {
+        **SNAPSHOT, "version": "token-v2", "discount": "0.7",
+        "cache_write_tiers": {"300": "0.000003", "3600": "0.000005"},
+    }
+    facts: Final = UsageFacts(
+        input_tokens=10, output_tokens=2, cache_read_tokens=5, cache_write_tokens=9,
+        cache_write_ttl_tokens={"300": 2, "3600": 3},
+    )
+    expected: Final = (Decimal("0.000002") * 10 + Decimal("0.000010") * 2 + Decimal("0.0000002") * 5
+                       + Decimal("0.000003") * 2 + Decimal("0.000005") * 3 + Decimal("0.0000025") * 4) * Decimal("0.7")
+    amount: Final = charge_for_usage(snapshot, facts)
+    assert Decimal(amount) == expected
+    breakdown: Final = cost_breakdown(snapshot, facts)
+    assert breakdown["cache_write_tiers"] == {"300": "0.0000042", "3600": "0.0000105"}
+    assert breakdown["cache_write_unclassified"] == "0.00000700"
+    assert breakdown["rounding_adjustment"] == "0.000000000"
+    assert Decimal(reserve_quote(snapshot, {"messages": []}, 2)) >= Decimal(amount)
+
+
+def test_known_ttl_without_price_stays_unsettled_while_historical_flat_snapshots_keep_the_old_charge() -> None:
+    facts: Final = UsageFacts(input_tokens=0, output_tokens=0, cache_write_tokens=4, cache_write_ttl_tokens={"43200": 4})
+    with pytest.raises(ValueError, match="43200"):
+        charge_for_usage({**SNAPSHOT, "version": "token-v2", "cache_write_tiers": {"1800": "0.000003"}}, facts)
+    assert charge_for_usage({**SNAPSHOT, "version": "flat-token-v1"}, facts) == charge_for_usage(SNAPSHOT, facts)
+    assert charge_for_usage(SNAPSHOT, facts) == "0.000015000"
+
+
+def test_catalog_extracts_duration_prices_without_flattening_context_tiers() -> None:
+    rates: Final = {
+        "litellm_provider": "openai", "mode": "chat", "input_cost_per_token": "0.000002",
+        "output_cost_per_token": "0.000010", "cache_creation_input_token_cost": "0.000003",
+        "cache_creation_input_token_cost_above_12hr": "0.000006",
+    }
+    assert catalog_cache_write_tiers("openai/fixture", rates) == {"1800": "0.000003", "43200": "0.000006"}
+    catalog: Final = {"openai/fixture": rates}
+    deployments: Final = ({"litellm_params": {"model": "openai/fixture"}},)
+    card: Final = catalog_snapshot("fixture", deployments, "1", catalog)
+    assert card["cache_write_tiers"] == {"1800": "0.000003", "43200": "0.000006"}
+    assert card["version"] == "token-v2"
+    advanced: Final = {"openai/fixture": {**rates, "input_cost_per_token_above_272k_tokens": "0.000004"}}
+    assert catalog_candidates("fixture", deployments, advanced) == ()
+
+
+def test_native_gemini_counts_include_cached_input_and_reasoning_without_guessing_storage() -> None:
+    facts: Final = usage_facts({"usageMetadata": {
+        "promptTokenCount": 100, "toolUsePromptTokenCount": 2, "cachedContentTokenCount": 30,
+        "candidatesTokenCount": 4, "thoughtsTokenCount": 6,
+    }})
+    assert facts == UsageFacts(input_tokens=72, output_tokens=10, cache_read_tokens=30)
+    assert facts.cache_write_ttl_tokens == {}
+
+
+@pytest.mark.parametrize("tiers", ({"0": "1"}, {"01": "1"}, {"300": "NaN"}, {"300": "-1"}, {"300": "0.0000000000000000001"}))
+def test_invalid_duration_prices_cannot_be_saved_or_quoted(tiers: dict[str, str]) -> None:
+    with pytest.raises(ValueError, match="Cache write"):
+        validated_cache_write_tiers(tiers)
+
+
+def test_explicit_unpriced_cache_ttl_is_rejected_before_provider_access() -> None:
+    snapshot: Final = {**SNAPSHOT, "version": "token-v2", "cache_write_tiers": {"1800": "0.000003"}}
+    with pytest.raises(ValueError, match="43200"):
+        validate_requested_cache_ttls(snapshot, {"input": [{"prompt_cache_breakpoint": {"ttl": "12h"}}]})
+    validate_requested_cache_ttls(snapshot, {"prompt_cache_options": {"ttl": "30m"}})

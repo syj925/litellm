@@ -25,6 +25,29 @@ from litellm.types.utils import Choices, Message, ModelResponse
 MODEL = "gpt-5.6"
 
 
+def test_logged_cache_duration_costs_remain_subsets_of_write_total() -> None:
+    from litellm.cost_calculator import _store_cost_breakdown_in_logging_obj
+
+    logging_obj = Logging(
+        model="fixture", messages=[], stream=False, call_type="completion",
+        start_time=datetime(2026, 1, 1), litellm_call_id="cache-duration-costs", function_id="fixture",
+    )
+    parts = {"1800": 0.001, "43200": 0.003}
+    _store_cost_breakdown_in_logging_obj(
+        litellm_logging_obj=logging_obj, prompt_tokens_cost_usd_dollar=0.01,
+        completion_tokens_cost_usd_dollar=0.02, cost_for_built_in_tools_cost_usd_dollar=0,
+        total_cost_usd_dollar=0.03, cache_creation_cost=0.0045,
+        cache_write_costs_by_ttl=parts, cache_write_unclassified_cost=0.0005,
+    )
+    assert logging_obj.cost_breakdown is not None
+    assert logging_obj.cost_breakdown["cache_write_costs_by_ttl"] == parts
+    assert logging_obj.cost_breakdown["cache_write_unclassified_cost"] == 0.0005
+    assert sum(parts.values()) + logging_obj.cost_breakdown["cache_write_unclassified_cost"] == pytest.approx(
+        logging_obj.cost_breakdown["cache_creation_cost"]
+    )
+    assert logging_obj.cost_breakdown["total_cost"] == 0.03
+
+
 def _logging_obj() -> Logging:
     return Logging(
         model=MODEL,

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import CacheUsageBreakdown from "../../CacheUsageBreakdown";
 import { formatChannelCount, formatChannelDuration, formatChannelPercent, formatChannelUsd } from "./format";
 import type { ChannelPeriodMetrics, ChannelRollingMetrics } from "./types";
 
@@ -128,6 +129,9 @@ export function PeriodMetricGrid({ metrics }: { metrics: ChannelPeriodMetrics })
           }
         />
       </dl>
+      <div className="mt-4">
+        <CacheUsageBreakdown usage={metrics} />
+      </div>
       <p className="mt-2 text-xs leading-6 text-muted-foreground">
         — means unavailable. TTFT is shown only for recorded streaming measurements. Usage and spend include recorded
         billed attempts; request counts, failure rates and timing describe terminal requests.

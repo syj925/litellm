@@ -264,6 +264,7 @@ export function LogDetailsDrawer({
       ...currentLog,
       messages: detailsData?.messages || currentLog.messages,
       response: detailsData?.response || currentLog.response,
+      cache_usage: detailsData?.cache_usage ?? currentLog.cache_usage,
       proxy_server_request: detailsData?.proxy_server_request || currentLog.proxy_server_request,
     };
   }, [currentLog, detailsData]);

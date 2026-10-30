@@ -28,7 +28,15 @@ from .pool_routing import (
     reset_pool_routing,
 )
 from .pool_store import PoolRouteDecision, PoolStore, router_deployments
-from .pricing import as_mapping, catalog_snapshot, charge_for_usage, reserve_quote, usage_facts
+from .pricing import (
+    as_mapping,
+    catalog_snapshot,
+    charge_for_usage,
+    cost_breakdown,
+    reserve_quote,
+    usage_facts,
+    validate_requested_cache_ttls,
+)
 from .store import WalletStore, get_store
 
 _SUPPORTED: Final = frozenset(
@@ -66,7 +74,7 @@ def price_snapshot(
 ) -> dict[str, JsonValue]:
     return {
         **card,
-        "version": "flat-token-v1",
+        "version": "token-v2",
         "price_version": card.get("version"),
         "multiplier": str(discount["discount"]),
         "discount": str(discount["discount"]),
@@ -225,6 +233,10 @@ class RetailBilling(CustomLogger):
             else await store.get_model_discount(user_id, model)
         )
         snapshot: Final = price_snapshot(card, discount, call_type, pool)
+        try:
+            validate_requested_cache_ttls(snapshot, data)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
         embedding: Final = call_type in {"embedding", "aembedding"}
         limit_key: Final = "max_output_tokens" if call_type in {"responses", "aresponses"} else "max_tokens"
         if (
@@ -314,10 +326,19 @@ class RetailBilling(CustomLogger):
         snapshot: Final = as_mapping(reservation["price_snapshot"])
         facts: Final = usage_facts(response, allow_input_only=snapshot.get("billing_mode") == "embedding")
         if facts is None:
+            await store.record_pending_usage(
+                request_id, {"billing_error": "Reported token usage is missing, incomplete or inconsistent"}
+            )
             return
-        amount: Final = charge_for_usage(snapshot, facts)
+        try:
+            amount: Final = charge_for_usage(snapshot, facts)
+            breakdown: Final = cost_breakdown(snapshot, facts)
+        except ValueError as exc:
+            await store.record_pending_usage(request_id, {"usage": facts.model_dump(), "billing_error": str(exc)})
+            return
         details: Final[dict[str, JsonValue]] = {
             "usage": facts.model_dump(),
+            "cost_breakdown": breakdown,
             "provider_cost": str(provider_cost) if provider_cost is not None else None,
             "gateway_call_id": str(data.get("litellm_call_id", "")),
             "billing_basis": "reported_usage",

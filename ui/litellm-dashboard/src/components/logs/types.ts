@@ -11,6 +11,7 @@ export const LOGS_SORT_FIELD_MAP = {
 export type LogsSortField = keyof typeof LOGS_SORT_FIELD_MAP;
 
 export type LogEntry = {
+  cache_usage?: import("../retail/cacheUsage").CacheUsageSummary | null;
   request_id: string;
   litellm_call_id?: string | null;
   api_key: string;

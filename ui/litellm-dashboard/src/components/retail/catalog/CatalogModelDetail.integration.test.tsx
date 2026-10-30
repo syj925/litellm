@@ -88,6 +88,60 @@ function Detail({
 }
 
 describe("catalog model details", () => {
+  it("shows duration reference prices and keeps unauthorized duration quotes private", () => {
+    renderWithProviders(
+      <Detail
+        initialTab="pricing"
+        data={{
+          ...model,
+          offers: model.offers.map((offer, index) => ({
+            ...offer,
+            pricing: {
+              ...offer.pricing,
+              reference: { ...offer.pricing.reference!, cache_write_tiers: { "300": "2.5", "3600": "4" } },
+              customer: {
+                ...offer.pricing.customer!,
+                cache_write_tiers: { "300": index ? "999" : "1.25", "3600": index ? "999" : "2" },
+              },
+            },
+          })),
+        }}
+      />,
+    );
+    const authorized = screen.getByRole("table", { name: "Pricing for AWS fixture pool" });
+    expect(within(authorized).getByRole("row", { name: /Cache write · 5m/ })).toHaveTextContent("$2.50$1.25");
+    expect(within(authorized).getByRole("row", { name: /Cache write · 1h/ })).toHaveTextContent("$4.00$2.00");
+    expect(within(authorized).getByText("Cache write · unspecified duration")).toBeInTheDocument();
+    const unauthorized = screen.getByRole("table", { name: "Pricing for Anthropic fixture pool" });
+    expect(within(unauthorized).getByRole("row", { name: /Cache write · 1h/ })).toHaveTextContent("Access required");
+    expect(within(unauthorized).queryByText("$999.00")).not.toBeInTheDocument();
+  });
+
+  it("lists OpenAI and custom duration rates in a public reference without personal quotes", () => {
+    renderWithProviders(
+      <Detail
+        publicView
+        initialTab="pricing"
+        data={{
+          ...model,
+          offers: [],
+          reference_pricing: {
+            input: "2",
+            output: "10",
+            cache_read: "0.2",
+            cache_write: null,
+            cache_write_tiers: { "1800": "2.5", "43200": "5", "75": "0" },
+          },
+        }}
+      />,
+    );
+    const reference = screen.getByRole("table", { name: "Reference pricing" });
+    expect(within(reference).getByRole("row", { name: "Cache write · 30m $2.50" })).toBeInTheDocument();
+    expect(within(reference).getByRole("row", { name: "Cache write · 12h $5.00" })).toBeInTheDocument();
+    expect(within(reference).getByRole("row", { name: "Cache write · 75s $0.00" })).toBeInTheDocument();
+    expect(within(reference).queryByText("Your price / 1M tokens")).not.toBeInTheDocument();
+  });
+
   it("prioritizes integration actions and keeps source attribution collapsed until requested", async () => {
     const user = userEvent.setup();
     renderWithProviders(<Detail publicView />);
