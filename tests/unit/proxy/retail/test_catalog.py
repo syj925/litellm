@@ -89,6 +89,11 @@ def test_expression_models_publish_the_policy_and_discount_without_presenting_in
     assert model.offers[0].pricing.reference is None
     assert model.offers[0].pricing.customer is None
     assert model.offers[0].pricing.discount == "0.7"
+    assert model.pricing_display is not None
+    assert model.pricing_display.token_rates[0].rates == {"p": "2", "c": "6"}
+    assert model.offers[0].pricing.pricing_display == model.pricing_display
+    serialized: Final = page.model_dump(mode="json")["items"][0]["pricing_display"]
+    assert serialized["token_rates"][0]["rates"] == {"p": "2", "c": "6"}
     assert "private" not in page.model_dump_json()
 
 

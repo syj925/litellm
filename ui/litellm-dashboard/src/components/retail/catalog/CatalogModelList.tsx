@@ -2,6 +2,7 @@ import { ArrowUpRight, Box, CheckCircle2 } from "lucide-react";
 import { Logo } from "@/components/molecules/logo/Logo";
 import CopyButton from "@/components/shared/CopyButton";
 import { Badge } from "@/components/ui/badge";
+import { baselineTokenPrice, hasAdditionalPriceConditions, priceConditions } from "../priceDisplay";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { catalogDescription, capabilityOptions } from "./catalogState";
@@ -46,7 +47,11 @@ function Availability({ model }: { model: CatalogModel }) {
 }
 
 function priceLabel(model: CatalogModel, basis: CatalogPriceBasis, field: "input" | "output"): string {
-  if (modelUsesExpression(model)) return "Dynamic pricing";
+  if (modelUsesExpression(model)) {
+    const amount =
+      basis === "reference" ? baselineTokenPrice(model.pricing_display)?.rates[field === "input" ? "p" : "c"] : null;
+    return amount == null ? "See prices" : formatCatalogPrice(amount);
+  }
   const value = modelPrice(model, basis, field);
   return value == null ? "Not listed" : `From ${formatCatalogPrice(String(value))}`;
 }
@@ -98,6 +103,11 @@ export default function CatalogModelList({
                     </span>
                   </button>
                   <MetadataSourceSummary model={model} />
+                  {basis === "reference" && baselineTokenPrice(model.pricing_display) && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Base rates · {priceConditions(baselineTokenPrice(model.pricing_display)!.conditions)}
+                    </p>
+                  )}
                 </TableCell>
                 <TableCell>{formatContext(model.context_length)}</TableCell>
                 <TableCell>{priceLabel(model, basis, "input")}</TableCell>
@@ -153,8 +163,8 @@ export default function CatalogModelList({
               </span>
               <span>{formatContext(model.context_length)} input context</span>
               {model.context_window != null && <span>{formatContext(model.context_window)} total context</span>}
-              {modelUsesExpression(model) ? (
-                <span className="font-medium text-foreground">Dynamic pricing · View rule in model details</span>
+              {modelUsesExpression(model) && (basis !== "reference" || !baselineTokenPrice(model.pricing_display)) ? (
+                <span className="font-medium text-foreground">View prices and conditions in model details</span>
               ) : (
                 <>
                   <span>
@@ -164,6 +174,12 @@ export default function CatalogModelList({
                     <span className="font-medium text-foreground">{priceLabel(model, basis, "output")}</span> / M output
                   </span>
                 </>
+              )}
+              {basis === "reference" && baselineTokenPrice(model.pricing_display) && (
+                <span>Base rates · {priceConditions(baselineTokenPrice(model.pricing_display)!.conditions)}</span>
+              )}
+              {modelUsesExpression(model) && hasAdditionalPriceConditions(model.pricing_display) && (
+                <span>Additional charges or adjustments may apply</span>
               )}
               <button className="hover:text-foreground hover:underline" onClick={() => onOpen(model.id)}>
                 {publicView && !model.offers.length

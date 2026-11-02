@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { chooseSelectOption, renderWithProviders, testQueryClient } from "../../../tests/test-utils";
 import ModelPricingPanel from "./ModelPricingPanel";
 import type { CatalogPrice, ModelPriceCatalogEntry } from "./modelPriceCatalog";
+import type { ExpressionPriceDisplay } from "./priceDisplay";
 
 const { auth, authorizedAdmin } = vi.hoisted(() => {
   const authorizedAdmin = {
@@ -134,6 +135,50 @@ function serveApi({
 function renderPanel(options?: Parameters<typeof renderWithProviders>[1]) {
   return renderWithProviders(<ModelPricingPanel />, options);
 }
+
+it("shows a coherent baseline in the list and opens readable price details without saving", async () => {
+  const expression_policy = {
+    version: "expression-v1" as const,
+    expression: "len>200000?p*4+c*16:p*2+c*8",
+    timezone: "UTC",
+    usage_bounds: {},
+  };
+  const pricing_display: ExpressionPriceDisplay = {
+    status: "complete",
+    token_rates: [
+      { conditions: ["Special service"], rates: { p: "0.5", c: "100", cr: "1" }, baseline: false },
+      {
+        conditions: ["Standard", "Input context ≤ 200,000 tokens"],
+        rates: { p: "2", c: "8", cr: "0.2", cc: "2" },
+        baseline: true,
+      },
+    ],
+    fees: [],
+    modifiers: [],
+    notes: [],
+  };
+  const displayedPrice = {
+    ...builtInPrice,
+    input_per_million: "99",
+    output_per_million: "99",
+    expression_policy,
+    pricing_display,
+  };
+  const { writes } = serveApi({ entries: [priceEntry(displayedPrice, "expression")] });
+  renderPanel();
+  const row = await screen.findByRole("row", { name: /public-one/ });
+  expect(within(row).getAllByText("$2.00")).toHaveLength(2);
+  expect(within(row).getByText("$8.00")).toBeVisible();
+  expect(within(row).getByText("$0.20")).toBeVisible();
+  expect(within(row).getByText("Standard · Input context ≤ 200,000 tokens")).toBeVisible();
+  expect(within(row).queryByText("$99.00")).not.toBeInTheDocument();
+  expect(within(row).queryByText("$0.50")).not.toBeInTheDocument();
+  fireEvent.click(within(row).getByRole("button", { name: "View prices" }));
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByRole("table", { name: "Token prices by condition" })).toBeVisible();
+  expect(within(dialog).getByText(expression_policy.expression)).not.toBeVisible();
+  expect(writes).toEqual([]);
+});
 
 beforeEach(() => {
   testQueryClient.clear();

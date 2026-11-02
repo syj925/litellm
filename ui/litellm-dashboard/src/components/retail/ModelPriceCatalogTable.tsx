@@ -25,6 +25,7 @@ import { formatMoney, retailRequest } from "./api";
 import { cacheWritePriceRows } from "./cachePricing";
 import PriceConfigurationReview from "./PriceConfigurationReview";
 import ExpressionPricingRule from "./ExpressionPricingRule";
+import { baselineTokenPrice, hasAdditionalPriceConditions, priceConditions } from "./priceDisplay";
 import {
   displayedModelPrice,
   filterModelPrices,
@@ -98,13 +99,17 @@ function PriceRow({
   entry,
   onEdit,
   onChoose,
+  onView,
 }: {
   entry: ModelPriceCatalogEntry;
   onEdit: (price: SalesPrice) => void;
   onChoose: (entry: ModelPriceCatalogEntry) => void;
+  onView: (price: SalesPrice) => void;
 }) {
   const price = displayedModelPrice(entry);
   const dynamic = Boolean(price?.expression_policy);
+  const baseline = baselineTokenPrice(price?.pricing_display);
+  const otherConditions = hasAdditionalPriceConditions(price?.pricing_display);
   return (
     <TableRow>
       <TableCell className="min-w-56 max-w-96 pl-5 whitespace-normal">
@@ -128,6 +133,14 @@ function PriceRow({
           {dynamic ? "Dynamic pricing" : pricingStatusLabels[entry.status]}
         </Badge>
         {price && !entry.price && <p className="mt-1 text-xs font-medium text-muted-foreground">Reference only</p>}
+        {dynamic && baseline && (
+          <p className="mt-1 max-w-60 text-xs whitespace-normal text-muted-foreground">
+            {priceConditions(baseline.conditions)}
+          </p>
+        )}
+        {dynamic && otherConditions && (
+          <p className="mt-1 text-xs text-muted-foreground">Other price conditions available</p>
+        )}
         {entry.reason && (
           <p
             className="mt-1 line-clamp-2 max-w-52 text-xs whitespace-normal text-muted-foreground"
@@ -139,14 +152,24 @@ function PriceRow({
       </TableCell>
       {displayedRateFields.map((field) => {
         const flatRate = price ? formatMoney(price[field]) : "Not listed";
+        const key = { input_per_million: "p", output_per_million: "c", cache_read_per_million: "cr" }[field];
+        const amount = baseline?.rates[key];
+        const dynamicRate = amount == null ? "Request-dependent" : formatMoney(amount);
         return (
           <TableCell key={field} className="text-right tabular-nums">
-            {dynamic ? "Rule-based" : flatRate}
+            {dynamic ? dynamicRate : flatRate}
           </TableCell>
         );
       })}
       <TableCell className="min-w-40 text-xs tabular-nums">
-        {dynamic && <span>See dynamic rule</span>}
+        {dynamic && (
+          <div className="space-y-1">
+            <span>{baseline?.rates.cc == null ? "See prices" : formatMoney(baseline.rates.cc)}</span>
+            {price?.cache_write_price_published === false && baseline?.rates.cc != null && (
+              <p className="text-muted-foreground">Input-rate fallback</p>
+            )}
+          </div>
+        )}
         {!dynamic &&
           (price ? (
             <dl className="space-y-1">
@@ -165,6 +188,11 @@ function PriceRow({
           ))}
       </TableCell>
       <TableCell className="sticky right-0 z-sticky-pinned border-l bg-background pr-5 text-right">
+        {dynamic && price && (
+          <Button variant="outline" size="xs" className="mr-2" onClick={() => onView(price)}>
+            View prices
+          </Button>
+        )}
         <Button variant="outline" size="xs" onClick={() => (entry.price ? onEdit(entry.price) : onChoose(entry))}>
           {rowActionLabel(entry)}
         </Button>
@@ -211,7 +239,13 @@ function ReferenceChoice({
             ))}
           </SelectContent>
         </Select>
-        {choice?.expression_policy && <ExpressionPricingRule policy={choice.expression_policy} />}
+        {choice?.expression_policy && (
+          <ExpressionPricingRule
+            policy={choice.expression_policy}
+            display={choice.pricing_display}
+            cacheWritePublished={choice.cache_write_price_published}
+          />
+        )}
         {choice && !choice.expression_policy && (
           <p className="text-sm text-muted-foreground">
             Input {formatMoney(choice.input_per_million)} · Output {formatMoney(choice.output_per_million)} per 1M
@@ -260,6 +294,7 @@ export default function ModelPriceCatalogTable({
   const table = useUrlTableState(tableOptions);
   const [choosing, setChoosing] = useState<ModelPriceCatalogEntry | null>(null);
   const [reviewing, setReviewing] = useState<ModelPriceCatalogEntry | null>(null);
+  const [viewing, setViewing] = useState<SalesPrice | null>(null);
   const entries = catalog.data?.items ?? [];
   const filterValue = (column: string) =>
     String(table.columnFilters.find((filter) => filter.id === column)?.value ?? "");
@@ -423,7 +458,7 @@ export default function ModelPriceCatalogTable({
             </TableHeader>
             <TableBody>
               {page.items.map((entry) => (
-                <PriceRow key={entry.model} entry={entry} onEdit={onEdit} onChoose={choosePrice} />
+                <PriceRow key={entry.model} entry={entry} onEdit={onEdit} onChoose={choosePrice} onView={setViewing} />
               ))}
             </TableBody>
           </Table>
@@ -486,6 +521,28 @@ export default function ModelPriceCatalogTable({
         </>
       )}
       <ReferenceChoice key={choosing?.model} entry={choosing} onClose={() => setChoosing(null)} onEdit={onEdit} />
+      <Dialog
+        open={Boolean(viewing)}
+        onOpenChange={(open) => {
+          if (!open) setViewing(null);
+        }}
+      >
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Prices for {viewing?.model}</DialogTitle>
+            <DialogDescription>
+              Base rates before account discounts. Each row states when a price applies.
+            </DialogDescription>
+          </DialogHeader>
+          {viewing?.expression_policy && (
+            <ExpressionPricingRule
+              policy={viewing.expression_policy}
+              display={viewing.pricing_display}
+              cacheWritePublished={viewing.cache_write_price_published}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
       <PriceConfigurationReview
         key={reviewing?.model}
         entry={reviewing}

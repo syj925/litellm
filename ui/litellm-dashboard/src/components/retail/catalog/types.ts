@@ -1,5 +1,6 @@
 import { cacheWritePriceRows } from "../cachePricing";
 import type { ExpressionPolicy } from "../expressionPricing";
+import type { ExpressionPriceDisplay } from "../priceDisplay";
 
 export interface CatalogTokenPrice {
   input: string | null;
@@ -30,6 +31,7 @@ export interface CatalogPricing {
   version: number | null;
   updated_at: string | null;
   expression_policy?: ExpressionPolicy | null;
+  pricing_display?: ExpressionPriceDisplay | null;
 }
 
 export interface CatalogOffer {
@@ -94,6 +96,7 @@ export interface CatalogModel {
   offers: CatalogOffer[];
   reference_pricing?: CatalogTokenPrice | null;
   expression_policy?: ExpressionPolicy | null;
+  pricing_display?: ExpressionPriceDisplay | null;
 }
 
 export interface CatalogResponse {

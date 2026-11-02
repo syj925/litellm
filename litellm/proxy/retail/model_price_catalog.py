@@ -4,7 +4,7 @@ from decimal import Decimal
 from itertools import chain
 from typing import Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, computed_field
 
 from .catalog_expression import (
     _parse_rate,
@@ -13,6 +13,7 @@ from .catalog_expression import (
     unsupported_catalog_pricing_metadata,
 )
 from .catalog_pricing_metadata import catalog_pricing_note, supported_pricing_metadata
+from .expression_display import ExpressionPriceDisplay, build_expression_display
 from .pricing import (
     _catalog_card,
     _catalog_model,
@@ -41,6 +42,11 @@ class PricingCatalogPrice(BaseModel):
     version: int | None = None
     updated_at: str | None = None
 
+    @computed_field
+    @property
+    def pricing_display(self) -> ExpressionPriceDisplay | None:
+        return build_expression_display(self.expression_policy)
+
 
 class PricingReviewReference(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -50,6 +56,11 @@ class PricingReviewReference(BaseModel):
     rates: dict[str, str]
     base_price: PricingCatalogPrice | None
     expression_policy: dict[str, JsonValue] | None = None
+
+    @computed_field
+    @property
+    def pricing_display(self) -> ExpressionPriceDisplay | None:
+        return build_expression_display(self.expression_policy)
 
 
 class PricingCatalogEntry(BaseModel):

@@ -2,6 +2,8 @@
 
 Model Pricing supports fixed token rates and versioned expression rules. Administrators select an existing model, edit its expression and timezone, simulate reported usage, and save the rule. Switching back to fixed rates clears the expression. Viewing the catalog or running a simulation never saves prices
 
+The price list and public model details present readable prices and conditions. A read-only projection of the active expression provides coherent service/context rows, separate usage fees and price adjustments. The list uses one explicitly identified base scenario; it never combines minimum prices from different branches or reads inactive fixed-price columns. Custom rules that cannot be fully summarized require review. The original expression remains available under Technical details
+
 The engine uses a bounded parser and Decimal arithmetic. It does not run Python, JavaScript, shell commands, imports or property access. It supports arithmetic, comparisons, `&&`, `||`, `!`, parentheses and `condition ? value : other`. Token coefficients are USD per million tokens. `p * 2 + c * 8` charges USD 2 per million ordinary input tokens and USD 8 per million ordinary output tokens. `fixed(0.04)` is USD 0.04 per successful request
 
 These are example rates, not vendor price declarations

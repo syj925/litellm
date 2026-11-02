@@ -237,7 +237,7 @@ function CatalogOverview({
             Reference pricing
           </h2>
           {modelUsesExpression(model) ? (
-            <p className="mt-3 text-sm">Dynamic pricing · See Pricing for the formula and conditions.</p>
+            <p className="mt-3 text-sm">See Pricing for rates, context tiers and additional charges.</p>
           ) : (
             <>
               <p className="mt-1 text-xs text-muted-foreground">From, per 1M tokens</p>
@@ -332,7 +332,7 @@ function PricingTable({ offer, publicView }: { offer: CatalogOffer; publicView: 
         {!publicView && <Availability available={offer.available_to_me} />}
       </div>
       {offer.pricing.expression_policy ? (
-        <ExpressionPricingRule policy={offer.pricing.expression_policy} />
+        <ExpressionPricingRule policy={offer.pricing.expression_policy} display={offer.pricing.pricing_display} />
       ) : (
         <Table aria-label={"Pricing for " + offer.pool_name}>
           <TableHeader>
@@ -368,22 +368,31 @@ function PricingTable({ offer, publicView }: { offer: CatalogOffer; publicView: 
 }
 
 function CatalogPricingPanel({ model, publicView }: ModelSectionProps) {
+  const poolDescription = publicView
+    ? "Published reference rates for each resource pool."
+    : "Reference prices are the site's published price basis. Your price includes the discount configured for your account and the selected resource pool.";
+  const description = model.offers.length
+    ? poolDescription
+    : "Reference rates for this model. It is not currently offered by a resource pool.";
   return (
     <section className="space-y-5 pt-5" aria-label="Model pricing">
       <div>
-        <h2 className="font-semibold">Pricing by resource pool</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          {publicView
-            ? "Published reference rates for each resource pool."
-            : "Reference prices are the site's published price basis. Your price includes the discount configured for your account and the selected resource pool."}
-        </p>
+        <h2 className="font-semibold">{model.offers.length ? "Pricing by resource pool" : "Reference pricing"}</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
       </div>
       {model.offers.map((offer) => (
         <PricingTable
           key={offer.pool_id}
           offer={
             model.expression_policy && !offer.pricing.expression_policy
-              ? { ...offer, pricing: { ...offer.pricing, expression_policy: model.expression_policy } }
+              ? {
+                  ...offer,
+                  pricing: {
+                    ...offer.pricing,
+                    expression_policy: model.expression_policy,
+                    pricing_display: model.pricing_display,
+                  },
+                }
               : offer
           }
           publicView={publicView}
@@ -391,7 +400,7 @@ function CatalogPricingPanel({ model, publicView }: ModelSectionProps) {
       ))}
       {!model.offers.length && model.expression_policy && (
         <div className="rounded-lg border">
-          <ExpressionPricingRule policy={model.expression_policy} />
+          <ExpressionPricingRule policy={model.expression_policy} display={model.pricing_display} />
         </div>
       )}
       {!model.offers.length && !model.expression_policy && model.reference_pricing && (
@@ -422,7 +431,7 @@ function CatalogPricingPanel({ model, publicView }: ModelSectionProps) {
       )}
       <p className="text-xs leading-6 text-muted-foreground">
         {modelUsesExpression(model) ? (
-          "Dynamic charges follow the published rule and its conditions. Token coefficients are USD per 1M tokens; fixed fees are USD. The final charge includes your applicable discount."
+          "The applicable price depends on the conditions shown above. Token prices are USD per 1M tokens; additional charges show their own units. Your applicable discount is included in the final charge."
         ) : (
           <>
             Prices are in USD per 1M tokens. Each cache write duration is charged at its complete write price, without

@@ -1,4 +1,5 @@
 import type { ExpressionPolicy } from "./expressionPricing";
+import type { ExpressionPriceDisplay } from "./priceDisplay";
 
 export interface SalesPrice {
   model: string;
@@ -9,6 +10,7 @@ export interface SalesPrice {
   cache_write_tiers?: Record<string, string>;
   cache_write_price_published?: boolean | null;
   expression_policy?: ExpressionPolicy | null;
+  pricing_display?: ExpressionPriceDisplay | null;
 }
 
 export interface CatalogPrice extends SalesPrice {
@@ -37,6 +39,7 @@ export interface PriceConfiguration {
   rates: Record<string, string>;
   base_price: CatalogPrice | null;
   expression_policy?: ExpressionPolicy | null;
+  pricing_display?: ExpressionPriceDisplay | null;
 }
 
 export interface ModelPriceCatalogEntry {

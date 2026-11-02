@@ -29872,6 +29872,7 @@ export interface components {
              * @default []
              */
             output_modalities: string[];
+            readonly pricing_display: components["schemas"]["ExpressionPriceDisplay"] | null;
             /** Provider */
             provider?: string | null;
             reference_pricing?: components["schemas"]["CatalogRates"] | null;
@@ -29913,6 +29914,7 @@ export interface components {
             expression_policy?: {
                 [key: string]: components["schemas"]["JsonValue"];
             } | null;
+            readonly pricing_display: components["schemas"]["ExpressionPriceDisplay"] | null;
             reference?: components["schemas"]["CatalogRates"] | null;
             /** Source Label */
             source_label?: string | null;
@@ -33912,6 +33914,34 @@ export interface components {
              */
             version: "expression-v1";
         };
+        /** ExpressionPriceDisplay */
+        ExpressionPriceDisplay: {
+            /**
+             * Fees
+             * @default []
+             */
+            fees: components["schemas"]["FeeRow"][];
+            /**
+             * Modifiers
+             * @default []
+             */
+            modifiers: components["schemas"]["ModifierRow"][];
+            /**
+             * Notes
+             * @default []
+             */
+            notes: string[];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "complete" | "unsupported";
+            /**
+             * Token Rates
+             * @default []
+             */
+            token_rates: components["schemas"]["TokenRateRow"][];
+        };
         /** Extraction */
         Extraction: {
             /**
@@ -34044,6 +34074,22 @@ export interface components {
              * @description The model name
              */
             model: string;
+        };
+        /** FeeRow */
+        FeeRow: {
+            /** Amount */
+            amount: string;
+            /**
+             * Conditions
+             * @default []
+             */
+            conditions: string[];
+            /** Label */
+            label: string;
+            /** Unit */
+            unit: string;
+            /** Usage Key */
+            usage_key?: string | null;
         };
         /** Feedback */
         Feedback: {
@@ -41056,6 +41102,18 @@ export interface components {
             /** Model */
             model: string;
         };
+        /** ModifierRow */
+        ModifierRow: {
+            /**
+             * Applies To
+             * @default Token charges
+             */
+            applies_to: string;
+            /** Conditions */
+            conditions: string[];
+            /** Multiplier */
+            multiplier: string;
+        };
         /**
          * Move
          * @description A mouse move action.
@@ -44199,6 +44257,7 @@ export interface components {
             model: string;
             /** Output Per Million */
             output_per_million: string;
+            readonly pricing_display: components["schemas"]["ExpressionPriceDisplay"] | null;
             /**
              * Source
              * @default catalog
@@ -44245,6 +44304,7 @@ export interface components {
             expression_policy?: {
                 [key: string]: components["schemas"]["JsonValue"];
             } | null;
+            readonly pricing_display: components["schemas"]["ExpressionPriceDisplay"] | null;
             /** Rates */
             rates: {
                 [key: string]: string;
@@ -50136,6 +50196,23 @@ export interface components {
             tokenizer_type: string;
             /** Total Tokens */
             total_tokens: number;
+        };
+        /** TokenRateRow */
+        TokenRateRow: {
+            /**
+             * Baseline
+             * @default false
+             */
+            baseline: boolean;
+            /**
+             * Conditions
+             * @default []
+             */
+            conditions: string[];
+            /** Rates */
+            rates: {
+                [key: string]: string;
+            };
         };
         /**
          * ToolChoiceAllowedParam

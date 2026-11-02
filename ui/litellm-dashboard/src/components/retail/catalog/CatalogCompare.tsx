@@ -36,7 +36,7 @@ const modalityLabel = (values: string[]): string =>
   values.length ? values.map((value) => value.charAt(0).toUpperCase() + value.slice(1)).join(", ") : "Not specified";
 
 function priceLabel(model: CatalogModel, basis: CatalogPriceBasis, field: "input" | "output"): string {
-  if (modelUsesExpression(model)) return "Dynamic pricing · See model rule";
+  if (modelUsesExpression(model)) return "See prices and conditions";
   const price = modelPrice(model, basis, field);
   return price == null ? "Not listed" : `From ${formatCatalogPrice(String(price))}`;
 }

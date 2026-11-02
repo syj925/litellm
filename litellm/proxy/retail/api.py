@@ -33,6 +33,7 @@ from litellm.proxy.auth.network import TrustedProxyConfig, resolve_client_ip
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.utils import hash_password
 
+from .expression_display import build_expression_display
 from .expression_pricing import (
     ExpressionPolicy,
     ExpressionPricingError,
@@ -554,6 +555,7 @@ def _per_token_price(value: str) -> str:
 
 
 def _model_price_view(card: _StoredModelPrice) -> dict[str, JsonValue]:
+    presentation: Final = build_expression_display(card.expression_policy)
     return {
         "model": card.model,
         "version": card.version,
@@ -570,6 +572,7 @@ def _model_price_view(card: _StoredModelPrice) -> dict[str, JsonValue]:
         },
         "cache_write_price_published": card.cache_write_price_published,
         "expression_policy": card.expression_policy,
+        "pricing_display": presentation.model_dump(mode="json") if presentation is not None else None,
     }
 
 
@@ -778,6 +781,7 @@ def _configured_references() -> tuple[tuple[str, tuple[dict[str, JsonValue], ...
 
 
 def _reference_price_view(card: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    presentation: Final = build_expression_display(card.get("expression_policy"))
     return {
         "model": card["model"],
         "catalog_model": card["catalog_model"],
@@ -792,6 +796,7 @@ def _reference_price_view(card: Mapping[str, JsonValue]) -> dict[str, JsonValue]
         },
         "cache_write_price_published": card.get("cache_write_price_published"),
         "expression_policy": card.get("expression_policy"),
+        "pricing_display": presentation.model_dump(mode="json") if presentation is not None else None,
     }
 
 

@@ -16,6 +16,12 @@ def test_saved_expression_policy_is_the_active_price_in_the_admin_catalog() -> N
     assert row.status == "expression"
     assert row.price == saved
     assert row.price.expression_policy == policy
+    assert row.price.pricing_display is not None
+    assert row.price.pricing_display.status == "complete"
+    assert row.price.pricing_display.token_rates[0].rates == {"p": "2", "c": "6"}
+    changed: Final = row.price.model_copy(update={"expression_policy": {**policy, "expression": "p * 3 + c * 8"}})
+    assert changed.pricing_display.token_rates[0].rates == {"p": "3", "c": "8"}
+    assert row.price.pricing_display.token_rates[0].rates == {"p": "2", "c": "6"}
 
 
 @pytest.mark.parametrize(("provider", "extra", "expected"), (

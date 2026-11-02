@@ -6,7 +6,7 @@ from typing import Final, Literal
 
 import psycopg
 from fastapi import APIRouter, HTTPException, Response
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, computed_field
 
 from litellm.litellm_core_utils.get_model_cost_map import GetModelCostMap
 
@@ -14,6 +14,7 @@ from .api import Store, User
 from .catalog_enrichment import MetadataSource, resolve_metadata
 from .catalog_source_data import BenchmarkRecord
 from .catalog_sources import ExternalMetadataRecord, read_records
+from .expression_display import ExpressionPriceDisplay, build_expression_display
 from .expression_pricing import validate_expression_policy
 from .pool_pricing import _PoolFactors, pool_discount_view
 from .pool_store import (
@@ -53,6 +54,11 @@ class CatalogPricing(BaseModel):
     version: int | None = None
     updated_at: str | None = None
     expression_policy: dict[str, JsonValue] | None = None
+
+    @computed_field
+    @property
+    def pricing_display(self) -> ExpressionPriceDisplay | None:
+        return build_expression_display(self.expression_policy)
 
 
 class CatalogOffer(BaseModel):
@@ -100,6 +106,11 @@ class CatalogModel(BaseModel):
     expression_policy: dict[str, JsonValue] | None = None
     available_to_me: bool
     offers: tuple[CatalogOffer, ...]
+
+    @computed_field
+    @property
+    def pricing_display(self) -> ExpressionPriceDisplay | None:
+        return build_expression_display(self.expression_policy)
 
 
 class CatalogPage(BaseModel):

@@ -6,6 +6,7 @@ import { renderWithProviders } from "../../../../tests/test-utils";
 import CatalogModelDetail from "./CatalogModelDetail";
 import { getModelIdentity } from "./modelIdentity";
 import type { CatalogDetailTab, CatalogModel } from "./types";
+import type { ExpressionPriceDisplay } from "../priceDisplay";
 
 const model: CatalogModel = {
   id: "claude-fixture-1-2",
@@ -88,12 +89,22 @@ function Detail({
 }
 
 describe("catalog model details", () => {
-  it("shows the public expression and timezone instead of fixed token quotations", () => {
+  it("shows readable public rate conditions while leaving the underlying formula collapsed", () => {
     const expression_policy = {
       version: "expression-v1" as const,
       expression: "hour() >= 9 ? tier('peak', p * 3 + c * 12) : tier('off-peak', p * 2 + c * 8)",
       timezone: "Asia/Shanghai",
       usage_bounds: {},
+    };
+    const pricing_display: ExpressionPriceDisplay = {
+      status: "complete",
+      token_rates: [
+        { conditions: ["Peak hours"], rates: { p: "3", c: "12" }, baseline: false },
+        { conditions: ["Off-peak hours"], rates: { p: "2", c: "8" }, baseline: false },
+      ],
+      fees: [],
+      modifiers: [],
+      notes: [],
     };
     renderWithProviders(
       <Detail
@@ -102,17 +113,49 @@ describe("catalog model details", () => {
         data={{
           ...model,
           expression_policy,
-          offers: model.offers.map((offer) => ({ ...offer, pricing: { ...offer.pricing, expression_policy } })),
+          pricing_display,
+          offers: model.offers.map((offer) => ({
+            ...offer,
+            pricing: { ...offer.pricing, expression_policy, pricing_display },
+          })),
         }}
       />,
     );
     const rules = screen.getAllByRole("region", { name: "Dynamic pricing rule" });
     expect(rules).toHaveLength(model.offers.length);
-    expect(rules[0]).toHaveTextContent(expression_policy.expression);
-    expect(rules[0]).toHaveTextContent("Timezone: Asia/Shanghai");
+    expect(within(rules[0]).getByRole("table", { name: "Token prices by condition" })).toHaveTextContent(
+      "Peak hours$3.00$12.00",
+    );
+    expect(within(rules[0]).getByText(expression_policy.expression)).not.toBeVisible();
     expect(screen.queryByRole("table", { name: "Pricing for AWS fixture pool" })).not.toBeInTheDocument();
-    expect(screen.queryByText("$12.00")).not.toBeInTheDocument();
     expect(screen.queryByText("Must stay private")).not.toBeInTheDocument();
+  });
+
+  it("labels a model without resource pool offers as reference pricing", () => {
+    renderWithProviders(
+      <Detail
+        initialTab="pricing"
+        publicView
+        data={{
+          ...model,
+          offers: [],
+          expression_policy: { version: "expression-v1", expression: "p*2+c*8", timezone: "UTC", usage_bounds: {} },
+          pricing_display: {
+            status: "complete",
+            token_rates: [{ conditions: ["All requests"], rates: { p: "2", c: "8" }, baseline: true }],
+            fees: [],
+            modifiers: [],
+            notes: [],
+          },
+        }}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Reference pricing" })).toBeVisible();
+    expect(
+      screen.getByText("Reference rates for this model. It is not currently offered by a resource pool."),
+    ).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Pricing by resource pool" })).not.toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Token prices by condition" })).toBeVisible();
   });
 
   it("shows duration reference prices and keeps unauthorized duration quotes private", () => {

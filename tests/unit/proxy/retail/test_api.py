@@ -75,6 +75,18 @@ def test_management_price_responses_keep_internal_default_amounts_separate_from_
     assert view["cache_write_per_million"] == "2.000000"
     assert view["cache_write_price_published"] is False
     assert view["version"] == 3
+    assert view["pricing_display"] is None
+
+
+def test_price_management_summary_uses_the_active_expression_without_changing_legacy_columns() -> None:
+    view: Final = _model_price_view(_StoredModelPrice(
+        model="fixture", version=3, updated_at="2026-01-01T00:00:00Z", source="manual",
+        input_cost_per_token="0.000099", output_cost_per_token="0.000099",
+        cache_read_input_token_cost="0.000099", cache_creation_input_token_cost="0.000099",
+        expression_policy={"expression": "p * 2 + c * 6"},
+    ))
+    assert Decimal(view["input_per_million"]) == Decimal("99")
+    assert view["pricing_display"]["token_rates"][0]["rates"] == {"p": "2", "c": "6"}
 
 
 @pytest.mark.parametrize("tiers", ({"0": "1"}, {"0300": "1"}, {"5m": "1"}, {"300": "NaN"}, {"300": "-1"}))

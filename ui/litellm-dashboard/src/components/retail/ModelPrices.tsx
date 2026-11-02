@@ -24,6 +24,7 @@ import { formatMoney, retailRequest } from "./api";
 import ModelPriceCatalogTable from "./ModelPriceCatalogTable";
 import ExpressionPricingEditor from "./ExpressionPricingEditor";
 import ExpressionPricingRule from "./ExpressionPricingRule";
+import { baselineTokenPrice, priceConditions } from "./priceDisplay";
 import {
   parseUsageBounds,
   policyFromRates,
@@ -76,7 +77,15 @@ function referenceRateLabel(
   field: (typeof rateFields)[number]["key"],
 ): string {
   if (!candidate) return "Choose reference";
-  return candidate.expression_policy ? "Rule-based" : formatMoney(candidate[field]);
+  if (!candidate.expression_policy) return formatMoney(candidate[field]);
+  const key = {
+    input_per_million: "p",
+    output_per_million: "c",
+    cache_read_per_million: "cr",
+    cache_write_per_million: "cc",
+  }[field];
+  const amount = baselineTokenPrice(candidate.pricing_display)?.rates[key];
+  return amount == null ? "Request-dependent" : formatMoney(amount);
 }
 
 export default function ModelPrices({ accessToken, enabled }: { accessToken: string | null; enabled: boolean }) {
@@ -592,9 +601,20 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                             </p>
                             {chosen?.expression_policy && (
                               <details className="mt-2">
-                                <summary className="cursor-pointer text-xs font-medium">Review dynamic rule</summary>
-                                <ExpressionPricingRule policy={chosen.expression_policy} />
+                                <summary className="cursor-pointer text-xs font-medium">
+                                  View prices and conditions
+                                </summary>
+                                <ExpressionPricingRule
+                                  policy={chosen.expression_policy}
+                                  display={chosen.pricing_display}
+                                  cacheWritePublished={chosen.cache_write_price_published}
+                                />
                               </details>
+                            )}
+                            {chosen?.expression_policy && baselineTokenPrice(chosen.pricing_display) && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {priceConditions(baselineTokenPrice(chosen.pricing_display)!.conditions)}
+                              </p>
                             )}
                           </TableCell>
                           <TableCell className="text-right text-xs tabular-nums">
@@ -607,7 +627,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
                             {referenceRateLabel(chosen, "cache_read_per_million")}
                           </TableCell>
                           <TableCell className="text-right text-xs tabular-nums">
-                            {chosen?.expression_policy && "See dynamic rule"}
+                            {chosen?.expression_policy && referenceRateLabel(chosen, "cache_write_per_million")}
                             {!chosen && "Choose reference"}
                             {chosen && !chosen.expression_policy && (
                               <div className="space-y-1">
