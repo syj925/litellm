@@ -4359,6 +4359,7 @@ class SpendLogsMetadata(TypedDict):
     azure_spillover: ReadOnly[AzureSpillover | None]  # None = Azure did not report spillover
     used_client_oauth_token: ReadOnly[bool | None]  # None = row written before the flag existed
     retail_resource_pool_id: ReadOnly[NotRequired[str | None]]
+    retail_request_id: ReadOnly[NotRequired[str | None]]
     retail_resource_pool_name: ReadOnly[NotRequired[str | None]]
     retail_resource_source_kind: ReadOnly[NotRequired[str | None]]
 

@@ -3363,6 +3363,11 @@ class ModelResponseIterator:
         )
 
         VertexGeminiConfig.set_grounding_usage_counters(usage, grounding_metadata)
+        model_response.hidden_params["retail_provider_usage"] = {  # rebind-ok: this parser decorates its output model in place
+            **processed_chunk.get("usageMetadata", {}),
+            **{key: getattr(usage, key) for key in ("web_search_requests", "google_maps_grounding_requests")
+               if getattr(usage, key, None) is not None},
+        }
 
         traffic_type: Final = processed_chunk.get("usageMetadata", {}).get("trafficType")
         if traffic_type:

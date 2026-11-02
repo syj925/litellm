@@ -1,10 +1,22 @@
 services:
   litellm:
+    image: litellm-retail-local:1.106.6-pool3.3.3
+    build:
+      context: ../litellm/deploy/retail
+      dockerfile: Dockerfile.runtime
+    stop_grace_period: 120s
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "${RETAIL_SERVER_WORKERS:-2}"]
     environment:
       RETAIL_PORTAL_ENABLED: "true"
       RETAIL_BILLING_ENABLED: "true"
       RETAIL_REGISTRATION_ENABLED: "true"
       RETAIL_MAX_PARALLEL: "10"
+      RETAIL_MAX_INFLIGHT: "512"
+      RETAIL_DB_MAX_CONNECTIONS: "16"
+      RETAIL_DB_DIAGNOSTIC_CONNECTIONS: "3"
+      RETAIL_DB_CRITICAL_CONNECTIONS: "4"
+      GRACEFUL_SHUTDOWN_TIMEOUT: "90"
+      DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?required}@db:5432/litellm?connection_limit=10
       RETAIL_DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?required}@db:5432/litellm
     volumes:
       - ../litellm/deploy/retail/config.yaml:/app/config.yaml:ro
@@ -14,7 +26,10 @@ services:
       - ../litellm/litellm/proxy/common_utils/http_parsing_utils.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/common_utils/http_parsing_utils.py:ro
       - ../litellm/litellm/router.py:/app/.venv/lib/python3.13/site-packages/litellm/router.py:ro
       - ../litellm/litellm/litellm_core_utils/request_trace_transport.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/request_trace_transport.py:ro
+      - ../litellm/litellm/litellm_core_utils/logging_worker.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/logging_worker.py:ro
+      - ../litellm/litellm/litellm_core_utils/streaming_handler.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/streaming_handler.py:ro
       - ../litellm/litellm/llms/custom_httpx/http_handler.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/custom_httpx/http_handler.py:ro
+      - ../litellm/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py:ro
       - ../litellm/litellm/llms/openai/common_utils.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/openai/common_utils.py:ro
       - ../litellm/litellm/proxy/proxy_server.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/proxy_server.py:ro
       - ../litellm/litellm/proxy/_types.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/_types.py:ro
@@ -38,6 +53,7 @@ services:
       - ../litellm/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py:ro
       - ../litellm/litellm/main.py:/app/.venv/lib/python3.13/site-packages/litellm/main.py:ro
       - ../litellm/litellm/llms/anthropic/common_utils.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/anthropic/common_utils.py:ro
+      - ../litellm/litellm/llms/anthropic/chat/handler.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/anthropic/chat/handler.py:ro
       - ../litellm/litellm/llms/anthropic/pass_through/messages/transformation.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/anthropic/pass_through/messages/transformation.py:ro
       - ../litellm/litellm/proxy/management_endpoints/key_management_endpoints.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/management_endpoints/key_management_endpoints.py:ro
       - ../litellm/litellm/integrations/custom_logger.py:/app/.venv/lib/python3.13/site-packages/litellm/integrations/custom_logger.py:ro

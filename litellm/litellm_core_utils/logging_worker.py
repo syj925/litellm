@@ -6,6 +6,7 @@ import atexit
 import contextvars
 import inspect
 import logging
+from collections import deque
 from collections.abc import Coroutine, Iterator
 from typing import Final
 
@@ -13,8 +14,6 @@ from typing_extensions import TypedDict
 
 from litellm._logging import verbose_logger
 from litellm.constants import (
-    LOGGING_WORKER_AGGRESSIVE_CLEAR_COOLDOWN_SECONDS,
-    LOGGING_WORKER_CLEAR_PERCENTAGE,
     LOGGING_WORKER_CONCURRENCY,
     LOGGING_WORKER_MAX_QUEUE_SIZE,
     LOGGING_WORKER_MAX_TIME_PER_COROUTINE,
@@ -56,6 +55,10 @@ class LoggingWorker:
     A simple, async logging worker that processes log coroutines in the background.
     Designed to be best-effort with bounded queues to prevent backpressure.
 
+    Execution concurrency and overflow-pump tasks are bounded. Deferred coroutine
+    retention is not hard-bounded: callers requiring a memory ceiling must apply
+    admission control or persist serializable events before enqueueing callbacks.
+
     This leads to a +200 RPS performance improvement when using LiteLLM Python SDK or Proxy Server.
     - Use this to queue coroutine tasks that are not critical to the main flow of the application. e.g Success/Error callbacks, logging, etc.
     """
@@ -75,10 +78,12 @@ class LoggingWorker:
         self._worker_task: asyncio.Task | None = None
         self._running_tasks: set[asyncio.Task] = set()
         self._dequeued_tasks: dict[int, LoggingTask] = {}  # mutable-ok: refs so flush can rescue never-started tasks
+        self._scheduled_tasks = dict[int, asyncio.Task[None]]()
         self._sem: asyncio.Semaphore | None = None
         self._bound_loop: asyncio.AbstractEventLoop | None = None
-        self._last_aggressive_clear_time: float = 0.0
-        self._aggressive_clear_in_progress: bool = False
+        self._overflow = deque[LoggingTask]()
+        self._overflow_pump: asyncio.Task[None] | None = None
+        self._overflow_reported = False
         self._timeout_total: int = 0
         self._timeout_burst_count: int = 0
         self._timeout_last_callback: str | None = None
@@ -87,11 +92,20 @@ class LoggingWorker:
         # Register cleanup handler to flush remaining events on exit
         atexit.register(self._flush_on_exit)
 
+    @property
+    def pending_count(self) -> int:
+        return (self._queue.qsize() if self._queue is not None else 0) + len(self._overflow) + len(self._dequeued_tasks)
+
+    @property
+    def is_overloaded(self) -> bool:
+        return bool(self._overflow) or (self._queue is not None and self._queue.full())
+
     def _track_dequeued(self, task: LoggingTask) -> None:
         self._dequeued_tasks[id(task)] = task
 
     def _untrack_dequeued(self, task: LoggingTask) -> None:
         self._dequeued_tasks.pop(id(task), None)
+        self._scheduled_tasks.pop(id(task), None)
 
     def _unstarted_dequeued_tasks(self) -> tuple[LoggingTask, ...]:
         return tuple(
@@ -100,26 +114,13 @@ class LoggingWorker:
             if inspect.getcoroutinestate(task["coroutine"]) == inspect.CORO_CREATED
         )
 
-    def _requeue_unstarted_dequeued(self, new_queue: "asyncio.Queue[LoggingTask]") -> int:
-        revived: Final = self._unstarted_dequeued_tasks()
-        self._dequeued_tasks.clear()
-        for index, revived_task in enumerate(revived):
-            try:
-                new_queue.put_nowait(revived_task)
-            except asyncio.QueueFull:
-                for leftover in revived[index:]:
-                    self._track_dequeued(leftover)
-                return index
-        return len(revived)
-
-    def _run_coroutine_silently(self, loop: asyncio.AbstractEventLoop, coroutine: Coroutine) -> bool:
-        token: Final = _CALLBACK_DEADLINE.set(loop.time() + self.timeout)
+    def _run_coroutine_silently(self, loop: asyncio.AbstractEventLoop, task: LoggingTask) -> bool:
+        context: Final = task["context"].copy()
+        context.run(_CALLBACK_DEADLINE.set, loop.time() + self.timeout)
         try:
-            loop.run_until_complete(asyncio.wait_for(coroutine, timeout=self.timeout))
+            context.run(loop.run_until_complete, asyncio.wait_for(task["coroutine"], timeout=self.timeout))
         except (Exception, asyncio.CancelledError):  # noqa: BLE001  # atexit flush must never break the user's program
             return False
-        finally:
-            _CALLBACK_DEADLINE.reset(token)
         return True
 
     def _create_callback_task(self, task: LoggingTask) -> asyncio.Task[object]:
@@ -152,22 +153,30 @@ class LoggingWorker:
         # loop change we hand the still-pending tasks to a fresh queue instead of dropping them,
         # so queued spend-logging coroutines are not silently discarded (and never left un-awaited).
         if self._queue is not None and self._bound_loop is not current_loop:
+            if self._overflow_pump is not None and not self._overflow_pump.done():
+                self._cancel_overflow_pump()
             carried_over: Final = self._drain_pending(self._queue)
+            revived: Final = self._unstarted_dequeued_tasks()
+            deferred: Final = tuple(self._overflow)
+            self._dequeued_tasks.clear()
+            self._scheduled_tasks.clear()
+            self._overflow = deque((*revived, *deferred))
+            self._overflow_pump = None
             new_queue: Final[asyncio.Queue[LoggingTask]] = asyncio.Queue(maxsize=self.max_queue_size)
             for carried_task in carried_over:
                 new_queue.put_nowait(carried_task)
-            revived_count: Final = self._requeue_unstarted_dequeued(new_queue)
-            if carried_over or revived_count:
+            if carried_over or revived or deferred:
                 verbose_logger.warning(
-                    "LoggingWorker: event loop changed; carried %d pending and revived %d dequeued logging task(s) onto the new loop",
+                    "LoggingWorker: event loop changed; carried %d queued, %d dequeued and %d deferred logging task(s)",
                     len(carried_over),
-                    revived_count,
+                    len(revived),
+                    len(deferred),
                 )
             else:
                 verbose_logger.debug("LoggingWorker: Event loop changed, reinitializing queue and worker")
             self._sem = None
             self._worker_task = None
-            self._running_tasks.clear()
+            self._running_tasks = set()
             self._timeout_summary_task = None
             self._timeout_burst_count = 0
             self._queue = new_queue
@@ -185,6 +194,7 @@ class LoggingWorker:
             self._sem = asyncio.Semaphore(self.concurrency)
         if self._worker_task is None or self._worker_task.done():
             self._worker_task = asyncio.create_task(self._worker_loop())
+        self._start_overflow_pump()
 
     async def _process_log_task(
         self, task: LoggingTask, sem: asyncio.Semaphore, queue: "asyncio.Queue[LoggingTask]"
@@ -206,6 +216,8 @@ class LoggingWorker:
                 finally:
                     self._untrack_dequeued(task)
                     queue.task_done()
+                    if self._queue is queue and queue.empty() and not self._overflow:
+                        self._overflow_reported = False
         finally:
             # Always release semaphore, even if queue is None
             sem.release()
@@ -241,230 +253,116 @@ class LoggingWorker:
 
     async def _worker_loop(self) -> None:
         """Main worker loop that gets tasks and schedules them to run concurrently."""
+        queue: Final = self._queue
+        sem: Final = self._sem
+        running: Final = self._running_tasks
+        if queue is None or sem is None:
+            return
         try:
-            queue: Final = self._queue
-            if queue is None or self._sem is None:
-                return
-
             while True:
                 # Acquire semaphore before removing task from queue to prevent
                 # unbounded growth of waiting tasks
-                await self._sem.acquire()
+                await sem.acquire()
                 try:
                     task = await queue.get()
                     self._track_dequeued(task)
                     # Track each spawned coroutine so we can cancel on shutdown.
-                    processing_task = asyncio.create_task(self._process_log_task(task, self._sem, queue))
-                    self._running_tasks.add(processing_task)
-                    processing_task.add_done_callback(self._running_tasks.discard)
-                except Exception:
+                    processing_task = asyncio.create_task(self._process_log_task(task, sem, queue))
+                    self._scheduled_tasks[id(task)] = processing_task
+                    running.add(processing_task)
+                    processing_task.add_done_callback(running.discard)
+                except (Exception, asyncio.CancelledError):
                     # If task creation fails, release semaphore to prevent deadlock
-                    self._sem.release()
+                    sem.release()
                     raise
 
         except asyncio.CancelledError:
             verbose_logger.debug("LoggingWorker cancelled during shutdown")
-            # Attempt to clear remaining items to prevent "never awaited" warnings
-            await self.clear_queue()
+            processors: Final = tuple(running)
+            await asyncio.gather(*processors, return_exceptions=True)
+            for pending in reversed(self._unstarted_dequeued_tasks()):
+                scheduled: Final = self._scheduled_tasks.get(id(pending))
+                if scheduled is not None and scheduled.done():
+                    self._untrack_dequeued(pending)
+                    queue.task_done()
+                    sem.release()
+                    self._overflow.appendleft(pending)
+            if self._queue is queue:
+                await self.clear_queue()
 
     def enqueue(self, coroutine: Coroutine) -> None:
-        """
-        Add a coroutine to the logging queue.
-        Hot path: never blocks, aggressively clears queue if full.
-        """
+        """Queue a callback without blocking the request that produced it."""
         if self._queue is None:
             return
-
-        # Capture the current context when enqueueing
         task: Final = LoggingTask(coroutine=coroutine, context=contextvars.copy_context())
-
-        try:
-            self._queue.put_nowait(task)
-        except asyncio.QueueFull:
-            # Queue is full - handle it appropriately
-            verbose_logger.exception("LoggingWorker queue is full")
-            self._handle_queue_full(task)
-
-    def _should_start_aggressive_clear(self) -> bool:
-        """
-        Check if we should start a new aggressive clear operation.
-        Returns True if cooldown period has passed and no clear is in progress.
-        """
-        if self._aggressive_clear_in_progress:
-            return False
-
-        try:
-            loop: Final = asyncio.get_running_loop()
-            current_time: Final = loop.time()
-            time_since_last_clear: Final = current_time - self._last_aggressive_clear_time
-
-            if time_since_last_clear < LOGGING_WORKER_AGGRESSIVE_CLEAR_COOLDOWN_SECONDS:
-                return False
-
-            return True
-        except RuntimeError:
-            # No event loop running, drop the task
-            return False
-
-    def _mark_aggressive_clear_started(self) -> None:
-        """
-        Mark that an aggressive clear operation has started.
-
-        Note: This should only be called after _should_start_aggressive_clear()
-        returns True, which guarantees an event loop exists.
-        """
-        loop: Final = asyncio.get_running_loop()
-        self._last_aggressive_clear_time = loop.time()
-        self._aggressive_clear_in_progress = True
-
-    def _handle_queue_full(self, task: LoggingTask) -> None:
-        """
-        Handle queue full condition by either starting an aggressive clear
-        or scheduling a delayed retry.
-        """
-
-        if self._should_start_aggressive_clear():
-            self._mark_aggressive_clear_started()
-            # Schedule clearing as async task so enqueue returns immediately (non-blocking)
-            asyncio.create_task(self._aggressively_clear_queue_async(task))
-        else:
-            # Cooldown active or clear in progress, schedule a delayed retry
-            self._schedule_delayed_enqueue_retry(task)
-
-    def _calculate_retry_delay(self) -> float:
-        """
-        Calculate the delay before retrying an enqueue operation.
-        Returns the delay in seconds.
-        """
-        try:
-            loop: Final = asyncio.get_running_loop()
-            current_time: Final = loop.time()
-            time_since_last_clear: Final = current_time - self._last_aggressive_clear_time
-            remaining_cooldown: Final = max(
-                0.0,
-                LOGGING_WORKER_AGGRESSIVE_CLEAR_COOLDOWN_SECONDS - time_since_last_clear,
-            )
-            # Add a small buffer (10% of cooldown or 50ms, whichever is larger) to ensure
-            # cooldown has expired and aggressive clear has completed
-            return remaining_cooldown + max(0.05, LOGGING_WORKER_AGGRESSIVE_CLEAR_COOLDOWN_SECONDS * 0.1)
-        except RuntimeError:
-            # No event loop, return minimum delay
-            return 0.1
-
-    def _schedule_delayed_enqueue_retry(self, task: LoggingTask) -> None:
-        """
-        Schedule a delayed retry to enqueue the task after cooldown expires.
-        This prevents dropping tasks when the queue is full during cooldown.
-        Preserves the original task context.
-        """
-        try:
-            # Check that we have a running event loop (will raise RuntimeError if not)
-            asyncio.get_running_loop()
-            delay: Final = self._calculate_retry_delay()
-
-            # Schedule the retry as a background task
-            asyncio.create_task(self._retry_enqueue_task(task, delay))
-        except RuntimeError:
-            # No event loop, drop the task as we can't schedule a retry
-            pass
-
-    async def _retry_enqueue_task(self, task: LoggingTask, delay: float) -> None:
-        """
-        Retry enqueueing the task after delay, preserving original context.
-        This is called as a background task from _schedule_delayed_enqueue_retry.
-        """
-        await asyncio.sleep(delay)
-
-        # Try to enqueue the task directly, preserving its original context
-        if self._queue is None:
+        if self._overflow:
+            self._defer_task(task)
             return
-
         try:
             self._queue.put_nowait(task)
         except asyncio.QueueFull:
-            # Still full - handle it appropriately (clear or retry again)
-            self._handle_queue_full(task)
+            self._defer_task(task)
 
-    def _extract_tasks_from_queue(self) -> list[LoggingTask]:
-        """
-        Extract tasks from the queue to make room.
-        Returns a list of extracted tasks based on percentage of queue size.
-        """
-        if self._queue is None:
-            return []
+    def _defer_task(self, task: LoggingTask) -> None:
+        if not self._overflow_reported:
+            verbose_logger.warning("LoggingWorker queue is full; deferring callbacks to its bounded worker")
+            self._overflow_reported = True
+        self._overflow.append(task)
+        self._start_overflow_pump()
 
-        # Calculate items based on percentage of queue size
-        items_to_extract = (self.max_queue_size * LOGGING_WORKER_CLEAR_PERCENTAGE) // 100
-        # Use actual queue size to avoid unnecessary iterations
-        actual_size: Final = self._queue.qsize()
-        if actual_size == 0:
-            return []
-        items_to_extract = min(items_to_extract, actual_size)
-
-        # Extract tasks from queue (using list comprehension would require wrapping in try/except)
-        extracted_tasks: Final = []
-        for _ in range(items_to_extract):
-            try:
-                extracted_tasks.append(extracted := self._queue.get_nowait())
-            except asyncio.QueueEmpty:
-                break
-            self._track_dequeued(extracted)
-
-        return extracted_tasks
-
-    async def _aggressively_clear_queue_async(self, new_task: LoggingTask | None = None) -> None:
-        """
-        Aggressively clear the queue by extracting and processing items.
-        This is called when the queue is full to prevent dropping logs.
-        Fully async and non-blocking - runs in background task.
-        """
+    def _start_overflow_pump(self) -> None:
+        if not self._overflow or self._queue is None:
+            return
+        if self._overflow_pump is not None and not self._overflow_pump.done():
+            return
         try:
-            if self._queue is None:
-                return
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._overflow_pump = asyncio.create_task(self._pump_overflow(self._queue))
 
-            extracted_tasks: Final = self._extract_tasks_from_queue()
+    def _cancel_overflow_pump(self) -> None:
+        if self._overflow_pump is not None:
+            try:
+                self._overflow_pump.cancel()
+            except RuntimeError:
+                pass
 
-            # Add new task to extracted tasks to process directly
-            if new_task is not None:
-                self._track_dequeued(new_task)
-                extracted_tasks.append(new_task)
-
-            # Process extracted tasks directly
-            if extracted_tasks:
-                await self._process_extracted_tasks(extracted_tasks)
-        except Exception as e:
-            verbose_logger.exception("LoggingWorker error during aggressive clear: %s", e)
+    async def _pump_overflow(self, queue: "asyncio.Queue[LoggingTask]") -> None:
+        pending: Final = self._overflow
+        loop: Final = asyncio.get_running_loop()
+        try:
+            while pending:
+                await queue.put(pending[0])
+                pending.popleft()
         finally:
-            # Always reset the flag even if an error occurs
-            self._aggressive_clear_in_progress = False
+            if self._overflow_pump is asyncio.current_task(loop=loop):
+                self._overflow_pump = None
 
     async def _process_single_task(self, task: LoggingTask) -> None:
-        """Process a single task and mark it done."""
-        if self._queue is None:
+        queue: Final = self._queue
+        if queue is None:
             return
-
+        if self._sem is None:
+            self._sem = asyncio.Semaphore(self.concurrency)
+        sem: Final = self._sem
+        self._track_dequeued(task)
         try:
-            await asyncio.wait_for(
-                self._create_callback_task(task),
-                timeout=self.timeout,
-            )
+            await sem.acquire()
+        except asyncio.CancelledError:
+            self._untrack_dequeued(task)
+            queue.task_done()
+            self._overflow.appendleft(task)
+            self._start_overflow_pump()
+            raise
+        try:
+            await asyncio.wait_for(self._create_callback_task(task), timeout=self.timeout)
         except Exception:
-            # Suppress errors during processing to ensure we keep going
             pass
         finally:
             self._untrack_dequeued(task)
-            self._queue.task_done()
-
-    async def _process_extracted_tasks(self, tasks: list[LoggingTask]) -> None:
-        """
-        Process tasks that were extracted from the queue to make room.
-        Processes them concurrently without semaphore limits for maximum speed.
-        """
-        if not tasks or self._queue is None:
-            return
-
-        # Process all tasks concurrently for maximum speed
-        await asyncio.gather(*[self._process_single_task(task) for task in tasks])
+            queue.task_done()
+            sem.release()
 
     def ensure_initialized_and_enqueue(self, async_coroutine: Coroutine):
         """
@@ -480,7 +378,7 @@ class LoggingWorker:
             self._timeout_summary_task = None
         self._emit_timeout_summary()
 
-        if self._worker_task is None and not self._running_tasks:
+        if self._worker_task is None and not self._running_tasks and self._overflow_pump is None:
             # No worker launched and no in-flight tasks to drain.
             return
 
@@ -488,6 +386,8 @@ class LoggingWorker:
         if self._worker_task:
             # Include the main worker loop so it stops fetching work.
             tasks_to_cancel.append(self._worker_task)
+        if self._overflow_pump is not None:
+            tasks_to_cancel.append(self._overflow_pump)
 
         for task in tasks_to_cancel:
             # Propagate cancellation to every pending task.
@@ -499,6 +399,7 @@ class LoggingWorker:
         self._worker_task = None
         # Drop references to completed tasks so we can restart cleanly.
         self._running_tasks.clear()
+        self._overflow_pump = None
 
     async def flush(self) -> None:
         """Flush the logging queue.
@@ -515,7 +416,15 @@ class LoggingWorker:
         if self._queue is None:
             return
         self.start()
-        await self._queue.join()
+        queue: Final = self._queue
+        while True:
+            self._start_overflow_pump()
+            pump: Final = self._overflow_pump
+            if pump is not None:
+                await asyncio.shield(pump)
+            await queue.join()
+            if not self._overflow:
+                return
 
     async def clear_queue(self):
         """
@@ -537,17 +446,13 @@ class LoggingWorker:
                 task = queue.get_nowait()
                 # Await the coroutine to properly execute and avoid "never awaited" warnings
                 try:
-                    await asyncio.wait_for(
-                        self._create_callback_task(task),
-                        timeout=self.timeout,
-                    )
+                    await self._process_single_task(task)
                 except Exception:
                     # Suppress errors during cleanup
                     pass
                 finally:
                     # Clear reference to prevent memory leaks
                     task = None
-                queue.task_done()
             except asyncio.QueueEmpty:
                 break
 
@@ -606,12 +511,15 @@ class LoggingWorker:
             self._safe_log("debug", "[LoggingWorker] atexit: No queue initialized")
             return
 
+        self._cancel_overflow_pump()
+        self._overflow_pump = None
+
         unstarted_dequeued: Final = self._unstarted_dequeued_tasks()
-        if self._queue.empty() and not unstarted_dequeued:
+        if self._queue.empty() and not unstarted_dequeued and not self._overflow:
             self._safe_log("debug", "[LoggingWorker] atexit: Queue is empty")
             return
 
-        queue_size: Final = self._queue.qsize() + len(unstarted_dequeued)
+        queue_size: Final = self._queue.qsize() + len(unstarted_dequeued) + len(self._overflow)
         self._safe_log("info", f"[LoggingWorker] atexit: Flushing {queue_size} remaining events...")
 
         # Create a new event loop since the original is closed
@@ -636,11 +544,11 @@ class LoggingWorker:
                         or loop.time() - start_time >= MAX_TIME_TO_CLEAR_QUEUE
                     ):
                         break
-                    if self._run_coroutine_silently(loop, pending["coroutine"]):
+                    if self._run_coroutine_silently(loop, pending):
                         processed += 1
                     self._untrack_dequeued(pending)
 
-                while not self._queue.empty() and processed < MAX_ITERATIONS_TO_CLEAR_QUEUE:
+                while (not self._queue.empty() or self._overflow) and processed < MAX_ITERATIONS_TO_CLEAR_QUEUE:
                     if loop.time() - start_time >= MAX_TIME_TO_CLEAR_QUEUE:
                         self._safe_log(
                             "warning",
@@ -649,7 +557,7 @@ class LoggingWorker:
                         break
 
                     try:
-                        task = self._queue.get_nowait()
+                        task = self._queue.get_nowait() if not self._queue.empty() else self._overflow.popleft()
                     except asyncio.QueueEmpty:
                         break
 
@@ -657,7 +565,7 @@ class LoggingWorker:
                     # Note: We run the coroutine directly, not via create_task,
                     # since we're in a new event loop context
                     try:
-                        if self._run_coroutine_silently(loop, task["coroutine"]):
+                        if self._run_coroutine_silently(loop, task):
                             processed += 1
                     finally:
                         # Clear reference to prevent memory leaks

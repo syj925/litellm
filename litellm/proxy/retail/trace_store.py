@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Final
 
+import psycopg
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, JsonValue
 
@@ -53,6 +54,12 @@ class _LedgerTraceRow(BaseModel):
     amount_nanos: int
     created_at: datetime
     details: Mapping[str, JsonValue]
+
+
+class _NativeCostRow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    amount: str | None
 
 
 def _utc(value: datetime) -> datetime:
@@ -107,18 +114,36 @@ def _observed_until(snapshot: Mapping[str, JsonValue]) -> float:
     return float(duration) if isinstance(duration, (float, int)) and math.isfinite(duration) and duration >= 0 else 0.0
 
 
-async def cleanup_trace_bodies(store: WalletStore | None = None) -> None:
+async def cleanup_trace_bodies(
+    store: WalletStore | None = None, *, batch_size: int = 500, max_batches: int = 16,
+) -> None:
+    if not 1 <= batch_size <= 1000 or not 1 <= max_batches <= 32:
+        raise ValueError("Trace cleanup batch limits are out of range")
     storage: Final = store if store is not None else get_store()
     await storage.initialize()
-    async with storage.transaction() as connection:
-        await connection.execute(
-            """UPDATE retail_request_traces SET request_body=NULL
-            WHERE body_expires_at<=now() AND request_body IS NOT NULL"""
-        )
-        await connection.execute(
-            "DELETE FROM retail_request_traces WHERE created_at<now()-(%s * interval '1 day')",
-            (TRACE_RETENTION_DAYS,),
-        )
+    for _ in range(max_batches):
+        async with storage.diagnostic_transaction() as connection:
+            await connection.execute("SET LOCAL statement_timeout='2000ms'")
+            await connection.execute("SET LOCAL lock_timeout='250ms'")
+            cleared: Final = await connection.execute(
+                """WITH expired AS (
+                    SELECT trace_id FROM retail_request_traces
+                    WHERE body_expires_at<=now() AND request_body IS NOT NULL
+                    ORDER BY body_expires_at LIMIT %s FOR UPDATE SKIP LOCKED
+                ) UPDATE retail_request_traces t SET request_body=NULL
+                FROM expired WHERE t.trace_id=expired.trace_id""",
+                (batch_size,),
+            )
+            deleted: Final = await connection.execute(
+                """WITH expired AS (
+                    SELECT trace_id FROM retail_request_traces
+                    WHERE created_at<now()-(%s * interval '1 day')
+                    ORDER BY created_at LIMIT %s FOR UPDATE SKIP LOCKED
+                ) DELETE FROM retail_request_traces t USING expired WHERE t.trace_id=expired.trace_id""",
+                (TRACE_RETENTION_DAYS, batch_size),
+            )
+        if cleared.rowcount < batch_size and deleted.rowcount < batch_size:
+            return
 
 
 async def persist_trace(
@@ -139,7 +164,7 @@ async def persist_trace(
     request_id: Final = retail_request_id or snapshot.get("retail_request_id")
     bound_request_id: Final = request_id if isinstance(request_id, str) and 0 < len(request_id) <= 191 else None
     body: Final = _body_value(request_body) if expires_at > now else None
-    async with storage.transaction() as connection:
+    async with storage.diagnostic_transaction() as connection:
         await connection.execute(
             """INSERT INTO retail_request_traces
             (trace_id,call_id,retail_request_id,trace,request_body,body_expires_at,recorded_until_ms)
@@ -177,10 +202,12 @@ def _object_json(value: JsonValue) -> JsonValue:
     return value if isinstance(value, dict) else None
 
 
-def _billing_view(row: _BillingRow, ledger: tuple[_LedgerTraceRow, ...]) -> Mapping[str, JsonValue]:
+def _billing_view(
+    row: _BillingRow, ledger: tuple[_LedgerTraceRow, ...], provider_cost_fallback: str | None = None,
+) -> Mapping[str, JsonValue]:
     settled: Final = next((entry.details for entry in reversed(ledger) if entry.kind == "charge"), {})
     details: Final = _mapping_value(redact_trace_value({**row.details, **settled})) or {}
-    provider_cost: Final = _money(details.get("provider_cost"))
+    provider_cost: Final = _money(details.get("provider_cost")) or _money(provider_cost_fallback)
     snapshot: Final = _mapping_value(redact_trace_value(dict(row.price_snapshot))) or {}
     resource: Final[Mapping[str, JsonValue]] = {
         "pool_id": snapshot.get("resource_pool_id"),
@@ -212,11 +239,12 @@ def _billing_view(row: _BillingRow, ledger: tuple[_LedgerTraceRow, ...]) -> Mapp
 def trace_response(
     call_id: str, trace: _TraceRow | None, billing: _BillingRow | None,
     ledger: tuple[_LedgerTraceRow, ...], now: datetime, ambiguous_call_id: bool = False,
+    provider_cost_fallback: str | None = None,
 ) -> Mapping[str, JsonValue]:
     body_available: Final = (
         trace is not None and trace.request_body is not None and _utc(trace.body_expires_at) > _utc(now)
     )
-    bill: Final = _billing_view(billing, ledger) if billing is not None else None
+    bill: Final = _billing_view(billing, ledger, provider_cost_fallback) if billing is not None else None
     missing: Final = tuple(
         name for name, absent in (
             ("trace", trace is None), ("request_body", not body_available), ("billing", bill is None),
@@ -241,9 +269,36 @@ def trace_response(
     }
 
 
+async def _native_provider_cost(
+    connection: psycopg.AsyncConnection, billing: _BillingRow | None, trace: _TraceRow | None,
+) -> str | None:
+    if (
+        billing is None or trace is None or not trace.call_id or billing.status != "settled"
+        or _money(billing.details.get("provider_cost")) is not None
+        or billing.details.get("billing_basis") not in {"reported_usage", "reported_expression_usage"}
+    ):
+        return None
+    table_cursor: Final = await connection.execute("SELECT to_regclass('\"LiteLLM_SpendLogs\"') AS native_table")
+    table: Final = await table_cursor.fetchone()
+    if table is None or table["native_table"] is None:
+        return None
+    cost: Final = await _one(
+        connection,
+        """WITH candidates AS MATERIALIZED (
+            SELECT "user",metadata,spend,status FROM "LiteLLM_SpendLogs" WHERE litellm_call_id=%s LIMIT 9
+        ) SELECT CASE WHEN (SELECT count(*) FROM candidates)<9 AND count(*)=1 THEN min(s.spend)::text END AS amount
+        FROM candidates s JOIN retail_reservations r ON r.request_id=%s
+        AND s."user"=r.user_id AND s.metadata->>'retail_request_id'=r.request_id
+        WHERE s.status='success' AND s.spend>0""",
+        (trace.call_id, billing.request_id), _NativeCostRow,
+    )
+    return _money(cost.amount) if cost is not None else None
+
+
 async def get_request_trace(store: WalletStore, call_id: str) -> Mapping[str, JsonValue]:
-    await cleanup_trace_bodies(store)
-    async with store.transaction() as connection:
+    await store.initialize()
+    async with store.diagnostic_transaction() as connection:
+        await connection.execute("SET LOCAL statement_timeout='3000ms'")
         traces: Final = await _many(
             connection,
             """SELECT trace_id,call_id,retail_request_id,trace,
@@ -269,5 +324,6 @@ async def get_request_trace(store: WalletStore, call_id: str) -> Mapping[str, Js
             WHERE request_id=%s ORDER BY created_at,id""",
             (billing.request_id if billing is not None else None,), _LedgerTraceRow,
         ))
+        native_cost: Final = await _native_provider_cost(connection, billing, trace)
     ambiguous: Final = len(traces) > 1 and trace is not None and trace.trace_id != call_id
-    return trace_response(call_id, trace, billing, ledger, datetime.now(timezone.utc), ambiguous)
+    return trace_response(call_id, trace, billing, ledger, datetime.now(timezone.utc), ambiguous, native_cost)

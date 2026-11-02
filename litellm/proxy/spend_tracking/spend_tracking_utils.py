@@ -249,7 +249,10 @@ def _get_spend_logs_metadata(
     # Filter the metadata dictionary to include only the specified keys
     clean_metadata: Final = SpendLogsMetadata(
         **MappingProxyType(
-            {key: metadata.get(key) for key in SpendLogsMetadata.__annotations__ if key not in _STAMPED_METADATA_KEYS}
+            {
+                key: metadata.get(key) for key in SpendLogsMetadata.__annotations__
+                if key not in _STAMPED_METADATA_KEYS and (key != "retail_request_id" or key in metadata)
+            }
         ),
         autorouter_savings=autorouter_savings,
         autorouter_savings_estimate=autorouter_savings_estimate,

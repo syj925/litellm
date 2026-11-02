@@ -9,8 +9,10 @@ from pydantic import JsonValue
 from starlette.requests import Request
 from starlette.types import Message, Receive, Scope, Send
 
+from litellm.proxy.retail.admission import RequestAdmission
 from litellm.proxy.retail.request_tracing import bind_call_id, current_trace
 from litellm.proxy.retail.trace_middleware import RequestTraceMiddleware
+from litellm.proxy.retail.trace_writer import TraceWriter
 
 
 class Capture:
@@ -72,6 +74,72 @@ async def test_concurrent_requests_keep_distinct_collector_and_call_ids() -> Non
     assert {row["call_id"] for row in capture.rows} == {"/v1/messages", "/v1/chat/completions"}
     assert responses[0].headers["x-retail-trace-id"] != responses[1].headers["x-retail-trace-id"]
     assert current_trace() is None
+
+
+@pytest.mark.asyncio
+async def test_slow_diagnostic_storage_does_not_hold_response_or_the_admission_slot() -> None:
+    entered: Final = asyncio.Event()
+    release: Final = asyncio.Event()
+    capture: Final = Capture()
+
+    async def sink(snapshot: Mapping[str, JsonValue], body: JsonValue, request_id: str | None) -> None:
+        entered.set()
+        await release.wait()
+        await capture(snapshot, body, request_id)
+
+    writer: Final = TraceWriter(sink, workers=1, capacity=1)
+    admission: Final = RequestAdmission(1, lambda: False)
+    middleware: Final = RequestTraceMiddleware(stream_app, writer=writer, admission=admission)
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=middleware), base_url="http://test") as client:
+            first: Final = await client.post("/v1/messages", json={})
+            assert first.status_code == 200 and admission.stats.active == 0
+            await entered.wait()
+            second: Final = await client.post("/v1/messages", json={})
+            third: Final = await client.post("/v1/messages", json={})
+        assert second.status_code == third.status_code == 200 and admission.stats.active == 0
+        assert capture.rows == () and writer.stats.dropped == 1
+        release.set()
+        assert await writer.flush()
+        assert len(capture.rows) == 2
+    finally:
+        release.set()
+        await writer.aclose()
+
+
+@pytest.mark.asyncio
+async def test_full_admission_rejects_before_app_body_or_upstream_work_and_cancel_releases_slot() -> None:
+    entered: Final = asyncio.Event()
+    release: Final = asyncio.Event()
+
+    async def busy(scope: Scope, receive: Receive, send: Send) -> None:
+        entered.set()
+        await release.wait()
+        await stream_app(scope, receive, send)
+
+    capture: Final = Capture()
+    writer: Final = TraceWriter(capture)
+    admission: Final = RequestAdmission(1, lambda: False)
+    middleware: Final = RequestTraceMiddleware(busy, writer=writer, admission=admission)
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=middleware), base_url="http://test") as client:
+            first: Final = asyncio.create_task(client.post("/v1/messages", json={}))
+            await entered.wait()
+            rejected: Final = await client.post("/v1/messages", json={"api_key": "private"})
+            assert rejected.status_code == 503 and rejected.headers["retry-after"] == "1"
+            assert "private" not in rejected.text and admission.stats.active == 1
+            first.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await first
+            assert admission.stats.active == 0
+            release.set()
+            next_response: Final = await client.post("/v1/messages", json={})
+        assert next_response.status_code == 200 and admission.stats.active == 0
+        assert await writer.flush()
+        assert any(row["response_status"] == 503 for row in capture.rows)
+    finally:
+        release.set()
+        await writer.aclose()
 
 
 @pytest.mark.asyncio

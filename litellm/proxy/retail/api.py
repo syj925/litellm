@@ -947,6 +947,32 @@ async def admin_request_trace(
     return await _execute(get_request_trace(store, call_id))
 
 
+@router.get("/admin/runtime")
+async def admin_runtime(admin: Admin, store: Store) -> Mapping[str, JsonValue]:
+    from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
+
+    from .admission import get_request_admission
+    from .settlement_worker import settlement_is_overloaded
+    from .trace_writer import get_trace_writer
+
+    admission: Final = get_request_admission().stats
+    trace: Final = get_trace_writer().stats
+    return {
+        "scope": "process", "process_id": os.getpid(),
+        "admission": {"active": admission.active, "limit": admission.limit, "rejected": admission.rejected},
+        "database": {name: dict(stats) for name, stats in store.pool_stats().items()},
+        "diagnostics": {
+            "queued": trace.queued, "active": trace.active, "accepted": trace.accepted,
+            "coalesced": trace.coalesced, "dropped": trace.dropped, "failed": trace.failed,
+        },
+        "logging": {
+            "pending": int(getattr(GLOBAL_LOGGING_WORKER, "pending_count", 0)),
+            "overloaded": getattr(GLOBAL_LOGGING_WORKER, "is_overloaded", False) is True,
+        },
+        "settlement": {"overloaded": settlement_is_overloaded()},
+    }
+
+
 @router.post("/admin/reservations/{request_id}/resolve")
 async def admin_resolve(
     request_id: str,

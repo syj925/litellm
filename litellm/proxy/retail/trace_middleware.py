@@ -1,13 +1,15 @@
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
-from typing import Final, TypeAlias
+from typing import Final
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from .admission import RequestAdmission, get_request_admission
+from .customer_response_privacy import customer_error_body
 from .request_tracing import TraceCollector, activate_trace, redact_body, reset_trace
+from .trace_writer import TraceSink, TraceWriter, close_traces, get_trace_writer
 
 _LOG: Final = logging.getLogger(__name__)
 _JSON: Final = TypeAdapter(JsonValue)
@@ -17,18 +19,11 @@ _PATHS: Final = frozenset({
     "/images/generations", "/images/edits", "/audio/transcriptions", "/audio/speech",
     "/rerank", "/search", "/moderations",
 })
-TraceSink: TypeAlias = Callable[[Mapping[str, JsonValue], JsonValue | None, str | None], Awaitable[None]]
 
 
 def traced_path(path: str) -> bool:
     normalized: Final = path.removeprefix("/v1").rstrip("/") if path.startswith("/v1/") else path.rstrip("/")
     return normalized in _PATHS or path.endswith((":generateContent", ":streamGenerateContent"))
-
-
-async def _persist(snapshot: Mapping[str, JsonValue], body: JsonValue | None, request_id: str | None) -> None:
-    from .trace_store import persist_trace
-
-    await persist_trace(snapshot, request_body=body, retail_request_id=request_id)
 
 
 async def _cleanup() -> None:
@@ -50,7 +45,7 @@ class _Exchange:
         self._receive = receive
         self._send = send
         self._content_type = content_type
-        self._body = b""
+        self._body = bytearray()
         self._body_complete = False
         self._capture_omitted = False
         self._output = OutputDetector()
@@ -65,9 +60,9 @@ class _Exchange:
         body: Final = message.get("body", b"")
         self.trace.request_body_bytes += len(body)
         if len(self._body) + len(body) <= _BODY_LIMIT and not self._capture_omitted:
-            self._body += body
+            self._body.extend(body)
         else:
-            self._body = b""
+            self._body.clear()
             self._capture_omitted = True
         if not message.get("more_body", False):
             self._body_complete = True
@@ -125,18 +120,38 @@ class _Exchange:
 
 
 class RequestTraceMiddleware:
-    def __init__(self, app: ASGIApp, sink: TraceSink = _persist) -> None:
+    def __init__(
+        self, app: ASGIApp, sink: TraceSink | None = None, *, writer: TraceWriter | None = None,
+        admission: RequestAdmission | None = None,
+    ) -> None:
         self.app = app
         self._sink = sink
+        self._writer = writer
+        self._admission = admission if admission is not None else get_request_admission()
         self._cleanup_task: asyncio.Task[None] | None = None
 
     async def _lifespan_send(self, send: Send, message: Message) -> None:
         if message["type"] == "lifespan.startup.complete" and self._cleanup_task is None:
+            from .settlement_worker import start_settlement_worker
+            from .store import get_store
+
+            await get_store().initialize()
+            await start_settlement_worker()
             self._cleanup_task = asyncio.create_task(_cleanup())
-        if message["type"] == "lifespan.shutdown.complete" and self._cleanup_task is not None:
-            self._cleanup_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._cleanup_task
+        if message["type"] == "lifespan.shutdown.complete":
+            from .settlement_worker import close_settlement_worker
+            from .store import get_store
+
+            if self._cleanup_task is not None:
+                self._cleanup_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self._cleanup_task
+            await close_settlement_worker()
+            if self._writer is not None:
+                await self._writer.aclose()
+            else:
+                await close_traces()
+            await get_store().aclose()
         await send(message)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -150,6 +165,19 @@ class RequestTraceMiddleware:
             await self.app(scope, receive, send)
             return
         trace: Final = TraceCollector(scope["method"], scope["path"])
+        if not self._admission.try_acquire():
+            trace.response_status = 503
+            trace.event("admission_rejected")
+            trace.complete()
+            await send({"type": "http.response.start", "status": 503, "headers": [
+                (b"content-type", b"application/json"), (b"cache-control", b"no-store"), (b"retry-after", b"1"),
+                (b"x-retail-trace-id", trace.trace_id.encode("ascii")),
+            ]})
+            await send({"type": "http.response.body", "body": customer_error_body(
+                status_code=503, request_id=trace.trace_id,
+            ), "more_body": False})
+            (self._writer or get_trace_writer()).submit(trace.snapshot())
+            return
         client: Final = scope.get("client")
         trace.set_attributes({
             "client_ip": client[0] if client else None,
@@ -172,8 +200,19 @@ class RequestTraceMiddleware:
             body: Final = exchange.captured_body()
             trace.complete()
             try:
-                await asyncio.wait_for(self._sink(trace.snapshot(), body, trace.retail_request_id), timeout=3)
+                if trace.retail_request_id is not None:
+                    from .settlement_worker import finish_request_activity
+
+                    try:
+                        await asyncio.wait_for(finish_request_activity(trace.retail_request_id), timeout=1)
+                    except Exception as error:
+                        _LOG.warning("Request activity cleanup deferred (%s)", type(error).__name__)
+                if self._sink is not None:
+                    await asyncio.wait_for(self._sink(trace.snapshot(), body, trace.retail_request_id), timeout=3)
+                else:
+                    (self._writer or get_trace_writer()).submit(trace.snapshot(), body, trace.retail_request_id)
             except Exception as error:
                 _LOG.warning("Request trace persistence failed (%s)", type(error).__name__)
             finally:
+                self._admission.release()
                 reset_trace(token)

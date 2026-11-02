@@ -39,6 +39,26 @@ CHECK (discount_override > 0 AND discount_override <= 1);
 
 CREATE INDEX IF NOT EXISTS retail_reservations_user_status
 ON retail_reservations(user_id, status, created_at DESC);
+ALTER TABLE retail_reservations ADD COLUMN IF NOT EXISTS active_until TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS retail_reservations_active
+ON retail_reservations(user_id,active_until) WHERE status='reserved' AND active_until IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS retail_settlement_facts (
+    request_id TEXT PRIMARY KEY REFERENCES retail_reservations(request_id),
+    amount_nanos BIGINT CHECK (amount_nanos >= 0),
+    details JSONB NOT NULL,
+    fact_digest TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('pending','processing','done','unknown','conflict')),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    lease_owner TEXT,
+    lease_until TIMESTAMPTZ,
+    last_error_type TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS retail_settlement_facts_pending
+ON retail_settlement_facts(next_attempt_at,created_at) WHERE state IN ('pending','processing');
 
 CREATE TABLE IF NOT EXISTS retail_ledger (
     id UUID PRIMARY KEY,
@@ -59,6 +79,8 @@ CREATE TABLE IF NOT EXISTS retail_ledger (
 
 CREATE INDEX IF NOT EXISTS retail_ledger_user_created
 ON retail_ledger(user_id, created_at DESC, id);
+CREATE INDEX IF NOT EXISTS retail_ledger_request_created
+ON retail_ledger(request_id,created_at,id) WHERE request_id IS NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS retail_ledger_credit_reference_unique
 ON retail_ledger(reference) WHERE kind='credit';

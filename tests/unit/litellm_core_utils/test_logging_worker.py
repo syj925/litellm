@@ -291,8 +291,7 @@ class TestLoggingWorker:
 
         asyncio.run(enqueue_on_first_loop())
         assert worker._queue is not None
-        expected_shape = (1, 0) if stranded == "still_queued" else (0, 1)
-        assert (worker._queue.qsize(), len(worker._unstarted_dequeued_tasks())) == expected_shape
+        assert worker.pending_count == 1
         assert callback.await_count == 0, "precondition: the callback never ran before the first loop closed"
 
         async def flush_twice_on_second_loop():
@@ -404,21 +403,32 @@ class TestLoggingWorker:
 
     @pytest.mark.asyncio
     async def test_queue_full_handling(self, logging_worker):
-        """Test that queue full condition is handled gracefully."""
-        # Create a worker with very small queue size
-        small_worker = LoggingWorker(timeout=1.0, max_queue_size=2)
+        small_worker: Final = LoggingWorker(timeout=1.0, max_queue_size=2)
         small_worker._ensure_queue()
+        logger: Final = logging.getLogger("LiteLLM")
+        collector: Final = _RecordCollector()
+        previous_level: Final = logger.level
+        completed: Final[asyncio.Queue[int]] = asyncio.Queue()
 
-        # Mock verbose_logger to capture exception messages
-        with patch("litellm.litellm_core_utils.logging_worker.verbose_logger") as mock_logger:
-            # Fill the queue beyond capacity
-            mock_coro = AsyncMock()
-            for _ in range(5):  # More than max_queue_size of 2
-                small_worker.enqueue(mock_coro())
+        async def callback(index: int) -> None:
+            completed.put_nowait(index)
 
-            # Should have logged queue full exceptions
-            exception_calls = [call for call in mock_logger.exception.call_args_list if "queue is full" in str(call)]
-            assert len(exception_calls) > 0
+        logger.addHandler(collector)
+        logger.setLevel(logging.WARNING)
+        try:
+            for index in range(10):
+                small_worker.enqueue(callback(index))
+            assert small_worker.pending_count == 10 and small_worker.is_overloaded
+            await asyncio.wait_for(small_worker.flush(), timeout=5)
+            assert tuple(completed.get_nowait() for _ in range(10)) == tuple(range(10))
+            warnings: Final = tuple(record for record in collector.records if record.levelno == logging.WARNING)
+            assert len(warnings) == 1 and "queue is full" in warnings[0].getMessage()
+            assert warnings[0].exc_info is None
+            assert small_worker.pending_count == 0 and not small_worker.is_overloaded
+        finally:
+            await small_worker.stop()
+            logger.removeHandler(collector)
+            logger.setLevel(previous_level)
 
     @pytest.mark.asyncio
     async def test_context_propagation(self, logging_worker):
@@ -834,3 +844,152 @@ class TestLoggingWorker:
             assert worker._timeout_burst_count == 0, "stale burst count must reset on loop change"
 
         asyncio.run(rebind_on_second_loop())
+
+class _GatedCallbacks:
+    def __init__(self) -> None:
+        self.started: asyncio.Queue[tuple[int, str]] = asyncio.Queue()
+        self.permits: asyncio.Queue[None] = asyncio.Queue()
+        self.completed: asyncio.Queue[int] = asyncio.Queue()
+        self.active = 0
+        self.peak = 0
+
+    async def run(self, index: int, identity: contextvars.ContextVar[str]) -> None:
+        self.active += 1
+        self.peak = max(self.peak, self.active)
+        self.started.put_nowait((index, identity.get()))
+        try:
+            await self.permits.get()
+            self.completed.put_nowait(index)
+        finally:
+            self.active -= 1
+
+
+@pytest.mark.asyncio
+async def test_overflow_keeps_callback_and_scheduler_concurrency_bounded_without_losing_context() -> None:
+    worker: Final = LoggingWorker(timeout=5, max_queue_size=4, concurrency=2)
+    callbacks: Final = _GatedCallbacks()
+    identity: Final = contextvars.ContextVar("bounded_callback_identity", default="outside")
+    worker.start()
+    original_tasks: Final = len(asyncio.all_tasks())
+    try:
+        for index in range(200):
+            token = identity.set(str(index))
+            worker.enqueue(callbacks.run(index, identity))
+            identity.reset(token)
+        assert worker.pending_count == 200 and worker.is_overloaded
+        first: Final = await asyncio.wait_for(callbacks.started.get(), timeout=5)
+        second: Final = await asyncio.wait_for(callbacks.started.get(), timeout=5)
+        assert len(asyncio.all_tasks()) - original_tasks <= 2 * worker.concurrency + 2
+        for _ in range(200):
+            callbacks.permits.put_nowait(None)
+        await asyncio.wait_for(worker.flush(), timeout=5)
+        entered: Final = (first, second, *(callbacks.started.get_nowait() for _ in range(198)))
+        assert tuple(sorted(entered)) == tuple(sorted((index, str(index)) for index in range(200)))
+        assert tuple(sorted(callbacks.completed.get_nowait() for _ in range(200))) == tuple(range(200))
+        assert callbacks.peak <= worker.concurrency
+        assert worker.pending_count == 0 and not worker.is_overloaded
+        assert identity.get() == "outside"
+    finally:
+        for _ in range(200):
+            callbacks.permits.put_nowait(None)
+        await worker.stop()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_flush_keeps_overflow_for_a_later_flush() -> None:
+    worker: Final = LoggingWorker(timeout=5, max_queue_size=1, concurrency=1)
+    callbacks: Final = _GatedCallbacks()
+    identity: Final = contextvars.ContextVar("cancelled_flush_identity", default="request")
+    worker.start()
+    try:
+        for index in range(12):
+            worker.enqueue(callbacks.run(index, identity))
+        await asyncio.wait_for(callbacks.started.get(), timeout=5)
+        entered: Final = asyncio.Event()
+
+        async def flush_waiter() -> None:
+            entered.set()
+            await worker.flush()
+
+        flush: Final = asyncio.create_task(flush_waiter())
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        flush.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await flush
+        for _ in range(12):
+            callbacks.permits.put_nowait(None)
+        await asyncio.wait_for(worker.flush(), timeout=5)
+        assert tuple(sorted(callbacks.completed.get_nowait() for _ in range(12))) == tuple(range(12))
+        assert worker.pending_count == 0 and callbacks.peak <= worker.concurrency
+    finally:
+        for _ in range(12):
+            callbacks.permits.put_nowait(None)
+        await worker.stop()
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_active_callback_and_preserves_all_unstarted_overflow_for_restart() -> None:
+    worker: Final = LoggingWorker(timeout=5, max_queue_size=1, concurrency=1)
+    started: Final[asyncio.Queue[int]] = asyncio.Queue()
+    finished: Final[asyncio.Queue[int]] = asyncio.Queue()
+    cancelled: Final[asyncio.Queue[int]] = asyncio.Queue()
+    blocked: Final = asyncio.Event()
+
+    async def callback(index: int) -> None:
+        started.put_nowait(index)
+        try:
+            if index == 0:
+                await blocked.wait()
+        except asyncio.CancelledError:
+            cancelled.put_nowait(index)
+            raise
+        finally:
+            finished.put_nowait(index)
+
+    worker.start()
+    try:
+        for index in range(12):
+            worker.enqueue(callback(index))
+        assert await asyncio.wait_for(started.get(), timeout=5) == 0
+        await asyncio.wait_for(worker.stop(), timeout=5)
+        await asyncio.wait_for(worker.flush(), timeout=5)
+        assert cancelled.get_nowait() == 0 and cancelled.empty()
+        assert tuple(sorted(finished.get_nowait() for _ in range(12))) == tuple(range(12))
+        assert worker.pending_count == 0
+    finally:
+        blocked.set()
+        await worker.stop()
+
+
+@pytest.mark.parametrize("drain", ("new_loop", "exit"))
+def test_overflow_survives_event_loop_close_with_original_context_and_one_execution(drain: str) -> None:
+    from queue import SimpleQueue
+
+    worker: Final = LoggingWorker(timeout=1, max_queue_size=1, concurrency=2)
+    identity: Final = contextvars.ContextVar("overflow_loop_identity", default="outside")
+    completed: Final[SimpleQueue[tuple[int, str]]] = SimpleQueue()
+
+    async def callback(index: int) -> None:
+        completed.put((index, identity.get()))
+
+    async def first_loop() -> None:
+        worker._ensure_queue()
+        for index in range(8):
+            token = identity.set(str(index))
+            worker.enqueue(callback(index))
+            identity.reset(token)
+
+    async def next_loop() -> None:
+        try:
+            await asyncio.wait_for(worker.flush(), timeout=5)
+        finally:
+            await worker.stop()
+
+    asyncio.run(first_loop())
+    assert worker.pending_count == 8
+    if drain == "new_loop":
+        asyncio.run(next_loop())
+    else:
+        worker._flush_on_exit()
+    assert tuple(sorted(completed.get_nowait() for _ in range(8))) == tuple((index, str(index)) for index in range(8))
+    assert completed.empty() and worker.pending_count == 0

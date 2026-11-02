@@ -131,7 +131,9 @@ async def test_disabled_retail_billing_preserves_native_requests(monkeypatch: py
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("call_type", ("afine_tuning", "unknown_endpoint", "_arealtime"))
+@pytest.mark.parametrize("call_type", (
+    "afine_tuning", "unknown_endpoint", "_arealtime", "agenerate_content", "agenerate_content_stream",
+))
 async def test_unpriced_endpoint_types_fail_before_wallet_or_provider_access(
     call_type: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:

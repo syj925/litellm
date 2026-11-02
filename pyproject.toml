@@ -109,6 +109,7 @@ extra_proxy = [
     # fighting its composite primary key.
     "psycopg>=3.2,<4.0",
     "psycopg-binary>=3.2,<4.0",
+    "psycopg-pool==3.3.3",
     "azure-identity>=1.25.2,<2.0",
     "azure-keyvault-secrets>=4.10.0,<5.0",
     # Not in PyPI proxy extra.
@@ -210,6 +211,7 @@ dev = [
     "pytest-asyncio==1.3.0",
     "psycopg==3.3.3",
     "psycopg-binary==3.3.3",
+    "psycopg-pool==3.3.3",
     "pytest-xdist==3.8.0",
     "requests-mock==1.12.1",
     "responses==0.26.0",

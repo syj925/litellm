@@ -20,7 +20,7 @@ import litellm
 from litellm import verbose_logger
 from litellm._uuid import uuid
 from litellm.litellm_core_utils.asyncify import asyncify
-from litellm.litellm_core_utils.hidden_params import HIDDEN_PARAMS_ATTR, get_hidden_params
+from litellm.litellm_core_utils.hidden_params import HIDDEN_PARAMS_ATTR, get_hidden_params, set_hidden_param
 from litellm.litellm_core_utils.model_response_utils import (
     is_model_response_stream_empty,
 )
@@ -234,6 +234,7 @@ class CustomStreamWrapper:
         self.completion_stream = completion_stream
         self.sent_first_chunk = False
         self.sent_last_chunk = False
+        self._retail_reported_usage: Mapping[str, object] = {}
         self._stream_created_time: float = time.time()
 
         litellm_params: Final[GenericLiteLLMParams] = GenericLiteLLMParams.model_validate(
@@ -1751,6 +1752,24 @@ class CustomStreamWrapper:
             return
         self.chunks.append(model_response.model_copy(update={"choices": []}))
 
+    def _capture_reported_usage(self, chunk: object) -> None:
+        hidden: Final = get_hidden_params(chunk)
+        original: Final = hidden.get("retail_provider_usage") if hidden is not None else None
+        usage: Final = chunk.get("usage") if isinstance(chunk, Mapping) else getattr(chunk, "usage", None)
+        reported: Final = (
+            original if isinstance(original, Mapping)
+            else usage.model_dump(exclude_unset=True, exclude_none=True) if isinstance(usage, BaseModel)
+            else usage if isinstance(usage, Mapping) else {}
+        )
+        if reported:
+            self._retail_reported_usage = {**self._retail_reported_usage, **reported}
+
+    def _stamp_reported_usage(self, response: "ModelResponseStream", *, final: bool = True) -> None:
+        set_hidden_param(response, "retail_reported_usage", dict(self._retail_reported_usage))
+        set_hidden_param(response, "retail_usage_final", final)
+        if final:
+            self.logging_obj.model_call_details["retail_reported_usage"] = dict(self._retail_reported_usage)
+
     @staticmethod
     def _resolve_provider_reported_cost(usage_cost: object) -> float | None:
         """
@@ -1798,10 +1817,13 @@ class CustomStreamWrapper:
                 else:
                     chunk = next(self.completion_stream)
                 if chunk is not None and chunk != b"":
+                    self._capture_reported_usage(chunk)
                     print_verbose(
                         f"PROCESSED CHUNK PRE CHUNK CREATOR: {chunk.decode('utf-8', errors='replace') if isinstance(chunk, bytes) else chunk}; custom_llm_provider: {self.custom_llm_provider}"
                     )
                     response: ModelResponseStream | None = self.chunk_creator(chunk=chunk)
+                    if response is not None and getattr(response, "usage", None) is not None:
+                        self._stamp_reported_usage(response, final=False)
                     print_verbose(f"PROCESSED CHUNK POST CHUNK CREATOR: {response}")
 
                     if response is None:
@@ -1948,6 +1970,7 @@ class CustomStreamWrapper:
                         self._last_returned_hidden_params["usage"] = final_usage
 
                 if self.sent_stream_usage is False and self.send_stream_usage is True:
+                    self._stamp_reported_usage(response)
                     self.sent_stream_usage = True
                     return response
                 self._restore_consumer_correlation_context()
@@ -2024,9 +2047,12 @@ class CustomStreamWrapper:
 
                     elif self.custom_llm_provider == "gemini" and hasattr(chunk, "parts") and len(chunk.parts) == 0:
                         continue
+                    self._capture_reported_usage(chunk)
                     processed_chunk: ModelResponseStream | None = self.chunk_creator(chunk=chunk)
                     if processed_chunk is None:
                         continue
+                    if getattr(processed_chunk, "usage", None) is not None:
+                        self._stamp_reported_usage(processed_chunk, final=False)
 
                     if self.logging_obj.completion_start_time is None:
                         self.logging_obj.update_completion_start_time(completion_start_time=datetime.datetime.now())
@@ -2100,9 +2126,12 @@ class CustomStreamWrapper:
                         if chunk is _SYNC_ITER_EXHAUSTED:
                             raise StopAsyncIteration
                     if chunk is not None and chunk != b"":
+                        self._capture_reported_usage(chunk)
                         processed_chunk = self.chunk_creator(chunk=chunk)
                         if processed_chunk is None:
                             continue
+                        if getattr(processed_chunk, "usage", None) is not None:
+                            self._stamp_reported_usage(processed_chunk, final=False)
 
                         choice = processed_chunk.choices[0]
                         if isinstance(choice, StreamingChoices):
@@ -2159,6 +2188,7 @@ class CustomStreamWrapper:
                     complete_streaming_response = None
 
             response: Final = self.model_response_creator()
+            self._stamp_reported_usage(response)
             if complete_streaming_response is not None:
                 self._propagate_usage_cost_to_hidden_params(complete_streaming_response, self.custom_llm_provider)
 

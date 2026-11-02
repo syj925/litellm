@@ -10,10 +10,10 @@ from typing import Final, TypeVar
 from uuid import uuid4
 
 import psycopg
-from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from .database import RetailDatabase, database_integer_setting, database_setting
 from .expression_pricing import ExpressionPricingError, validate_expression_policy
 from .models import (
     IdempotencyConflict,
@@ -144,11 +144,17 @@ class _UserIdRow(BaseModel):
     user_id: str
 
 
+class _BalanceRow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    balance_nanos: int
+
+
 _Record = TypeVar("_Record", bound=BaseModel)
 _WALLET_SELECT: Final = """
     SELECT w.*, p.name AS plan_name, p.multiplier,
            (SELECT count(*) FROM retail_reservations r
-            WHERE r.user_id=w.user_id AND r.status='reserved') AS pending_requests
+            WHERE r.user_id=w.user_id AND r.status='reserved' AND r.active_until>now()) AS pending_requests
     FROM retail_wallets w JOIN retail_pricing_plans p ON p.id=w.plan_id
 """
 _LEDGER_SELECT: Final = """
@@ -356,20 +362,74 @@ def _discount_models(models: Sequence[str]) -> tuple[str, ...]:
 
 
 class WalletStore:
-    def __init__(self, database_url: str, max_connections: int = 16) -> None:
+    def __init__(
+        self, database_url: str, max_connections: int = 16, *, diagnostic_connections: int = 3,
+        borrow_timeout: float = 5.0, max_waiting: int = 64, diagnostic_max_waiting: int = 12,
+        account_timeout: float = 5.0, account_max_waiting: int = 64, max_account_gates: int = 1024,
+        active_lease_seconds: int = 120,
+        critical_connections: int = 4, critical_max_waiting: int = 544, critical_borrow_timeout: float = 10,
+        statement_timeout_ms: int = 5000, lock_timeout_ms: int = 1000, idle_transaction_timeout_ms: int = 10000,
+    ) -> None:
+        if active_lease_seconds < 30:
+            raise ValueError("Active request leases must last at least 30 seconds")
         self.database_url = database_url
-        self._slots = asyncio.Semaphore(max_connections)
+        self._active_lease_seconds = active_lease_seconds
+        self._database = RetailDatabase(
+            database_url, finance_connections=max_connections, diagnostic_connections=diagnostic_connections,
+            borrow_timeout=borrow_timeout, max_waiting=max_waiting, diagnostic_max_waiting=diagnostic_max_waiting,
+            account_timeout=account_timeout, account_max_waiting=account_max_waiting, max_account_gates=max_account_gates,
+            statement_timeout_ms=statement_timeout_ms, lock_timeout_ms=lock_timeout_ms,
+            idle_transaction_timeout_ms=idle_transaction_timeout_ms,
+            critical_connections=critical_connections, critical_max_waiting=critical_max_waiting,
+            critical_borrow_timeout=critical_borrow_timeout,
+        )
         self._initialization = asyncio.Lock()
         self._initialized = False
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[psycopg.AsyncConnection]:
-        async with self._slots:
-            async with await psycopg.AsyncConnection.connect(self.database_url, row_factory=dict_row) as connection:
-                async with connection.transaction():
-                    yield connection
+        async with self._database.transaction() as connection:
+            yield connection
+
+    @asynccontextmanager
+    async def diagnostic_transaction(self) -> AsyncIterator[psycopg.AsyncConnection]:
+        async with self._database.transaction(diagnostic=True) as connection:
+            yield connection
+
+    @asynccontextmanager
+    async def critical_transaction(self) -> AsyncIterator[psycopg.AsyncConnection]:
+        async with self._database.transaction(critical=True) as connection:
+            yield connection
+
+    @asynccontextmanager
+    async def account_transaction(self, user_id: str) -> AsyncIterator[psycopg.AsyncConnection]:
+        async with self._database.account(user_id):
+            async with self.transaction() as connection:
+                yield connection
+
+    @asynccontextmanager
+    async def _reservation_transaction(self, request_id: str) -> AsyncIterator[psycopg.AsyncConnection]:
+        async with self.transaction() as lookup:
+            owner: Final = await _one(
+                lookup, "SELECT user_id FROM retail_reservations WHERE request_id=%s", (request_id,), _UserIdRow
+            )
+        if owner is None:
+            raise ReservationNotFound("Request reservation does not exist")
+        async with self.account_transaction(owner.user_id) as connection:
+            yield connection
+
+    async def aclose(self) -> None:
+        await self._database.aclose()
+
+    @property
+    def account_gate_count(self) -> int:
+        return self._database.account_gate_count
+
+    def pool_stats(self) -> Mapping[str, Mapping[str, int]]:
+        return self._database.pool_stats()
 
     async def initialize(self) -> None:
+        await self._database.open()
         if self._initialized:
             return
         async with self._initialization:
@@ -460,7 +520,7 @@ class WalletStore:
             "description": description,
             "actor_id": actor_id,
         }
-        async with self.transaction() as connection:
+        async with self.account_transaction(user_id) as connection:
             await connection.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", ("credit:reference:" + payment_reference,)
             )
@@ -543,7 +603,7 @@ class WalletStore:
         if not request_id or max_parallel < 1:
             raise ValueError("A request ID and a positive parallel request limit are required")
         snapshot: Final = dict(price_snapshot)
-        async with self.transaction() as connection:
+        async with self.account_transaction(user_id) as connection:
             await connection.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", ("reserve:" + request_id,)
             )
@@ -570,9 +630,9 @@ class WalletStore:
             )
             reservation: Final = await _one(
                 connection,
-                """INSERT INTO retail_reservations(request_id,user_id,model,reserved_nanos,price_snapshot)
-                   VALUES (%s,%s,%s,%s,%s) RETURNING *""",
-                (request_id, user_id, model, nanos, Jsonb(snapshot)),
+                """INSERT INTO retail_reservations(request_id,user_id,model,reserved_nanos,price_snapshot,active_until)
+                   VALUES (%s,%s,%s,%s,%s,now()+(%s * interval '1 second')) RETURNING *""",
+                (request_id, user_id, model, nanos, Jsonb(snapshot), self._active_lease_seconds),
                 _ReservationRow,
             )
             if reservation is None:
@@ -580,7 +640,7 @@ class WalletStore:
             return _reservation_view(reservation)
 
     async def record_pending_usage(self, request_id: str, details: Mapping[str, JsonValue]) -> None:
-        async with self.transaction() as connection:
+        async with self._reservation_transaction(request_id) as connection:
             reservation: Final = await self._lock_reservation(connection, request_id)
             if reservation.status != "reserved":
                 return
@@ -592,7 +652,7 @@ class WalletStore:
 
     async def settle(self, request_id: str, cost: str, details: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
         nanos: Final = cost_to_nanos(cost)
-        async with self.transaction() as connection:
+        async with self._reservation_transaction(request_id) as connection:
             reservation: Final = await self._lock_reservation(connection, request_id)
             if reservation.status == "settled":
                 if reservation.settled_nanos != nanos or _manual_resolution(details) != _manual_resolution(
@@ -603,12 +663,16 @@ class WalletStore:
             if reservation.status == "released" and _manual_resolution(reservation.details) is not None:
                 raise IdempotencyConflict("An administrator has already released this request")
             released: Final = reservation.reserved_nanos if reservation.status == "reserved" else 0
-            wallet: Final = await self._read_wallet(connection, reservation.user_id)
-            await connection.execute(
+            balance: Final = await _one(
+                connection,
                 """UPDATE retail_wallets SET balance_nanos=balance_nanos-%s,reserved_nanos=reserved_nanos-%s,
-                       total_spent_nanos=total_spent_nanos+%s,updated_at=now() WHERE user_id=%s""",
+                       total_spent_nanos=total_spent_nanos+%s,updated_at=now() WHERE user_id=%s
+                       RETURNING balance_nanos""",
                 (nanos, released, nanos, reservation.user_id),
+                _BalanceRow,
             )
+            if balance is None:
+                raise WalletNotFound("Wallet is not enabled for this user")
             saved_details: Final = {**dict(details), "price_snapshot": reservation.price_snapshot}
             await connection.execute(
                 """INSERT INTO retail_ledger(id,user_id,kind,amount_nanos,balance_after_nanos,operation_key,
@@ -618,7 +682,7 @@ class WalletStore:
                     uuid4(),
                     reservation.user_id,
                     -nanos,
-                    wallet.balance_nanos - nanos,
+                    balance.balance_nanos,
                     "charge:" + request_id,
                     request_id,
                     reservation.model,
@@ -627,7 +691,7 @@ class WalletStore:
             )
             settled: Final = await _one(
                 connection,
-                """UPDATE retail_reservations SET status='settled',settled_nanos=%s,details=%s,updated_at=now()
+                """UPDATE retail_reservations SET status='settled',settled_nanos=%s,details=%s,active_until=NULL,updated_at=now()
                    WHERE request_id=%s RETURNING *""",
                 (nanos, Jsonb(saved_details), request_id),
                 _ReservationRow,
@@ -639,7 +703,7 @@ class WalletStore:
     async def release(
         self, request_id: str, reason: str, details: Mapping[str, JsonValue] | None = None
     ) -> dict[str, JsonValue]:
-        async with self.transaction() as connection:
+        async with self._reservation_transaction(request_id) as connection:
             reservation: Final = await self._lock_reservation(connection, request_id)
             if reservation.status != "reserved":
                 if _manual_resolution(details or {}) is not None and (
@@ -648,11 +712,15 @@ class WalletStore:
                 ):
                     raise IdempotencyConflict("This request already has a different final resolution")
                 return _reservation_view(reservation)
-            wallet: Final = await self._read_wallet(connection, reservation.user_id)
-            await connection.execute(
-                "UPDATE retail_wallets SET reserved_nanos=reserved_nanos-%s,updated_at=now() WHERE user_id=%s",
+            balance: Final = await _one(
+                connection,
+                """UPDATE retail_wallets SET reserved_nanos=reserved_nanos-%s,updated_at=now() WHERE user_id=%s
+                   RETURNING balance_nanos""",
                 (reservation.reserved_nanos, reservation.user_id),
+                _BalanceRow,
             )
+            if balance is None:
+                raise WalletNotFound("Wallet is not enabled for this user")
             saved_details: Final = {**dict(details or {}), "reason": reason}
             await connection.execute(
                 """INSERT INTO retail_ledger(id,user_id,kind,amount_nanos,balance_after_nanos,operation_key,
@@ -661,7 +729,7 @@ class WalletStore:
                 (
                     uuid4(),
                     reservation.user_id,
-                    wallet.balance_nanos,
+                    balance.balance_nanos,
                     "release:" + request_id,
                     request_id,
                     reservation.model,
@@ -671,7 +739,7 @@ class WalletStore:
             )
             released: Final = await _one(
                 connection,
-                """UPDATE retail_reservations SET status='released',reason=%s,details=%s,updated_at=now()
+                """UPDATE retail_reservations SET status='released',reason=%s,details=%s,active_until=NULL,updated_at=now()
                    WHERE request_id=%s RETURNING *""",
                 (reason, Jsonb(saved_details), request_id),
                 _ReservationRow,
@@ -878,36 +946,61 @@ class WalletStore:
             )
             return _wallet_view(await self._read_wallet(connection, user_id))
 
-    async def get_model_discount(self, user_id: str, model: str, pool_id: str | None = None) -> dict[str, JsonValue]:
-        if pool_id is not None:
-            from .pool_pricing import get_pool_model_discount
-
-            return await get_pool_model_discount(self, user_id, model, pool_id)
+    async def get_billing_context(
+        self, user_id: str, model: str, pool_id: str | None = None,
+    ) -> Mapping[str, JsonValue]:
         async with self.transaction() as connection:
-            row: Final = await _one(
-                connection,
-                """SELECT w.user_id,w.plan_id,w.discount_override AS legacy_customer,p.multiplier AS legacy_plan,
-                    c.discount AS customer_discount,d.discount AS plan_discount
-                    FROM retail_wallets w JOIN retail_pricing_plans p ON p.id=w.plan_id
-                    LEFT JOIN retail_customer_model_discounts c ON c.user_id=w.user_id AND c.model=%s
-                    LEFT JOIN retail_plan_model_discounts d ON d.plan_id=w.plan_id AND d.model=%s
-                    WHERE w.user_id=%s""",
-                (model, model, user_id),
-                _ModelDiscountFactors,
+            existing: Final = await _one(
+                connection, "SELECT user_id FROM retail_wallets WHERE user_id=%s", (user_id,), _UserIdRow
             )
-            if row is None:
-                raise WalletNotFound("Wallet is not enabled for this user")
+            if existing is None:
+                await connection.execute(
+                    "INSERT INTO retail_wallets(user_id) VALUES (%s) ON CONFLICT (user_id) DO NOTHING", (user_id,)
+                )
+            price: Final = await _one(
+                connection, "SELECT * FROM retail_model_prices WHERE model=%s", (model,), _ModelPriceRow
+            )
+            discount: Final = await self._read_model_discount(connection, user_id, model, pool_id)
             return {
-                "user_id": row.user_id,
-                "plan_id": row.plan_id,
-                **model_discount_view(
-                    model,
-                    customer_discount=row.customer_discount,
-                    plan_discount=row.plan_discount,
-                    legacy_customer=row.legacy_customer,
-                    legacy_plan=row.legacy_plan,
-                ),
+                "price": _model_price_view(price) if price is not None else None,
+                "discount": dict(discount),
             }
+
+    async def get_model_discount(self, user_id: str, model: str, pool_id: str | None = None) -> Mapping[str, JsonValue]:
+        async with self.transaction() as connection:
+            return await self._read_model_discount(connection, user_id, model, pool_id)
+
+    async def _read_model_discount(
+        self, connection: psycopg.AsyncConnection, user_id: str, model: str, pool_id: str | None,
+    ) -> Mapping[str, JsonValue]:
+        if pool_id is not None:
+            from .pool_pricing import _factors, pool_discount_view
+
+            return pool_discount_view(model, await _factors(connection, pool_id, user_id=user_id, model=model))
+        row: Final = await _one(
+            connection,
+            """SELECT w.user_id,w.plan_id,w.discount_override AS legacy_customer,p.multiplier AS legacy_plan,
+                c.discount AS customer_discount,d.discount AS plan_discount
+                FROM retail_wallets w JOIN retail_pricing_plans p ON p.id=w.plan_id
+                LEFT JOIN retail_customer_model_discounts c ON c.user_id=w.user_id AND c.model=%s
+                LEFT JOIN retail_plan_model_discounts d ON d.plan_id=w.plan_id AND d.model=%s
+                WHERE w.user_id=%s""",
+            (model, model, user_id),
+            _ModelDiscountFactors,
+        )
+        if row is None:
+            raise WalletNotFound("Wallet is not enabled for this user")
+        return {
+            "user_id": row.user_id,
+            "plan_id": row.plan_id,
+            **model_discount_view(
+                model,
+                customer_discount=row.customer_discount,
+                plan_discount=row.plan_discount,
+                legacy_customer=row.legacy_customer,
+                legacy_plan=row.legacy_plan,
+            ),
+        }
 
     async def list_model_discounts(
         self,
@@ -1070,12 +1163,15 @@ class WalletStore:
             raise WalletNotFound("Wallet is not enabled for this user")
         return row
 
-    async def _lock_wallet(self, connection: psycopg.AsyncConnection, user_id: str) -> _WalletRow:
+    async def _lock_wallet_identity(self, connection: psycopg.AsyncConnection, user_id: str) -> None:
         row: Final = await _one(
             connection, "SELECT user_id FROM retail_wallets WHERE user_id=%s FOR UPDATE", (user_id,), _UserIdRow
         )
         if row is None:
             raise WalletNotFound("Wallet is not enabled for this user")
+
+    async def _lock_wallet(self, connection: psycopg.AsyncConnection, user_id: str) -> _WalletRow:
+        await self._lock_wallet_identity(connection, user_id)
         return await self._read_wallet(connection, user_id)
 
     async def _lock_reservation(self, connection: psycopg.AsyncConnection, request_id: str) -> _ReservationRow:
@@ -1084,7 +1180,7 @@ class WalletStore:
         )
         if owner is None:
             raise ReservationNotFound("Request reservation does not exist")
-        await self._lock_wallet(connection, owner.user_id)
+        await self._lock_wallet_identity(connection, owner.user_id)
         row: Final = await _one(
             connection,
             "SELECT * FROM retail_reservations WHERE request_id=%s FOR UPDATE",
@@ -1098,4 +1194,22 @@ class WalletStore:
 
 @lru_cache(maxsize=1)
 def get_store() -> WalletStore:
-    return WalletStore(os.environ.get("RETAIL_DATABASE_URL") or os.environ["DATABASE_URL"])
+    inflight: Final = database_integer_setting("RETAIL_MAX_INFLIGHT", 512, 1, 100000)
+    return WalletStore(
+        os.environ.get("RETAIL_DATABASE_URL") or os.environ["DATABASE_URL"],
+        max_connections=database_integer_setting("RETAIL_DB_MAX_CONNECTIONS", 16, 1, 128),
+        diagnostic_connections=database_integer_setting("RETAIL_DB_DIAGNOSTIC_CONNECTIONS", 3, 1, 8),
+        critical_connections=database_integer_setting("RETAIL_DB_CRITICAL_CONNECTIONS", 4, 1, 16),
+        critical_max_waiting=database_integer_setting("RETAIL_DB_CRITICAL_MAX_WAITING", inflight + 32, inflight, 131072),
+        critical_borrow_timeout=database_setting("RETAIL_DB_CRITICAL_BORROW_TIMEOUT_SECONDS", 10, 0.1, 60),
+        borrow_timeout=database_setting("RETAIL_DB_BORROW_TIMEOUT_SECONDS", 5, 0.05, 60),
+        max_waiting=database_integer_setting("RETAIL_DB_MAX_WAITING", 64, 1, 4096),
+        diagnostic_max_waiting=database_integer_setting("RETAIL_DB_DIAGNOSTIC_MAX_WAITING", 12, 1, 128),
+        account_timeout=database_setting("RETAIL_DB_ACCOUNT_TIMEOUT_SECONDS", 5, 0.05, 60),
+        account_max_waiting=database_integer_setting("RETAIL_DB_ACCOUNT_MAX_WAITING", 64, 1, 1024),
+        max_account_gates=database_integer_setting("RETAIL_DB_ACCOUNT_GATES", 1024, 1, 16384),
+        active_lease_seconds=database_integer_setting("RETAIL_ACTIVE_LEASE_SECONDS", 120, 30, 3600),
+        statement_timeout_ms=database_integer_setting("RETAIL_DB_STATEMENT_TIMEOUT_MS", 5000, 100, 600000),
+        lock_timeout_ms=database_integer_setting("RETAIL_DB_LOCK_TIMEOUT_MS", 1000, 50, 60000),
+        idle_transaction_timeout_ms=database_integer_setting("RETAIL_DB_IDLE_TRANSACTION_TIMEOUT_MS", 10000, 100, 600000),
+    )

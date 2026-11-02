@@ -1,5 +1,6 @@
 import asyncio
-from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Mapping, Sequence
+import re
+from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Final, Literal
@@ -22,6 +23,70 @@ OutputKind = Literal["text", "reasoning", "tool_arguments"]
 _MAX_PENDING_BYTES: Final = 262_144
 _MAX_PENDING_WRITES: Final = 64
 _PAYLOAD: Final = TypeAdapter(dict[str, JsonValue])
+_JSON_MARKERS: Final = re.compile(rb'["\\{}\[\]]')
+
+
+def _json_markers(data: bytes) -> Iterator[re.Match[bytes]]:
+    return _JSON_MARKERS.finditer(data)
+
+
+def _sse_boundary(data: bytes) -> int:
+    complete, _ = split_complete_sse_frames(data)
+    return len(complete)
+
+
+def _parse_payload(data: str | bytes) -> Mapping[str, JsonValue]:
+    return _PAYLOAD.validate_json(data)
+
+
+class _JSONStructure:
+    def __init__(self, markers: Callable[[bytes], Iterable[re.Match[bytes]]]) -> None:
+        self._markers = markers
+        self._closers = bytearray()
+        self._string = False
+        self._escaped = False
+        self._complete = False
+        self._invalid = False
+
+    @property
+    def ready(self) -> bool:
+        return self._complete and not self._invalid
+
+    def reject(self) -> None:
+        self._invalid = True
+
+    def feed(self, data: bytes) -> None:
+        if self._invalid:
+            return
+        if self._complete:
+            self._invalid = bool(data.strip())
+            return
+        escaped_at = -1 if self._escaped else None  # rebind-ok: track a backslash across consecutive marker positions
+        for marker in self._markers(data):
+            position: Final = marker.start()
+            if escaped_at is not None:
+                escaped: Final = position == escaped_at + 1
+                escaped_at = None
+                if escaped:
+                    continue
+            value: Final = marker[0]
+            if value == b'"':
+                self._string = not self._string
+            elif self._string:
+                if value == b"\\":
+                    escaped_at = position
+            elif value in {b"{", b"["}:
+                self._closers.append(125 if value == b"{" else 93)
+            elif not self._closers or value[0] != self._closers[-1]:
+                self._invalid = True
+                return
+            else:
+                self._closers.pop()
+                if not self._closers:
+                    self._complete = True
+                    self._invalid = bool(data[marker.end():].strip())
+                    break
+        self._escaped = escaped_at == len(data) - 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,8 +252,18 @@ def output_signals(payload: Mapping[str, object]) -> tuple[OutputSignal, ...]:
 
 
 class OutputDetector:
-    def __init__(self) -> None:
-        self._pending = b""
+    def __init__(
+        self, *, _scan_sse: Callable[[bytes], int] = _sse_boundary,
+        _scan_json: Callable[[bytes], Iterable[re.Match[bytes]]] = _json_markers,
+        _parse: Callable[[str | bytes], Mapping[str, JsonValue]] = _parse_payload,
+    ) -> None:
+        self._pending = bytearray()
+        self._tail = b""
+        self._mode: Literal["json", "sse"] | None = None
+        self._json: _JSONStructure | None = None
+        self._scan_sse = _scan_sse
+        self._scan_json = _scan_json
+        self._parse = _parse
         self._decoder = SSEDecoder()
         self._disabled = False
         self.has_event = False
@@ -214,27 +289,78 @@ class OutputDetector:
             return ()
         raw: Final = chunk.encode("utf-8") if isinstance(chunk, str) else chunk
         if len(self._pending) + len(raw) > _MAX_PENDING_BYTES:
-            self._disabled = True
-            self._pending = b""
+            self._disable()
             return ()
-        combined: Final = self._pending + raw
-        if combined.lstrip().startswith(b"{"):
+        if self._mode is None:
+            self._select_mode(raw)
+        if self._mode == "json":
+            return self._json_chunk(raw)
+        return self._sse_chunk(raw)
+
+    def _disable(self) -> None:
+        self._disabled = True
+        self._pending.clear()
+        self._tail = b""
+        self._json = None
+
+    def _select_mode(self, raw: bytes) -> None:
+        prefix: Final = raw.lstrip()
+        self._mode = "json" if prefix.startswith(b"{") else "sse" if prefix else None
+
+    def _json_chunk(self, raw: bytes) -> tuple[OutputSignal, ...]:
+        payload: Final[Mapping[str, JsonValue]]
+        if self._json is None:
+            combined: Final = bytes(self._pending) + raw if self._pending else raw
             try:
-                payload: Final = _PAYLOAD.validate_json(combined)
+                payload = self._parse(combined)
             except ValidationError:
-                self._pending = combined
+                self._json = _JSONStructure(self._scan_json)
+                self._json.feed(combined)
+                if self._json.ready:
+                    self._json.reject()
+                self._pending.extend(raw)
                 return ()
-            self._pending = b""
-            self.has_event = True
-            self._observe_terminal(payload)
-            return output_signals(payload)
-        complete, pending = split_complete_sse_frames(combined)
-        self._pending = pending
+        else:
+            self._pending.extend(raw)
+            self._json.feed(raw)
+            if not self._json.ready:
+                return ()
+            try:
+                payload = self._parse(bytes(self._pending))
+            except ValidationError:
+                self._json.reject()
+                return ()
+        self._pending.clear()
+        self._mode = None
+        self._json = None
+        self._tail = b""
+        self.has_event = True
+        self._observe_terminal(payload)
+        return output_signals(payload)
+
+    def _sse_chunk(self, raw: bytes) -> tuple[OutputSignal, ...]:
+        window: Final = self._tail + raw
+        boundary: Final = self._scan_sse(window)
+        if boundary == 0:
+            self._pending.extend(raw)
+            self._tail = window[-3:]
+            return ()
+        end: Final = boundary - len(self._tail)
+        complete: Final[bytes]
+        if self._pending:
+            self._pending.extend(raw[:end])
+            complete = bytes(self._pending)
+            self._pending.clear()
+        else:
+            complete = raw[:end]
+        self._pending.extend(raw[end:])
+        self._tail = bytes(self._pending[-3:])
+        self._mode = None
+        self._select_mode(bytes(self._pending))
         try:
             return self._frames(complete.decode("utf-8"))
         except (UnicodeError, ValueError, TypeError):
-            self._disabled = True
-            self._pending = b""
+            self._disable()
             return ()
 
     def _frames(self, content: str) -> tuple[OutputSignal, ...]:
@@ -249,7 +375,7 @@ class OutputDetector:
             self.terminal_event = "[DONE]"
             return ()
         try:
-            payload: Final = _PAYLOAD.validate_json(event.data)
+            payload: Final = self._parse(event.data)
         except ValidationError:
             return ()
         self._observe_terminal(payload)
@@ -305,7 +431,7 @@ class _ObservedStream:
 async def persist_observation(observation: ModelObservation) -> None:
     store: Final = get_store()
     await store.initialize()
-    async with store.transaction() as connection:
+    async with store.diagnostic_transaction() as connection:
         await connection.execute(
             """INSERT INTO retail_model_observations
             (litellm_call_id,user_id,started_at,first_output_at,ended_at,protocol,output_kind)

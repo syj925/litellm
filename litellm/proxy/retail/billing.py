@@ -1,14 +1,18 @@
 import asyncio
 import json
 import os
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextvars import ContextVar
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Final
 from uuid import uuid4
 
+from anyio import fail_after
 from fastapi import HTTPException
+from psycopg import OperationalError
+from psycopg.errors import LockNotAvailable, QueryCanceled
+from psycopg_pool import PoolTimeout, TooManyRequests
 from pydantic import JsonValue
 
 from litellm._logging import verbose_proxy_logger
@@ -16,6 +20,7 @@ from litellm.integrations.custom_logger import CustomLogger
 from litellm.proxy._types import UserAPIKeyAuth
 
 from .customer_access import customer_resource_policy
+from .database import database_setting
 from .expression_billing import catalog_routing_attributes, expression_settlement, expression_token_limits
 from .expression_pricing import (
     expression_attribute_keys,
@@ -48,6 +53,13 @@ from .pricing import (
     validate_requested_cache_ttls,
 )
 from .request_tracing import bind_call_id, bind_retail_request_id, current_trace, record_event, trace_phase
+from .settlement_store import frozen_pricing, record_facts
+from .settlement_stream import SettlementStreamFacts
+from .settlement_worker import (
+    notify_settlement,
+    register_request_activity,
+    unregister_request_activity,
+)
 from .store import WalletStore, get_store
 from .trace_store import persist_trace
 
@@ -66,6 +78,7 @@ _SUPPORTED: Final = frozenset(
     }
 )
 _active_reservation: Final[ContextVar[str | None]] = ContextVar("retail_active_reservation", default=None)
+_active_pricing: Final[ContextVar[tuple[str, Mapping[str, object]] | None]] = ContextVar("retail_active_pricing", default=None)
 _EXPRESSION_MEDIA: Final = frozenset({
     "image_generation", "aimage_generation", "image_edit", "aimage_edit", "transcription", "atranscription",
     "speech", "aspeech",
@@ -82,9 +95,24 @@ def reservation_id(data: Mapping[str, object]) -> str | None:
     return None
 
 
+def _known_provider_cost(value: object) -> str | None:
+    if value is None:
+        return None
+    try:
+        number: Final = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    return str(number) if number.is_finite() and number >= 0 else None
+
+
 async def _persist_billing_trace(store: WalletStore | None) -> None:
     trace: Final = current_trace()
     if trace is None:
+        return
+    if store is None:
+        from .trace_writer import queue_trace
+
+        queue_trace(trace.snapshot(), retail_request_id=trace.retail_request_id)
         return
     try:
         await asyncio.wait_for(
@@ -264,7 +292,11 @@ class RetailBilling(CustomLogger):
         if isinstance(call_id, str):
             bind_call_id(call_id)
         with trace_phase("billing.prepare"):
-            prepared: Final = await self._prepare_request(user_api_key_dict, data, call_type)
+            try:
+                with fail_after(database_setting("RETAIL_PREFLIGHT_TIMEOUT_SECONDS", 10, 0.1, 300)):
+                    prepared: Final = await self._prepare_request(user_api_key_dict, data, call_type)
+            except (PoolTimeout, TooManyRequests, OperationalError, QueryCanceled, LockNotAvailable, TimeoutError) as exc:
+                raise HTTPException(503, "Wallet service is busy. Retry this request shortly") from exc
             return data if prepared is data else dict(prepared)
 
     async def _prepare_request(
@@ -332,7 +364,8 @@ class RetailBilling(CustomLogger):
             if pool is not None
             else deployments
         )
-        price: Final = await store.get_model_price(model)
+        context: Final = await store.get_billing_context(user_id, model, pool.pool_id if pool is not None else None)
+        price: Final = as_mapping(context.get("price"))
         try:
             initial: Final = None if price else catalog_snapshot(model, priced_deployments, "1")
             card: Final = price or await store.get_model_price(model, initial)
@@ -348,12 +381,7 @@ class RetailBilling(CustomLogger):
             raise HTTPException(400, "Server-priced search requires an expression with reported web_search_requests")
         if call_type in _EXPRESSION_MEDIA and not card.get("expression_policy"):
             raise HTTPException(422, "This media endpoint requires an explicit expression price with reported billing quantities")
-        await store.get_wallet(user_id, create=True)
-        discount: Final = (
-            await store.get_model_discount(user_id, model, pool_id=pool.pool_id)
-            if pool is not None
-            else await store.get_model_discount(user_id, model)
-        )
+        discount: Final = as_mapping(context["discount"])
         try:
             routing_keys: Final = (
                 expression_attribute_keys(validate_expression_policy(card["expression_policy"]))
@@ -383,10 +411,11 @@ class RetailBilling(CustomLogger):
         limit_key: Final = "max_output_tokens" if call_type in {"responses", "aresponses"} else "max_tokens"
         output_limit: Final = _request_output_limit(snapshot, data, call_type)
         request_id: Final = str(uuid4())
+        opaque_payload: Final = json.dumps({key: data.get(key) for key in ("messages", "input", "tools")}, default=str)
         opaque_input: Final = bool(priced_tools) or any(
             data.get(key) for key in ("previous_response_id", "conversation", "file", "attachments")
         ) or any(
-            marker in json.dumps({key: data.get(key) for key in ("messages", "input", "tools")}, default=str)
+            marker in opaque_payload
             for marker in (
                 "image_url",
                 "input_image",
@@ -416,6 +445,8 @@ class RetailBilling(CustomLogger):
         except ParallelLimitExceeded as exc:
             raise HTTPException(429, "Your wallet has reached its concurrent request limit") from exc
         _active_reservation.set(request_id)
+        _active_pricing.set((request_id, snapshot))
+        register_request_activity(request_id, self.store)
         bind_retail_request_id(request_id)
         record_event("billing.reserved", {
             "retail_request_id": request_id, "amount": quote,
@@ -453,7 +484,7 @@ class RetailBilling(CustomLogger):
             return
         bind_retail_request_id(request_id)
         try:
-            with trace_phase("billing.settle"):
+            with trace_phase("billing.persist_facts"):
                 await self._settle_reservation(data, response, provider_cost, request_id)
         finally:
             await _persist_billing_trace(self.store)
@@ -462,47 +493,76 @@ class RetailBilling(CustomLogger):
         self, data: Mapping[str, object], response: object, provider_cost: object, request_id: str,
     ) -> None:
         store: Final = self._store()
-        reservation: Final = await store.get_reservation(request_id)
-        if reservation is None:
+        active: Final = _active_pricing.get()
+        cached: Final = active is not None and active[0] == request_id
+        saved: Final = None if cached else await frozen_pricing(store, request_id)
+        if not cached and saved is None:
             return
-        snapshot: Final = as_mapping(reservation["price_snapshot"])
+        snapshot: Final = active[1] if cached and active is not None else as_mapping(saved)
+        cost_value: Final = _known_provider_cost(provider_cost)
         if snapshot.get("version") == "expression-v1":
             try:
                 expression_amount, expression_details = expression_settlement(snapshot, response)
             except ValueError as exc:
-                await store.record_pending_usage(request_id, {"billing_error": str(exc)})
+                await record_facts(store, request_id, None, {"billing_error": type(exc).__name__})
+                unregister_request_activity(request_id)
                 record_event("billing.pending", {"reason": "expression_usage_incomplete"})
                 return
-            await store.settle(request_id, expression_amount, {
+            await record_facts(store, request_id, expression_amount, {
                 **expression_details,
-                "provider_cost": str(provider_cost) if provider_cost is not None else None,
+                "provider_cost": cost_value,
                 "gateway_call_id": str(data.get("litellm_call_id", "")),
             })
-            record_event("billing.settled", {"retail_request_id": request_id, "amount": expression_amount})
+            unregister_request_activity(request_id)
+            notify_settlement()
+            record_event("billing.facts_committed", {"retail_request_id": request_id, "amount": expression_amount})
             return
         facts: Final = usage_facts(response, allow_input_only=snapshot.get("billing_mode") == "embedding")
         if facts is None:
-            await store.record_pending_usage(
-                request_id, {"billing_error": "Reported token usage is missing, incomplete or inconsistent"}
+            await record_facts(store,
+                request_id, None, {"billing_error": "Reported token usage is missing, incomplete or inconsistent"}
             )
+            unregister_request_activity(request_id)
             record_event("billing.pending", {"reason": "reported_usage_incomplete"})
             return
         try:
             amount: Final = charge_for_usage(snapshot, facts)
             breakdown: Final = cost_breakdown(snapshot, facts)
         except ValueError as exc:
-            await store.record_pending_usage(request_id, {"usage": facts.model_dump(), "billing_error": str(exc)})
+            await record_facts(store, request_id, None, {"usage": facts.model_dump(), "billing_error": type(exc).__name__})
+            unregister_request_activity(request_id)
             record_event("billing.pending", {"reason": "reported_usage_inconsistent"})
             return
         details: Final[dict[str, JsonValue]] = {
             "usage": facts.model_dump(),
             "cost_breakdown": breakdown,
-            "provider_cost": str(provider_cost) if provider_cost is not None else None,
+            "provider_cost": cost_value,
             "gateway_call_id": str(data.get("litellm_call_id", "")),
             "billing_basis": "reported_usage",
         }
-        await store.settle(request_id, amount, details)
-        record_event("billing.settled", {"retail_request_id": request_id, "amount": amount})
+        await record_facts(store, request_id, amount, details)
+        unregister_request_activity(request_id)
+        notify_settlement()
+        record_event("billing.facts_committed", {"retail_request_id": request_id, "amount": amount})
+
+    async def async_post_call_streaming_iterator_hook(
+        self, user_api_key_dict: UserAPIKeyAuth, response: AsyncIterator[object], request_data: Mapping[str, object],
+    ) -> AsyncIterator[object]:
+        if reservation_id(request_data) is None:
+            async for chunk in response:
+                yield chunk
+            return
+        observed: Final = SettlementStreamFacts()
+        async for chunk in response:
+            terminal: Final = observed.feed(chunk)
+            if terminal is not None:
+                await self._settle(request_data, terminal)
+            yield chunk
+        if not observed.emitted:
+            logging: Final = request_data.get("litellm_logging_obj")
+            reported: Final = as_mapping(getattr(logging, "model_call_details", {})).get("retail_reported_usage")
+            final: Final = observed.finish()
+            await self._settle(request_data, {**final, "usage": reported} if isinstance(reported, Mapping) else final)
 
     async def async_post_call_success_hook(
         self,
@@ -519,6 +579,8 @@ class RetailBilling(CustomLogger):
         start_time: datetime,
         end_time: datetime,
     ) -> None:
+        if kwargs.get("stream") or kwargs.get("complete_streaming_response") is not None:
+            return
         response: Final = kwargs.get("complete_streaming_response") or response_obj
         try:
             await self._settle(kwargs, response, kwargs.get("response_cost"))

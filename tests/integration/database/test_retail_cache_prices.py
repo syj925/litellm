@@ -48,6 +48,13 @@ async def _assert_frozen_cache_prices(database_url: str) -> None:
         )
         await connection.execute("INSERT INTO retail_model_prices VALUES ('example',0.000002,0.000010,0.0000002,0.0000025,7,now())")
     store: Final = WalletStore(database_url)
+    try:
+        await _assert_open_cache_prices(store)
+    finally:
+        await store.aclose()
+
+
+async def _assert_open_cache_prices(store: WalletStore) -> None:
     await store.initialize()
     legacy: Final = await store.get_model_price("example")
     assert legacy is not None
@@ -55,9 +62,12 @@ async def _assert_frozen_cache_prices(database_url: str) -> None:
     assert legacy["cache_write_tiers"] == {}
     assert legacy["cache_write_price_published"] is None
     assert legacy["expression_policy"] is None
-    repeated: Final = WalletStore(database_url)
-    await repeated.initialize()
-    assert await repeated.get_model_price("example") == legacy
+    repeated: Final = WalletStore(store.database_url)
+    try:
+        await repeated.initialize()
+        assert await repeated.get_model_price("example") == legacy
+    finally:
+        await repeated.aclose()
     rates: Final = {
         "input_cost_per_token": "0.000002", "output_cost_per_token": "0.000010",
         "cache_read_input_token_cost": "0.0000002", "cache_creation_input_token_cost": "0.0000025",

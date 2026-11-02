@@ -109,6 +109,7 @@ def _get_additional_usage_values_for_usage(usage: litellm.Usage) -> dict:
 def test_resource_pool_audit_survives_spend_log_payload_serialization(bucket: str, status: str) -> None:
     audit: Final = {
         "retail_resource_pool_id": "aws-resource",
+        "retail_request_id": "server-reservation",
         "retail_resource_pool_name": "AWS resource",
         "retail_resource_source_kind": "bedrock",
     }
@@ -138,6 +139,10 @@ def test_spend_log_stream_observation_cannot_be_supplied_by_request_metadata(
     assert stored["observed_stream"] is observed
     if metadata is not None:
         assert metadata == {"observed_stream": True}
+
+
+def test_optional_server_reservation_link_is_not_added_to_unrelated_native_metadata() -> None:
+    assert "retail_request_id" not in _get_spend_logs_metadata({"user_api_key_alias": "fixture"})
 
 
 @pytest.mark.parametrize(

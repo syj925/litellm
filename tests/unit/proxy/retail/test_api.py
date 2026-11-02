@@ -28,9 +28,11 @@ from litellm.proxy.retail.api import (
     _StoredModelPrice,
     _validate_discount_selection,
     retail_admin,
+    retail_store,
     retail_user,
     router,
 )
+from litellm.proxy.retail.store import WalletStore
 
 
 def test_custom_cache_duration_prices_keep_per_million_units_and_zero_rates() -> None:
@@ -42,6 +44,41 @@ def test_custom_cache_duration_prices_keep_per_million_units_and_zero_rates() ->
     assert request.cache_write_tiers == {"300": "2.5", "3600": "4", "750": "0"}
     assert _per_token_price(request.cache_write_tiers["750"]) == "0"
     assert _per_token_price(request.cache_write_tiers["3600"]) == "0.000004"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", (
+    LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY, LitellmUserRoles.INTERNAL_USER, None,
+))
+async def test_runtime_pressure_and_database_counters_are_only_visible_to_full_administrators(
+    role: LitellmUserRoles | None,
+) -> None:
+    store: Final = WalletStore("postgresql://unused/unused")
+
+    async def auth() -> UserAPIKeyAuth:
+        return UserAPIKeyAuth(user_id="fixture", user_role=role)
+
+    async def storage() -> WalletStore:
+        return store
+
+    app: Final = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[user_api_key_auth] = auth
+    app.dependency_overrides[retail_store] = storage
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            response: Final = await client.get("/retail/admin/runtime")
+        if role == LitellmUserRoles.PROXY_ADMIN:
+            assert response.status_code == 200
+            assert set(response.json()) == {
+                "scope", "process_id", "admission", "database", "diagnostics", "logging", "settlement",
+            }
+            assert response.json()["scope"] == "process"
+            assert response.json()["database"]["finance"]["pool_size"] == 0
+        else:
+            assert response.status_code == 403 and "finance" not in response.text
+    finally:
+        await store.aclose()
 
 
 @pytest.mark.parametrize("published", (None, False, True))

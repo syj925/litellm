@@ -1,0 +1,1 @@
+psycopg-pool==3.3.3 --hash=sha256:9b9cd6a4fcec47a410f7e82d408540e7f77b478509e91b44c1a5457a13e5ff37

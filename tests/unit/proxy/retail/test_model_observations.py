@@ -1,17 +1,23 @@
 import asyncio
 import json
-from collections.abc import AsyncGenerator, Mapping, Sequence
+import re
+from collections.abc import AsyncGenerator, Iterator, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Final
 
 import pytest
+from pydantic import JsonValue
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.retail.model_observations import (
+    _MAX_PENDING_BYTES,
     ModelObservation,
     ModelObservationCollector,
     OutputDetector,
+    _json_markers,
+    _parse_payload,
+    _sse_boundary,
     output_signal,
 )
 from litellm.types.utils import ModelResponseStream
@@ -320,3 +326,116 @@ async def test_observation_writes_are_limited_to_two_active_database_operations(
     await collector.drain()
     assert writer.maximum == 2
     assert len(writer.records) == 4
+
+class _DetectorWork:
+    def __init__(self) -> None:
+        self.json_bytes = 0
+        self.sse_bytes = 0
+        self.sse_calls = 0
+        self.validated_bytes = 0
+        self.validations = 0
+        self.last_validated: str | bytes | None = None
+
+    def json(self, data: bytes) -> Iterator[re.Match[bytes]]:
+        self.json_bytes += len(data)
+        return _json_markers(data)
+
+    def sse(self, data: bytes) -> int:
+        self.sse_bytes += len(data)
+        self.sse_calls += 1
+        return _sse_boundary(data)
+
+    def parse(self, data: str | bytes) -> Mapping[str, JsonValue]:
+        self.validated_bytes += len(data)
+        self.validations += 1
+        self.last_validated = data
+        return _parse_payload(data)
+
+
+def _counted_detector(work: _DetectorWork) -> OutputDetector:
+    return OutputDetector(_scan_sse=work.sse, _scan_json=work.json, _parse=work.parse)
+
+
+@pytest.mark.parametrize("size", (1, 2, 3, 7, 1024))
+def test_fragmented_json_scans_new_bytes_and_validates_only_a_structurally_complete_document(size: int) -> None:
+    work: Final = _DetectorWork()
+    detector: Final = _counted_detector(work)
+    body: Final = json.dumps({
+        "type": "response.completed", "response": {"output": [
+            {"type": "message", "content": [{"text": '你好 } ] \\" escaped " brackets { [' * 100}]},
+            {"type": "reasoning", "summary": [{"text": "thought"}]},
+            {"type": "function_call", "arguments": '{"quoted":"}\\\\\""}'},
+        ]},
+    }, ensure_ascii=False).encode("utf-8")
+    chunks: Final = tuple(body[offset : offset + size] for offset in range(0, len(body), size))
+    for chunk in chunks[:-1]:
+        assert detector.observe_signals(chunk) == ()
+        assert not detector.has_event and detector.terminal_event is None
+    signals: Final = detector.observe_signals(chunks[-1])
+    assert {signal.kind for signal in signals} == {"text", "reasoning", "tool_arguments"}
+    assert detector.has_event and detector.terminal_event == "response.completed"
+    assert work.json_bytes == len(body)
+    assert work.validations == 2 and work.validated_bytes <= len(body) + size
+    assert work.sse_bytes == 0
+
+
+@pytest.mark.parametrize("size", (1, 2, 3, 7, 1024))
+def test_fragmented_sse_scans_only_new_input_and_keeps_unicode_crlf_and_terminal_semantics(size: int) -> None:
+    work: Final = _DetectorWork()
+    detector: Final = _counted_detector(work)
+    frames: Final = (
+        b': ping\r\n\r\n',
+        b'data: {"type":"message_start","message":{"role":"assistant"}}\r\n\r\n',
+        ('data: ' + json.dumps({"type": "content_block_delta", "delta": {
+            "type": "thinking_delta", "thinking": "思考" * 1000,
+        }}, ensure_ascii=False) + '\r\n\r\n').encode(),
+        b'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"visible"}}\n\n',
+        b'data: {"type":"message_stop"}\r\r',
+        b'data: [DONE]\r\n\r\n',
+    )
+    wire: Final = b"".join(frames)
+    signals: Final = sum((
+        detector.observe_signals(wire[offset : offset + size]) for offset in range(0, len(wire), size)
+    ), ())
+    assert tuple(signal.kind for signal in signals) == ("reasoning", "text")
+    assert detector.has_event and detector.terminal_event == "[DONE]"
+    assert work.sse_bytes <= len(wire) + 3 * work.sse_calls
+    assert work.json_bytes == 0 and work.validations == 4
+
+
+def test_complete_json_chunk_keeps_the_original_bytes_fast_path_without_structure_scanning() -> None:
+    work: Final = _DetectorWork()
+    detector: Final = _counted_detector(work)
+    body: Final = b'{"choices":[{"message":{"content":"visible"}}]}'
+    assert detector.observe_signals(body)[0].kind == "text"
+    assert work.last_validated is body and work.validations == 1
+    assert work.json_bytes == 0 and work.sse_bytes == 0
+
+
+@pytest.mark.parametrize("prefix", (b'{"choices":[{"message":{"content":"', b'data: {"choices":'))
+def test_incremental_limit_disables_only_observation_and_never_accepts_later_terminal_events(prefix: bytes) -> None:
+    detector: Final = OutputDetector()
+    assert detector.observe_signals(prefix) == ()
+    assert detector.observe_signals(b"x" * (_MAX_PENDING_BYTES - len(prefix))) == ()
+    assert detector.observe_signals(b"x") == ()
+    assert detector.observe_signals(b'data: {"type":"message_stop"}\n\n') == ()
+    assert detector.observe_signals({"choices": [{"delta": {"content": "visible"}}]}) == ()
+    assert not detector.has_event and detector.terminal_event is None
+
+
+def test_complete_document_at_the_byte_limit_is_observed_without_relaxing_the_original_limit() -> None:
+    body: Final = b'{"choices":[{"message":{"content":"visible"}}]}'
+    at_limit: Final = body + b" " * (_MAX_PENDING_BYTES - len(body))
+    assert OutputDetector().observe_signals(at_limit)[0].kind == "text"
+    assert OutputDetector().observe_signals(at_limit + b" ") == ()
+
+
+def test_finished_but_invalid_json_is_not_revalidated_for_every_later_fragment() -> None:
+    work: Final = _DetectorWork()
+    detector: Final = _counted_detector(work)
+    assert detector.observe_signals(b'{"choices":') == ()
+    assert detector.observe_signals(b'[]} trailing') == ()
+    for _ in range(10):
+        assert detector.observe_signals(b" ") == ()
+    assert not detector.has_event and detector.terminal_event is None
+    assert work.validations == 1

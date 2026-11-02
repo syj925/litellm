@@ -118,7 +118,7 @@ def cache_observation(kwargs: Mapping[str, object], response: object, start_time
 async def persist_cache_observation(observation: CacheObservation, store: WalletStore | None = None) -> None:
     target: Final = store if store is not None else get_store()
     await target.initialize()
-    async with target.transaction() as connection:
+    async with target.diagnostic_transaction() as connection:
         await connection.execute(
             """INSERT INTO retail_cache_observations
             (litellm_call_id,user_id,started_at,cache_read_tokens,cache_write_tokens,
@@ -258,7 +258,7 @@ async def enrich_cache_logs(payload: object, auth: UserAPIKeyAuth, store: Wallet
         return payload
     try:
         target: Final = store if store is not None else get_store()
-        async with target.transaction() as connection:
+        async with target.diagnostic_transaction() as connection:
             await connection.execute("SET TRANSACTION READ ONLY")
             await connection.execute("SET LOCAL statement_timeout = '3000ms'")
             observations: Final = await _many(

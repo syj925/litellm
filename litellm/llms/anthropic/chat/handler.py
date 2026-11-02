@@ -600,6 +600,7 @@ class ModelResponseIterator:
         self.tool_results: list[dict[str, Any]] = []
         self._current_server_tool_id: str | None = None
         self._container_id: str | None = None
+        self._retail_output_usage_reported = False
 
     @property
     def accumulated_json(self) -> str:
@@ -965,6 +966,8 @@ class ModelResponseIterator:
                 pass
             elif type_chunk == "message_delta":
                 finish_reason, usage, container = self._handle_message_delta(chunk)
+                if "output_tokens" in chunk.get("usage", {}):
+                    self._retail_output_usage_reported = True
                 if container:
                     provider_specific_fields["container"] = container
                     # Store container_id and re-emit code_interpreter_results
@@ -1031,6 +1034,11 @@ class ModelResponseIterator:
                 id=self.response_id,
                 model=self.served_model,
             )
+            if usage is not None:
+                returned_chunk.hidden_params["retail_provider_usage"] = {
+                    key: value for key, value in self._cumulative_usage.items()
+                    if key != "output_tokens" or self._retail_output_usage_reported
+                }
 
             return returned_chunk
 

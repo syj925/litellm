@@ -10,12 +10,14 @@ import pytest
 from fastapi import FastAPI
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from psycopg.types.json import Jsonb
 
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.retail.api import retail_store, router
 from litellm.proxy.retail.billing import RetailBilling
 from litellm.proxy.retail.request_tracing import TraceCollector, activate_trace, bind_call_id, reset_trace
+from litellm.proxy.retail.settlement_worker import SettlementWorker
 from litellm.proxy.retail.store import WalletStore
 from litellm.proxy.retail.trace_store import cleanup_trace_bodies, get_request_trace, persist_trace
 
@@ -30,20 +32,22 @@ async def test_request_traces_preserve_frozen_billing_and_enforce_body_and_recor
     dsn: Final = make_conninfo(**{**base, "dbname": name})
     with psycopg.connect(**base, autocommit=True) as connection:
         connection.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+    store: Final = WalletStore(dsn)
     try:
-        await _assert_trace_storage(dsn)
+        await _assert_trace_storage(dsn, store)
     finally:
+        await store.aclose()
         with psycopg.connect(**base, autocommit=True) as connection:
             connection.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
 
 
-async def _assert_trace_storage(database_url: str) -> None:
+async def _assert_trace_storage(database_url: str, store: WalletStore) -> None:
     async with await psycopg.AsyncConnection.connect(database_url) as connection:
         await connection.execute('CREATE TABLE "LiteLLM_UserTable"(user_id TEXT PRIMARY KEY)')
-    store: Final = WalletStore(database_url)
     await store.initialize()
     now: Final = datetime.now(timezone.utc)
     await _assert_trace_writes_do_not_wait_for_unrelated_expired_body(store, now)
+    await _assert_trace_cleanup_is_bounded_and_skips_locked_bodies(store, now)
     await _assert_late_body_persistence_keeps_newer_trace(store, now)
     snapshot: Final = {
         "schema_version": 1, "trace_id": "server-trace", "call_id": "call", "retail_request_id": "reservation",
@@ -98,6 +102,7 @@ async def _assert_trace_storage(database_url: str) -> None:
     assert erased is not None and erased["request_body"] is None
     await _assert_admin_trace_endpoint(store)
     await _assert_late_billing_persistence(store)
+    await _assert_native_cost_requires_exact_server_request_link(store, now)
     async with store.transaction() as connection:
         await connection.execute("UPDATE retail_request_traces SET created_at=%s WHERE call_id='call'", (now - timedelta(days=31),))
     await cleanup_trace_bodies(store)
@@ -105,6 +110,76 @@ async def _assert_trace_storage(database_url: str) -> None:
     assert deleted["recorded"] is False
     assert deleted["billing"]["price_snapshot"] == frozen
     await _assert_reused_native_call_ids_keep_bodies_and_billing_separate(store, now)
+
+
+async def _assert_trace_cleanup_is_bounded_and_skips_locked_bodies(store: WalletStore, now: datetime) -> None:
+    for identity in ("janitor-locked", "janitor-unlocked"):
+        await persist_trace({"trace_id": identity, "started_at": now.isoformat()}, {"messages": [identity]}, store=store)
+    async with store.transaction() as connection:
+        await connection.execute(
+            """UPDATE retail_request_traces SET body_expires_at=now()-interval '1 second'
+            WHERE trace_id IN ('janitor-locked','janitor-unlocked')"""
+        )
+    async with store.transaction() as blocker:
+        await blocker.execute("SELECT trace_id FROM retail_request_traces WHERE trace_id='janitor-locked' FOR UPDATE")
+        await asyncio.wait_for(cleanup_trace_bodies(store, batch_size=1, max_batches=1), timeout=5)
+        expired_read: Final = await get_request_trace(store, "janitor-locked")
+        assert expired_read["request_body"]["available"] is False
+        async with store.transaction() as reader:
+            cursor: Final = await reader.execute(
+                """SELECT trace_id,request_body FROM retail_request_traces
+                WHERE trace_id IN ('janitor-locked','janitor-unlocked') ORDER BY trace_id"""
+            )
+            rows: Final = await cursor.fetchall()
+        assert rows[0]["request_body"] == {"messages": ["janitor-locked"]}
+        assert rows[1]["request_body"] is None
+    await cleanup_trace_bodies(store, batch_size=1, max_batches=1)
+    async with store.transaction() as reader:
+        cursor: Final = await reader.execute(
+            "SELECT request_body FROM retail_request_traces WHERE trace_id='janitor-locked'"
+        )
+        cleared: Final = await cursor.fetchone()
+    assert cleared is not None and cleared["request_body"] is None
+
+
+async def _assert_native_cost_requires_exact_server_request_link(store: WalletStore, now: datetime) -> None:
+    await store.reserve("user", "cost-reservation", "model", "0.01", {"price_version": 9})
+    await store.settle("cost-reservation", "0.001", {
+        "gateway_call_id": "cost-call", "billing_basis": "reported_usage", "usage": {"input_tokens": 10},
+    })
+    await persist_trace({
+        "trace_id": "cost-trace", "call_id": "cost-call", "retail_request_id": "cost-reservation",
+        "started_at": now.isoformat(),
+    }, store=store)
+    missing: Final = await get_request_trace(store, "cost-trace")
+    assert missing["billing"]["provider_cost"] is None
+    async with store.transaction() as connection:
+        await connection.execute(
+            """CREATE TABLE "LiteLLM_SpendLogs" (
+                request_id TEXT PRIMARY KEY,litellm_call_id TEXT,"user" TEXT,
+                metadata JSONB,spend DOUBLE PRECISION,status TEXT)"""
+        )
+        await connection.execute(
+            """INSERT INTO "LiteLLM_SpendLogs" VALUES (%s,%s,%s,%s,%s,'success')""",
+            ("wrong-reservation-log", "cost-call", "user", Jsonb({"retail_request_id": "different"}), 10),
+        )
+    mismatched: Final = await get_request_trace(store, "cost-trace")
+    assert mismatched["billing"]["provider_cost"] is None
+    async with store.transaction() as connection:
+        await connection.execute(
+            """INSERT INTO "LiteLLM_SpendLogs" VALUES (%s,%s,%s,%s,%s,'success')""",
+            ("exact-log", "cost-call", "user", Jsonb({"retail_request_id": "cost-reservation"}), 0.0004),
+        )
+    exact: Final = await get_request_trace(store, "cost-trace")
+    assert exact["billing"]["provider_cost"] == "0.0004"
+    assert exact["billing"]["provider_cost_source"] == "gateway_cost_calculation"
+    async with store.transaction() as connection:
+        await connection.execute(
+            """INSERT INTO "LiteLLM_SpendLogs" VALUES (%s,%s,%s,%s,%s,'success')""",
+            ("duplicate-log", "cost-call", "user", Jsonb({"retail_request_id": "cost-reservation"}), 0.0005),
+        )
+    ambiguous: Final = await get_request_trace(store, "cost-trace")
+    assert ambiguous["billing"]["provider_cost"] is None
 
 
 async def _assert_trace_writes_do_not_wait_for_unrelated_expired_body(store: WalletStore, now: datetime) -> None:
@@ -203,9 +278,11 @@ async def _assert_late_billing_persistence(store: WalletStore) -> None:
         reset_trace(token)
     result: Final = await get_request_trace(store, "late-call")
     assert result["trace"]["retail_request_id"] == "late-reservation"
-    assert any(phase["name"] == "billing.settle" for phase in result["trace"]["phases"])
-    assert any(event["name"] == "billing.settled" for event in result["trace"]["events"])
-    assert result["billing"]["status"] == "settled"
+    assert any(phase["name"] == "billing.persist_facts" for phase in result["trace"]["phases"])
+    assert any(event["name"] == "billing.facts_committed" for event in result["trace"]["events"])
+    assert result["billing"]["status"] == "reserved"
+    assert await SettlementWorker(store).run_once() == 1
+    assert (await get_request_trace(store, "late-call"))["billing"]["status"] == "settled"
     assert result["request_body"]["value"] == {"messages": ["initial diagnostic body"]}
 
 
