@@ -74,7 +74,7 @@ class _CustomerResponse:
         self._start: Message | None = None
         self._json = False
         self._stream: CustomerSSEPrivacy | None = None
-        self._body = b""
+        self._body = bytearray()
         self._omitted = False
         self._encoding = ""
         self._decoder: _Decoder | None = None
@@ -171,19 +171,25 @@ class _CustomerResponse:
 
     async def _json_body(self, message: Message) -> None:
         body: Final = message.get("body", b"")
-        if not self._omitted and len(self._body) + len(body) <= self._body_limit:
-            self._body += body
-        else:
-            self._omitted = True
-            self._body = b""
+        direct: Final = (
+            not message.get("more_body", False) and not self._body and not self._omitted and len(body) <= self._body_limit
+        )
+        if not direct:
+            if not self._omitted and len(self._body) + len(body) <= self._body_limit:
+                self._body.extend(body)
+            else:
+                self._omitted = True
+                self._body.clear()
         if message.get("more_body", False):
             return
-        decoded: Final = None if self._omitted else self._decoded(self._body, self._body_limit, final=True)
+        decoded: Final = None if self._omitted else self._decoded(
+            body if direct else bytes(self._body), self._body_limit, final=True,
+        )
         output, failed = self._public_json(decoded)
         if self._start is not None:
             await self._send({**self._start, "status": 502} if failed and self._status < 400 else self._start)
         await self._send({**message, "body": output, "more_body": False})
-        self._body = b""
+        self._body.clear()
 
     async def _stream_body(self, message: Message) -> None:
         if self._stream is None:

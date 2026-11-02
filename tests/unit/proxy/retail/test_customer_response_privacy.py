@@ -1,11 +1,13 @@
 import json
-from collections.abc import Mapping
+import tracemalloc
+from collections.abc import Iterator, Mapping
 from typing import Final
 
 import pytest
 
 from litellm.proxy.retail.customer_response_privacy import (
     CustomerSSEPrivacy,
+    _frame_boundaries,
     customer_error_body,
     customer_error_payload,
     customer_response_headers,
@@ -459,3 +461,61 @@ def test_defined_usage_cost_is_removed_without_changing_token_counts_or_user_met
     usage: Final = _mapping(response["usage"])
     source: Final = {**normal, "response": {**response, "usage": {**usage, "cost": 123.456}}}
     assert customer_response_payload(source, status_code=200) == normal
+
+
+class _BoundaryWork:
+    def __init__(self) -> None:
+        self.scanned_bytes = 0
+        self.calls = 0
+
+    def __call__(self, data: bytes) -> Iterator[int]:
+        self.scanned_bytes += len(data)
+        self.calls += 1
+        return _frame_boundaries(data)
+
+
+@pytest.mark.parametrize("chunk_size", (1, 2, 3, 7, 1024))
+def test_fragmented_frame_scanning_is_linear_in_new_input_and_preserves_crlf_boundaries(chunk_size: int) -> None:
+    work: Final = _BoundaryWork()
+    processor: Final = CustomerSSEPrivacy(_scan=work)
+    frame: Final = b'data: {"choices":[{"delta":{"content":"' + b"x" * 8192 + b'"}}]}\r\n\r\n'
+    wire: Final = b": ping\r\n\r\n" + frame + b'data: {"choices":[]}\n\ndata: [DONE]\r\r'
+    result: Final = b"".join(
+        processor.feed(wire[index : index + chunk_size]) for index in range(0, len(wire), chunk_size)
+    ) + processor.feed(b"", final=True)
+    assert result == wire
+    assert work.scanned_bytes <= len(wire) + 3 * work.calls
+
+
+def test_incremental_overflow_drops_only_the_oversized_frame_and_recovers_across_split_crlf() -> None:
+    work: Final = _BoundaryWork()
+    processor: Final = CustomerSSEPrivacy(max_frame_bytes=100, request_id=_REQUEST_ID, _scan=work)
+    prefix: Final = b'data: {"error":{"message":"' + _SECRET.encode() * 30
+    first: Final = processor.feed(prefix)
+    second: Final = processor.feed(b'"}}\r\n\r')
+    third: Final = processor.feed(b'\ndata: {"choices":[]}\r\n\r\n', final=True)
+    assert _SECRET.encode() not in first + second + third
+    assert _REQUEST_ID.encode() in first and second == b""
+    assert third == b'data: {"choices":[]}\r\n\r\n'
+    assert work.scanned_bytes <= len(prefix) + 42 + 3 * work.calls
+
+
+def test_one_byte_fragmentation_retains_frame_bytes_without_a_reference_per_fragment() -> None:
+    processor: Final = CustomerSSEPrivacy()
+    prefix: Final = b'data: {"choices":[{"delta":{"content":"'
+    suffix: Final = b'"}}]}\n\n'
+    size: Final = 32 * 1024
+    assert processor.feed(prefix) == b""
+    was_tracing: Final = tracemalloc.is_tracing()
+    if not was_tracing:
+        tracemalloc.start()
+    try:
+        baseline: Final = tracemalloc.get_traced_memory()[0]
+        for _ in range(size):
+            assert processor.feed(b"x") == b""
+        retained: Final = tracemalloc.get_traced_memory()[0] - baseline
+        assert retained < size * 3
+    finally:
+        if not was_tracing:
+            tracemalloc.stop()
+    assert processor.feed(suffix, final=True) == prefix + b"x" * size + suffix

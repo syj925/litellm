@@ -22,6 +22,6 @@ The panel uses the reservation's frozen price version, discount, expression bran
 
 The gateway captures JSON request bodies before model conversion. Credential keys and recognizable bearer/API tokens are redacted before persistence. Non-JSON and oversized bodies are omitted explicitly. Capture is bounded to 256 KiB and persisted diagnostic JSON to 64 KiB; bounded fields may be shortened in the stored diagnostic copy. This copy is separate from the request forwarded upstream
 
-Body access expires 30 minutes after request receipt. Reads reject expired bodies immediately. A cleanup task removes expired bodies at startup and every 60 seconds, and writes and reads also clear expired bodies. Late billing callbacks cannot restore a body or extend its expiry. Trace records expire after 30 days; accounting reservations and ledger entries retain their existing lifecycle
+Body access expires 30 minutes after request receipt. Reads reject expired bodies immediately. A cleanup task removes expired bodies at startup and every 60 seconds, and reads also clear expired bodies. A trace write clears only that trace's expired body, so unrelated expired records do not add row-lock waits to request logging. Late billing callbacks cannot restore a body or extend its expiry. Trace records expire after 30 days; accounting reservations and ledger entries retain their existing lifecycle
 
 No separate OpenTelemetry service is required for this local detail view. Existing OpenTelemetry exports continue independently when configured

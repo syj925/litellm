@@ -141,10 +141,6 @@ async def persist_trace(
     body: Final = _body_value(request_body) if expires_at > now else None
     async with storage.transaction() as connection:
         await connection.execute(
-            """UPDATE retail_request_traces SET request_body=NULL
-            WHERE body_expires_at<=now() AND request_body IS NOT NULL"""
-        )
-        await connection.execute(
             """INSERT INTO retail_request_traces
             (trace_id,call_id,retail_request_id,trace,request_body,body_expires_at,recorded_until_ms)
             VALUES (%s,%s,%s,%s,%s,%s,%s)

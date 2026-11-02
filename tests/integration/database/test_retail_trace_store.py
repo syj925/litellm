@@ -1,3 +1,4 @@
+import asyncio
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Final
@@ -42,6 +43,7 @@ async def _assert_trace_storage(database_url: str) -> None:
     store: Final = WalletStore(database_url)
     await store.initialize()
     now: Final = datetime.now(timezone.utc)
+    await _assert_trace_writes_do_not_wait_for_unrelated_expired_body(store, now)
     await _assert_late_body_persistence_keeps_newer_trace(store, now)
     snapshot: Final = {
         "schema_version": 1, "trace_id": "server-trace", "call_id": "call", "retail_request_id": "reservation",
@@ -103,6 +105,38 @@ async def _assert_trace_storage(database_url: str) -> None:
     assert deleted["recorded"] is False
     assert deleted["billing"]["price_snapshot"] == frozen
     await _assert_reused_native_call_ids_keep_bodies_and_billing_separate(store, now)
+
+
+async def _assert_trace_writes_do_not_wait_for_unrelated_expired_body(store: WalletStore, now: datetime) -> None:
+    expired: Final = {"trace_id": "locked-expired", "started_at": now.isoformat()}
+    fresh: Final = {"trace_id": "independent-write", "started_at": now.isoformat()}
+    await persist_trace(expired, {"messages": ["expired body"]}, store=store)
+    async with store.transaction() as connection:
+        await connection.execute(
+            """UPDATE retail_request_traces SET body_expires_at=now()-interval '1 second'
+            WHERE trace_id='locked-expired'"""
+        )
+    async with store.transaction() as blocker:
+        await blocker.execute("SELECT trace_id FROM retail_request_traces WHERE trace_id='locked-expired' FOR UPDATE")
+        await asyncio.wait_for(persist_trace(fresh, {"messages": ["fresh body"]}, store=store), timeout=10)
+        async with store.transaction() as reader:
+            cursor: Final = await reader.execute(
+                "SELECT request_body FROM retail_request_traces WHERE trace_id='independent-write'"
+            )
+            written: Final = await cursor.fetchone()
+        assert written is not None and written["request_body"] == {"messages": ["fresh body"]}
+    await cleanup_trace_bodies(store)
+    async with store.transaction() as connection:
+        expired_cursor: Final = await connection.execute(
+            "SELECT request_body FROM retail_request_traces WHERE trace_id='locked-expired'"
+        )
+        cleaned: Final = await expired_cursor.fetchone()
+        fresh_cursor: Final = await connection.execute(
+            "SELECT request_body FROM retail_request_traces WHERE trace_id='independent-write'"
+        )
+        retained: Final = await fresh_cursor.fetchone()
+    assert cleaned is not None and cleaned["request_body"] is None
+    assert retained is not None and retained["request_body"] == {"messages": ["fresh body"]}
 
 
 async def _assert_late_body_persistence_keeps_newer_trace(store: WalletStore, now: datetime) -> None:

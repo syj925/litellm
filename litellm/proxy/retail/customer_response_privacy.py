@@ -1,6 +1,7 @@
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections import deque
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from email.utils import parsedate_to_datetime
 from typing import Final
 
@@ -599,6 +600,10 @@ def _safe_sse_frame(frame: bytes, status_code: int, request_id: str | None) -> b
     return event + b"data: " + json.dumps(replacement, separators=(",", ":")).encode("utf-8") + b"\n\n"
 
 
+def _frame_boundaries(data: bytes) -> Iterator[int]:
+    return (match.end() for match in _FRAME_BOUNDARY.finditer(data))
+
+
 class CustomerSSEPrivacy:
     def __init__(
         self,
@@ -606,45 +611,73 @@ class CustomerSSEPrivacy:
         status_code: int = 200,
         request_id: str | None = None,
         max_frame_bytes: int = _MAX_FRAME_BYTES,
+        _scan: Callable[[bytes], Iterable[int]] = _frame_boundaries,
     ) -> None:
         if max_frame_bytes <= 0:
             raise ValueError("SSE frame limit must be positive")
         self._status_code = status_code
         self._request_id = request_id
         self._max_frame_bytes = max_frame_bytes
-        self._pending = b""
+        self._scan = _scan
+        self._pending = bytearray()
+        self._tail = b""
         self._discarding = False
 
     def feed(self, chunk: bytes, *, final: bool = False) -> bytes:
-        combined: Final = self._pending + chunk
-        frames: Final = _FRAME_BOUNDARY.split(combined)
-        output: Final = b"".join(
-            self._frame(frames[index] + frames[index + 1]) for index in range(0, len(frames) - 1, 2)
-        )
-        tail: Final = frames[-1]
-        if len(tail) > self._max_frame_bytes:
-            self._pending = tail[-3:]
-            if self._discarding:
-                return output
-            self._discarding = True
-            return output + self._overflow()
-        self._pending = tail
-        if not final:
-            return output
-        self._pending = b""
-        if self._discarding:
-            return output
-        return output + (_safe_sse_frame(tail, self._status_code, self._request_id) if tail else b"")
+        combined: Final = self._tail + chunk
+        prior_tail_bytes: Final = len(self._tail)
+        output: Final = deque[bytes]()
+        offset = 0  # rebind-ok: advance once through the new chunk's frame boundaries
+        last_boundary = 0  # rebind-ok: retain only the unconsumed cross-chunk delimiter suffix
+        for boundary in self._scan(combined):
+            end: Final = boundary - prior_tail_bytes
+            frame: Final = self._frame(chunk[offset:end])
+            if frame:
+                output.append(frame)
+            offset = end
+            last_boundary = boundary
+        tail_overflow: Final = self._append(chunk[offset:]) if offset < len(chunk) else b""
+        if tail_overflow:
+            output.append(tail_overflow)
+        self._tail = combined[max(last_boundary, len(combined) - 3) :]
+        if final:
+            final_frame: Final = self._complete_frame()
+            if final_frame:
+                output.append(final_frame)
+            self._tail = b""
+        return b"".join(output)
 
-    def _frame(self, frame: bytes) -> bytes:
+    def _frame(self, piece: bytes) -> bytes:
+        if not self._pending and not self._discarding:
+            return (
+                self._overflow()
+                if len(piece) > self._max_frame_bytes
+                else _safe_sse_frame(
+                    piece,
+                    self._status_code,
+                    self._request_id,
+                )
+            )
+        overflow: Final = self._append(piece)
+        return overflow + self._complete_frame()
+
+    def _append(self, piece: bytes) -> bytes:
+        if self._discarding or not piece:
+            return b""
+        if len(self._pending) + len(piece) > self._max_frame_bytes:
+            self._pending.clear()
+            self._discarding = True
+            return self._overflow()
+        self._pending.extend(piece)
+        return b""
+
+    def _complete_frame(self) -> bytes:
         if self._discarding:
             self._discarding = False
             return b""
-        return (
-            self._overflow()
-            if len(frame) > self._max_frame_bytes
-            else _safe_sse_frame(frame, self._status_code, self._request_id)
-        )
+        frame: Final = bytes(self._pending)
+        self._pending.clear()
+        return _safe_sse_frame(frame, self._status_code, self._request_id) if frame else b""
 
     def _overflow(self) -> bytes:
         return b"data: " + customer_error_body(status_code=502, request_id=self._request_id) + b"\n\n"
