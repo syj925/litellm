@@ -2203,6 +2203,16 @@ class ProxyBaseLLMRequestProcessing:
                     self.data["model"] = alias_target
 
         self.data["litellm_call_id"] = resolve_litellm_call_id(request.headers.get("x-litellm-call-id"))
+        from litellm.proxy.retail.request_tracing import bind_call_id, current_trace
+
+        bind_call_id(self.data["litellm_call_id"])
+        request_trace: Final = current_trace()
+        if request_trace is not None:
+            request_trace.set_attributes({
+                "model": self.data.get("model"), "call_type": route_type,
+                "user_id": user_api_key_dict.user_id,
+                "credential_alias": user_api_key_dict.key_alias,
+            })
         DDSpanTagger.tag_call_id(self.data.get("litellm_call_id"))
         DDSpanTagger.tag_request(
             user_api_key_dict=user_api_key_dict,
@@ -2268,12 +2278,15 @@ class ProxyBaseLLMRequestProcessing:
         prefetch_model = self.data.get("model")
         if llm_router is not None and isinstance(prefetch_model, str):
             llm_router.arm_routing_read_prefetch(prefetch_model, self.data)
-        self.data = await proxy_logging_obj.pre_call_hook(
-            user_api_key_dict=user_api_key_dict,
-            data=self.data,
-            call_type=route_type,
-            skip_guardrails=skip_guardrails,
-        )
+        from litellm.proxy.retail.request_tracing import trace_phase
+
+        with trace_phase("request.pre_call_hooks"):
+            self.data = await proxy_logging_obj.pre_call_hook(
+                user_api_key_dict=user_api_key_dict,
+                data=self.data,
+                call_type=route_type,
+                skip_guardrails=skip_guardrails,
+            )
         await _enforce_guardrail_added_tag_budgets(
             data=self.data,
             tags_before_guardrails=self._tags_before_guardrails,

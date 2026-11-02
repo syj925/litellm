@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from collections.abc import Callable, Mapping, Sequence
@@ -46,7 +47,9 @@ from .pricing import (
     usage_facts,
     validate_requested_cache_ttls,
 )
+from .request_tracing import bind_call_id, bind_retail_request_id, current_trace, record_event, trace_phase
 from .store import WalletStore, get_store
+from .trace_store import persist_trace
 
 _SUPPORTED: Final = frozenset(
     {
@@ -77,6 +80,31 @@ def reservation_id(data: Mapping[str, object]) -> str | None:
             if isinstance(value, str) and value:
                 return value
     return None
+
+
+async def _persist_billing_trace(store: WalletStore | None) -> None:
+    trace: Final = current_trace()
+    if trace is None:
+        return
+    try:
+        await asyncio.wait_for(
+            persist_trace(trace.snapshot(), retail_request_id=trace.retail_request_id, store=store), timeout=2,
+        )
+    except Exception as exc:
+        verbose_proxy_logger.warning("Billing trace could not be saved (%s)", type(exc).__name__)
+
+
+def _trace_resource_pool(pool: PoolRouteDecision | None) -> None:
+    if pool is None:
+        return
+    attributes: Final = {
+        "resource_pool_id": pool.pool_id, "resource_pool_name": pool.pool_name,
+        "resource_source_kind": pool.source_kind, "routing_settings_version": pool.settings_version,
+    }
+    record_event("resource_pool.selected", attributes)
+    trace: Final = current_trace()
+    if trace is not None:
+        trace.set_attributes(attributes)
 
 
 def _request_output_limit(snapshot: Mapping[str, object], data: Mapping[str, object], call_type: str) -> int:
@@ -146,6 +174,7 @@ def price_snapshot(
             {
                 "resource_pool_id": pool.pool_id,
                 "resource_pool_name": pool.pool_name,
+                "resource_source_kind": pool.source_kind,
                 "routing_settings_version": pool.settings_version,
             }
             if pool is not None
@@ -199,8 +228,10 @@ class RetailBilling(CustomLogger):
         if not user_id:
             raise HTTPException(403, "Resource pool routing requires a key owned by a user account")
         model: Final = str(data.get("model", ""))
-        pool: Final = await self._pools().resolve_route(user_id, model, policy, self.deployments())
+        with trace_phase("resource_pool.resolve"):
+            pool: Final = await self._pools().resolve_route(user_id, model, policy, self.deployments())
         bind_pool_routing(model, pool, data)
+        _trace_resource_pool(pool)
         return _pool_request_data(data, user_id, pool)
 
     async def async_filter_listed_models(
@@ -229,6 +260,16 @@ class RetailBilling(CustomLogger):
         data: dict[str, object],
         call_type: str,
     ) -> dict[str, object]:
+        call_id: Final = data.get("litellm_call_id")
+        if isinstance(call_id, str):
+            bind_call_id(call_id)
+        with trace_phase("billing.prepare"):
+            prepared: Final = await self._prepare_request(user_api_key_dict, data, call_type)
+            return data if prepared is data else dict(prepared)
+
+    async def _prepare_request(
+        self, user_api_key_dict: UserAPIKeyAuth, data: Mapping[str, object], call_type: str,
+    ) -> Mapping[str, object]:
         _active_reservation.set(None)
         reset_pool_routing()
         policy: Final = _resource_policy(user_api_key_dict)
@@ -237,6 +278,7 @@ class RetailBilling(CustomLogger):
             or os.getenv("RETAIL_BILLING_ENABLED", "false").lower() != "true"
         )
         if exempt:
+            record_event("billing.bypassed", {"reason": "administrator_or_billing_disabled"})
             return data if policy is None else await self._route_exempt_request(user_api_key_dict, data, policy)
         user_id: Final = user_api_key_dict.user_id
         if not user_id:
@@ -277,8 +319,10 @@ class RetailBilling(CustomLogger):
         if not deployments:
             raise HTTPException(400, "No configured deployment is available for this model")
         await store.initialize()
-        pool: Final = await self._pools().resolve_route(user_id, model, policy, deployments)
+        with trace_phase("resource_pool.resolve"):
+            pool: Final = await self._pools().resolve_route(user_id, model, policy, deployments)
         bind_pool_routing(model, pool, data)
+        _trace_resource_pool(pool)
         priced_deployments: Final = (
             tuple(
                 deployment
@@ -361,9 +405,10 @@ class RetailBilling(CustomLogger):
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         try:
-            await store.reserve(
-                user_id, request_id, model, quote, snapshot, max_parallel=int(os.getenv("RETAIL_MAX_PARALLEL", "10"))
-            )
+            with trace_phase("billing.reserve"):
+                await store.reserve(
+                    user_id, request_id, model, quote, snapshot, max_parallel=int(os.getenv("RETAIL_MAX_PARALLEL", "10"))
+                )
         except InsufficientFunds as exc:
             raise HTTPException(
                 402, "Insufficient wallet balance for this request. Add funds or lower the output token limit"
@@ -371,6 +416,12 @@ class RetailBilling(CustomLogger):
         except ParallelLimitExceeded as exc:
             raise HTTPException(429, "Your wallet has reached its concurrent request limit") from exc
         _active_reservation.set(request_id)
+        bind_retail_request_id(request_id)
+        record_event("billing.reserved", {
+            "retail_request_id": request_id, "amount": quote,
+            "price_version": str(snapshot.get("price_version", "")),
+            "billing_mode": str(snapshot.get("billing_mode", "")),
+        })
         limit: Final = {} if embedding or call_type in _EXPRESSION_MEDIA or data.get("max_completion_tokens") is not None else {limit_key: output_limit}
         return {**_pool_request_data(data, user_id, pool, request_id), **limit}
 
@@ -400,6 +451,16 @@ class RetailBilling(CustomLogger):
         request_id: Final = reservation_id(data)
         if request_id is None:
             return
+        bind_retail_request_id(request_id)
+        try:
+            with trace_phase("billing.settle"):
+                await self._settle_reservation(data, response, provider_cost, request_id)
+        finally:
+            await _persist_billing_trace(self.store)
+
+    async def _settle_reservation(
+        self, data: Mapping[str, object], response: object, provider_cost: object, request_id: str,
+    ) -> None:
         store: Final = self._store()
         reservation: Final = await store.get_reservation(request_id)
         if reservation is None:
@@ -410,24 +471,28 @@ class RetailBilling(CustomLogger):
                 expression_amount, expression_details = expression_settlement(snapshot, response)
             except ValueError as exc:
                 await store.record_pending_usage(request_id, {"billing_error": str(exc)})
+                record_event("billing.pending", {"reason": "expression_usage_incomplete"})
                 return
             await store.settle(request_id, expression_amount, {
                 **expression_details,
                 "provider_cost": str(provider_cost) if provider_cost is not None else None,
                 "gateway_call_id": str(data.get("litellm_call_id", "")),
             })
+            record_event("billing.settled", {"retail_request_id": request_id, "amount": expression_amount})
             return
         facts: Final = usage_facts(response, allow_input_only=snapshot.get("billing_mode") == "embedding")
         if facts is None:
             await store.record_pending_usage(
                 request_id, {"billing_error": "Reported token usage is missing, incomplete or inconsistent"}
             )
+            record_event("billing.pending", {"reason": "reported_usage_incomplete"})
             return
         try:
             amount: Final = charge_for_usage(snapshot, facts)
             breakdown: Final = cost_breakdown(snapshot, facts)
         except ValueError as exc:
             await store.record_pending_usage(request_id, {"usage": facts.model_dump(), "billing_error": str(exc)})
+            record_event("billing.pending", {"reason": "reported_usage_inconsistent"})
             return
         details: Final[dict[str, JsonValue]] = {
             "usage": facts.model_dump(),
@@ -437,6 +502,7 @@ class RetailBilling(CustomLogger):
             "billing_basis": "reported_usage",
         }
         await store.settle(request_id, amount, details)
+        record_event("billing.settled", {"retail_request_id": request_id, "amount": amount})
 
     async def async_post_call_success_hook(
         self,
@@ -466,6 +532,13 @@ class RetailBilling(CustomLogger):
         user_api_key_dict: UserAPIKeyAuth,
         traceback_str: str | None = None,
     ) -> None:
+        try:
+            with trace_phase("billing.failure"):
+                await self._handle_failure(request_data, original_exception)
+        finally:
+            await _persist_billing_trace(self.store)
+
+    async def _handle_failure(self, request_data: Mapping[str, object], original_exception: Exception) -> None:
         request_id: Final = _active_reservation.get()
         if request_id is None:
             return
@@ -475,15 +548,19 @@ class RetailBilling(CustomLogger):
             return
         if pool_rejected_before_upstream():
             await store.release(request_id, "No eligible resource-pool deployment was contacted")
+            record_event("billing.released", {"retail_request_id": request_id, "reason": "no_upstream_contacted"})
             return
         if pool_has_uncertain_attempt():
+            record_event("billing.pending", {"retail_request_id": request_id, "reason": "uncertain_upstream_attempt"})
             return
         # An interrupted stream or an accounting error is not proof that the provider used nothing.
         if request_data.get("stream") or not isinstance(original_exception, Exception):
+            record_event("billing.pending", {"retail_request_id": request_id, "reason": "interrupted_or_streaming_request"})
             return
         status_code: Final = getattr(original_exception, "status_code", None)
         if status_code in {400, 401, 403, 404, 413, 422, 429}:
             await store.release(request_id, "Request rejected without billable usage")
+            record_event("billing.released", {"retail_request_id": request_id, "reason": "rejected_without_billable_usage"})
 
 
 wallet_callback: Final = RetailBilling()

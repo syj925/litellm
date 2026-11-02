@@ -21,6 +21,7 @@ from litellm.proxy.retail.pool_store import (
     choose_route,
 )
 from litellm.proxy.retail.pricing import UsageFacts, charge_for_usage
+from litellm.proxy.retail.request_tracing import TraceCollector, activate_trace, reset_trace
 
 
 @pytest.mark.parametrize(
@@ -78,6 +79,46 @@ async def test_administrator_inference_bypasses_retail_wallet_changes(monkeypatc
     data: Final[dict[str, object]] = {"model": "test-model", "messages": []}
     admin: Final = UserAPIKeyAuth(user_id="admin", user_role=LitellmUserRoles.PROXY_ADMIN)
     assert await callback.async_pre_call_hook(admin, None, data, "acompletion") is data
+
+
+@pytest.mark.asyncio
+async def test_billing_trace_records_the_actual_bypass_without_claiming_a_wallet_reservation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RETAIL_BILLING_ENABLED", "true")
+    trace: Final = TraceCollector("POST", "/v1/chat/completions")
+    token: Final = activate_trace(trace)
+    data: Final[dict[str, object]] = {"model": "fixture", "litellm_call_id": "bypass-call"}
+    try:
+        admin: Final = UserAPIKeyAuth(user_id="admin", user_role=LitellmUserRoles.PROXY_ADMIN)
+        assert await RetailBilling().async_pre_call_hook(admin, None, data, "acompletion") is data
+    finally:
+        reset_trace(token)
+    result: Final = trace.snapshot()
+    assert result["call_id"] == "bypass-call"
+    assert result["retail_request_id"] is None
+    assert result["events"][0]["name"] == "billing.bypassed"
+    assert result["phases"][0]["name"] == "billing.prepare"
+    assert result["phases"][0]["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_billing_validation_failures_close_the_observed_phase_without_a_reservation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RETAIL_BILLING_ENABLED", "true")
+    trace: Final = TraceCollector("POST", "/unsupported")
+    token: Final = activate_trace(trace)
+    try:
+        user: Final = UserAPIKeyAuth(user_id="reader", user_role=LitellmUserRoles.INTERNAL_USER)
+        with pytest.raises(HTTPException, match="not enabled"):
+            await RetailBilling().async_pre_call_hook(user, None, {"model": "fixture"}, "unsupported")
+    finally:
+        reset_trace(token)
+    result: Final = trace.snapshot()
+    assert result["retail_request_id"] is None
+    assert result["phases"][0]["name"] == "billing.prepare"
+    assert result["phases"][0]["status"] == "error"
 
 
 @pytest.mark.asyncio

@@ -42,6 +42,7 @@ from litellm.litellm_core_utils.logging_utils import track_llm_api_timing
 from litellm.litellm_core_utils.request_timeout_resolver import (
     get_configured_request_timeout,
 )
+from litellm.litellm_core_utils.request_trace_transport import merge_trace_hooks
 from litellm.types.llms.custom_http import *
 
 if TYPE_CHECKING:
@@ -673,7 +674,7 @@ class AsyncHTTPHandler:
         if self.transport is not None:
             return httpx.AsyncClient(
                 transport=self.transport,
-                event_hooks=event_hooks,
+                event_hooks=merge_trace_hooks(event_hooks),
                 timeout=timeout if timeout is not None else _DEFAULT_TIMEOUT,
                 headers=get_default_headers(),
                 cookies=blocked_cookie_jar(),
@@ -703,7 +704,7 @@ class AsyncHTTPHandler:
         return httpx.AsyncClient(
             transport=transport,
             mounts=AsyncHTTPHandler.create_httpx_proxy_mounts(transport, verify=ssl_config, cert=cert),
-            event_hooks=event_hooks,
+            event_hooks=merge_trace_hooks(event_hooks),
             timeout=timeout,
             verify=ssl_config,
             cert=cert,

@@ -3,7 +3,7 @@ import CacheUsageBreakdown from "@/components/retail/CacheUsageBreakdown";
 import { logCacheUsage } from "@/components/retail/cacheUsage";
 import Link from "next/link";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
-import { isProxyDashboardRole } from "@/utils/dashboardAccess";
+import { canUseAdminControlPlane, isProxyDashboardRole } from "@/utils/dashboardAccess";
 import { uiHref } from "@/utils/uiHref";
 import { Check, ChevronDown, ChevronRight, CircleAlert, Copy, Info } from "lucide-react";
 import moment from "moment";
@@ -58,6 +58,7 @@ import { ClassifierAuditView } from "./ClassifierAuditView";
 import { AUTOROUTER_CLASSIFIER_ORIGIN } from "./ClassifyTag";
 import { recordedResourceRoute } from "../resourceRoute";
 import { sourceKindLabel } from "../../retail/pools/types";
+import { RequestTracePanel } from "./RequestTracePanel";
 
 export interface LogDetailContentProps {
   logEntry: LogEntry;
@@ -81,8 +82,9 @@ export function LogDetailContent({
   accessToken,
   userEmail,
 }: LogDetailContentProps) {
-  const { userRole } = useAuthorized();
+  const { userRole, isViewOnly } = useAuthorized();
   const showCosts = isProxyDashboardRole(userRole);
+  const showTrace = canUseAdminControlPlane({ userRole, isViewOnly });
   const metadata = logEntry.metadata || {};
   const resourceRoute = recordedResourceRoute(metadata);
   const hasError = metadata.status === "failure";
@@ -198,6 +200,13 @@ export function LogDetailContent({
       {isBatchCallType(logEntry.call_type) && <BatchResultsSection logEntry={logEntry} metadata={metadata} />}
 
       {/* Routing */}
+      {showTrace && accessToken && (
+        <RequestTracePanel
+          key={logEntry.litellm_call_id || logEntry.request_id}
+          accessToken={accessToken}
+          callId={logEntry.litellm_call_id || logEntry.request_id}
+        />
+      )}
       <RoutingDecisionCard decision={metadata?.routing_decision as RoutingDecision | undefined} />
 
       {/* Metrics */}
@@ -603,10 +612,10 @@ function MetricsSection({
             </DescriptionItem>
 
             <DescriptionItem label="Start Time">
-              {moment(logEntry.startTime).format("YYYY-MM-DDTHH:mm:ss.SSS[Z]")}
+              {moment.utc(logEntry.startTime).format("YYYY-MM-DDTHH:mm:ss.SSS[Z]")}
             </DescriptionItem>
             <DescriptionItem label="End Time">
-              {moment(logEntry.endTime).format("YYYY-MM-DDTHH:mm:ss.SSS[Z]")}
+              {moment.utc(logEntry.endTime).format("YYYY-MM-DDTHH:mm:ss.SSS[Z]")}
             </DescriptionItem>
           </DescriptionList>
         </CardContent>

@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LogDetailContent } from "./LogDetailContent";
 import type { LogEntry } from "../types";
 
@@ -28,8 +28,20 @@ const log = {
 beforeEach(() => {
   session.role = "Internal User";
 });
+afterEach(() => vi.unstubAllGlobals());
 
 describe("customer request cost presentation", () => {
+  it.each(["Internal User", "proxy_admin_viewer"])(
+    "does not request sensitive administrator traces for %s even with an access token",
+    (role) => {
+      session.role = role;
+      const fetcher = vi.fn();
+      vi.stubGlobal("fetch", fetcher);
+      render(<LogDetailContent logEntry={log} accessToken="customer-token" />);
+      expect(screen.queryByRole("region", { name: "Administrator request trace" })).not.toBeInTheDocument();
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
   it.each(["Internal User", "Org Admin"])("keeps %s logs free of native and fabricated zero charges", (role) => {
     session.role = role;
     render(<LogDetailContent logEntry={log} />);

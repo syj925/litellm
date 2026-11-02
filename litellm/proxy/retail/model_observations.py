@@ -77,23 +77,6 @@ def _nonempty(value: object) -> bool:
     return isinstance(value, str) and bool(value)
 
 
-def _chat_signal(payload: Mapping[str, object]) -> OutputSignal | None:
-    for choice in _items(payload.get("choices")):
-        delta: Final = as_mapping(as_mapping(choice).get("delta"))
-        if _nonempty(delta.get("content")):
-            return OutputSignal("openai_chat", "text")
-        if _nonempty(delta.get("reasoning_content")) or _nonempty(delta.get("reasoning")):
-            return OutputSignal("openai_chat", "reasoning")
-        if _nonempty(as_mapping(delta.get("function_call")).get("arguments")):
-            return OutputSignal("openai_chat", "tool_arguments")
-        if any(
-            _nonempty(as_mapping(as_mapping(tool).get("function")).get("arguments"))
-            for tool in _items(delta.get("tool_calls"))
-        ):
-            return OutputSignal("openai_chat", "tool_arguments")
-    return None
-
-
 def _anthropic_signal(payload: Mapping[str, object]) -> OutputSignal | None:
     if payload.get("type") == "content_block_delta":
         delta: Final = as_mapping(payload.get("delta"))
@@ -126,75 +109,163 @@ def _responses_signal(payload: Mapping[str, object]) -> OutputSignal | None:
     return None
 
 
-def _gemini_signal(payload: Mapping[str, object]) -> OutputSignal | None:
-    for candidate in _items(payload.get("candidates")):
-        content: Final = as_mapping(as_mapping(candidate).get("content"))
-        for part in _items(content.get("parts")):
-            data: Final = as_mapping(part)
-            if _nonempty(data.get("text")):
-                return OutputSignal("gemini", "reasoning" if data.get("thought") is True else "text")
-            if as_mapping(as_mapping(data.get("functionCall")).get("args")):
-                return OutputSignal("gemini", "tool_arguments")
-    return None
-
-
 def output_signal(payload: Mapping[str, object]) -> OutputSignal | None:
+    signals: Final = output_signals(payload)
+    return signals[0] if signals else None
+
+
+def _chat_output_signals(choice: object) -> tuple[OutputSignal, ...]:
+    data: Final = as_mapping(choice)
+    delta: Final = as_mapping(data.get("delta") or data.get("message"))
+    text: Final = _nonempty(delta.get("content")) or _nonempty(data.get("text"))
+    reasoning: Final = _nonempty(delta.get("reasoning_content")) or _nonempty(delta.get("reasoning"))
+    tools: Final = _nonempty(as_mapping(delta.get("function_call")).get("arguments")) or any(
+        _nonempty(as_mapping(as_mapping(tool).get("function")).get("arguments"))
+        for tool in _items(delta.get("tool_calls"))
+    )
+    pairs: Final[tuple[tuple[OutputKind, bool], ...]] = (
+        ("text", text), ("reasoning", reasoning), ("tool_arguments", tools),
+    )
+    return tuple(OutputSignal("openai_chat", kind) for kind, present in pairs if present)
+
+
+def _anthropic_block_signals(block: object) -> tuple[OutputSignal, ...]:
+    data: Final = as_mapping(block)
+    kind: Final = data.get("type")
+    if kind == "text" and _nonempty(data.get("text")):
+        return (OutputSignal("anthropic", "text"),)
+    if kind == "thinking" and _nonempty(data.get("thinking")):
+        return (OutputSignal("anthropic", "reasoning"),)
+    if kind == "tool_use" and as_mapping(data.get("input")):
+        return (OutputSignal("anthropic", "tool_arguments"),)
+    return ()
+
+
+def _responses_item_signals(item: object) -> tuple[OutputSignal, ...]:
+    data: Final = as_mapping(item)
+    kind: Final = data.get("type")
+    if not isinstance(kind, str):
+        return ()
+    if kind in {"function_call", "custom_tool_call"} and _nonempty(data.get("arguments") or data.get("input")):
+        return (OutputSignal("openai_responses", "tool_arguments"),)
+    parts: Final = _items(data.get("content")) if kind == "message" else _items(data.get("summary"))
+    return tuple(
+        OutputSignal("openai_responses", "reasoning" if kind == "reasoning" else "text")
+        for part in parts if _nonempty(as_mapping(part).get("text"))
+    )
+
+
+def _gemini_part_signals(part: object) -> tuple[OutputSignal, ...]:
+    data: Final = as_mapping(part)
+    text: Final = (OutputSignal("gemini", "reasoning" if data.get("thought") is True else "text"),) if _nonempty(data.get("text")) else ()
+    tools: Final = (OutputSignal("gemini", "tool_arguments"),) if as_mapping(as_mapping(data.get("functionCall")).get("args")) else ()
+    return (*text, *tools)
+
+
+def _gemini_candidate_signals(candidate: object) -> tuple[OutputSignal, ...]:
+    content: Final = as_mapping(as_mapping(candidate).get("content"))
+    return sum((_gemini_part_signals(part) for part in _items(content.get("parts"))), ())
+
+
+def output_signals(payload: Mapping[str, object]) -> tuple[OutputSignal, ...]:
     if payload.get("error"):
-        return None
-    return _chat_signal(payload) or _anthropic_signal(payload) or _responses_signal(payload) or _gemini_signal(payload)
+        return ()
+    native_anthropic: Final = _anthropic_signal(payload)
+    native_responses: Final = _responses_signal(payload)
+    anthropic: Final = as_mapping(payload.get("message")) if payload.get("type") == "message_start" else payload
+    responses: Final = as_mapping(payload.get("response")) if payload.get("type") == "response.completed" else payload
+    collected: Final = (
+        *sum((_chat_output_signals(choice) for choice in _items(payload.get("choices"))), ()),
+        *((native_anthropic,) if native_anthropic is not None else ()),
+        *sum((_anthropic_block_signals(block) for block in _items(anthropic.get("content"))), ()),
+        *((native_responses,) if native_responses is not None else ()),
+        *sum((_responses_item_signals(item) for item in _items(responses.get("output"))), ()),
+        *_responses_item_signals(payload.get("item")),
+        *sum((_gemini_candidate_signals(candidate) for candidate in _items(payload.get("candidates"))), ()),
+    )
+    return tuple(dict.fromkeys(collected))
 
 
-class _OutputDetector:
+class OutputDetector:
     def __init__(self) -> None:
         self._pending = b""
         self._decoder = SSEDecoder()
         self._disabled = False
+        self.has_event = False
+        self.terminal_event: str | None = None
 
     def observe(self, chunk: object) -> OutputSignal | None:
+        signals: Final = self.observe_signals(chunk)
+        return signals[0] if signals else None
+
+    def observe_signals(self, chunk: object) -> tuple[OutputSignal, ...]:
         if self._disabled:
-            return None
+            return ()
         if isinstance(chunk, (Mapping, BaseModel)):
             try:
-                return output_signal(as_mapping(chunk))
+                self.has_event = True
+                document: Final = as_mapping(chunk)
+                self._observe_terminal(document)
+                return output_signals(document)
             except (ValueError, TypeError):
                 self._disabled = True
-                return None
+                return ()
         if not isinstance(chunk, (str, bytes)):
-            return None
+            return ()
         raw: Final = chunk.encode("utf-8") if isinstance(chunk, str) else chunk
         if len(self._pending) + len(raw) > _MAX_PENDING_BYTES:
             self._disabled = True
             self._pending = b""
-            return None
-        complete, pending = split_complete_sse_frames(self._pending + raw)
+            return ()
+        combined: Final = self._pending + raw
+        if combined.lstrip().startswith(b"{"):
+            try:
+                payload: Final = _PAYLOAD.validate_json(combined)
+            except ValidationError:
+                self._pending = combined
+                return ()
+            self._pending = b""
+            self.has_event = True
+            self._observe_terminal(payload)
+            return output_signals(payload)
+        complete, pending = split_complete_sse_frames(combined)
         self._pending = pending
         try:
             return self._frames(complete.decode("utf-8"))
         except (UnicodeError, ValueError, TypeError):
             self._disabled = True
             self._pending = b""
-            return None
+            return ()
 
-    def _frames(self, content: str) -> OutputSignal | None:
-        for line in content.splitlines():
-            event: Final = self._decoder.decode(line)
-            if event is None or not event.data or event.data == "[DONE]":
-                continue
-            try:
-                payload: Final = _PAYLOAD.validate_json(event.data)
-            except ValidationError:
-                continue
-            signal: Final = output_signal(payload)
-            if signal is not None:
-                return signal
-        return None
+    def _frames(self, content: str) -> tuple[OutputSignal, ...]:
+        return tuple(dict.fromkeys(sum((self._line(line) for line in content.splitlines()), ())))
+
+    def _line(self, line: str) -> tuple[OutputSignal, ...]:
+        event: Final = self._decoder.decode(line)
+        if event is None or not event.data:
+            return ()
+        self.has_event = True
+        if event.data == "[DONE]":
+            self.terminal_event = "[DONE]"
+            return ()
+        try:
+            payload: Final = _PAYLOAD.validate_json(event.data)
+        except ValidationError:
+            return ()
+        self._observe_terminal(payload)
+        return output_signals(payload)
+
+    def _observe_terminal(self, payload: Mapping[str, object]) -> None:
+        kind: Final = payload.get("type")
+        if isinstance(kind, str) and kind in {"message_stop", "response.completed"}:
+            self.terminal_event = kind
 
 
 class _ObservedStream:
     def __init__(self, correlation: _Correlation, clock: Callable[[], datetime]) -> None:
         self._correlation = correlation
         self._clock = clock
-        self._detector = _OutputDetector()
+        self._detector = OutputDetector()
         self._first_output_at: datetime | None = None
         self._signal: OutputSignal | None = None
         self._ended_at: datetime | None = None

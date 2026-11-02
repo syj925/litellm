@@ -9,7 +9,7 @@ from typing import Annotated, Final, Literal, TypeAlias
 from uuid import uuid4
 
 import psycopg
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Request
 from pydantic import (
     AliasChoices,
     AwareDatetime,
@@ -58,6 +58,7 @@ from .models import (
 )
 from .pricing import as_mapping, catalog_candidates, catalog_source_label, validated_cache_write_tiers
 from .store import WalletStore, get_store
+from .trace_store import get_request_trace
 
 router: Final = APIRouter(prefix="/retail", tags=["Retail accounts"])
 
@@ -472,9 +473,9 @@ OperationKey: TypeAlias = Annotated[
 ]
 
 
-async def _execute(operation: Awaitable[dict[str, JsonValue]]) -> dict[str, JsonValue]:
+async def _execute(operation: Awaitable[Mapping[str, JsonValue]]) -> dict[str, JsonValue]:
     try:
-        return await operation
+        return dict(await operation)
     except WalletError as exc:
         match exc:
             case WalletNotFound() | ReservationNotFound() | PlanNotFound():
@@ -937,6 +938,13 @@ async def admin_reservations(
     offset: int = Query(default=0, ge=0, le=1000000),
 ) -> dict[str, JsonValue]:
     return await _execute(store.list_reservations(user_id=user_id, state=state, limit=limit, offset=offset))
+
+
+@router.get("/admin/request-traces/{call_id}")
+async def admin_request_trace(
+    call_id: Annotated[str, Path(min_length=1, max_length=191)], admin: Admin, store: Store,
+) -> dict[str, JsonValue]:
+    return await _execute(get_request_trace(store, call_id))
 
 
 @router.post("/admin/reservations/{request_id}/resolve")

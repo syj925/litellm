@@ -113,6 +113,11 @@ from litellm.litellm_core_utils.request_timeout_resolver import (
     get_configured_request_timeout,
     get_service_tier_timeout,
 )
+from litellm.litellm_core_utils.request_trace_transport import (
+    record_trace_event,
+    routing_trace_scope,
+    trace_router_phase,
+)
 from litellm.litellm_core_utils.secret_redaction import redact_string
 from litellm.litellm_core_utils.sensitive_data_masker import (
     SensitiveDataMasker,
@@ -3959,54 +3964,55 @@ class Router:
                 kwargs=kwargs,
                 client_type="max_parallel_requests",
             )
-            compacted_input: Final = await compact_to_fit(self, deployment, input_kwargs, "chat")
-            async with contextlib.AsyncExitStack() as deployment_slot:
-                if isinstance(max_parallel_requests_limit, MaxParallelRequestsLimit):
-                    deployment_slot.enter_context(max_parallel_requests_limit)
-                await self.async_routing_strategy_pre_call_checks(
-                    deployment=deployment,
-                    logging_obj=logging_obj,
-                    parent_otel_span=parent_otel_span,
-                )
-                response = await litellm.acompletion(**compacted_input)
-
-                ## CHECK CONTENT FILTER ERROR ##
-                if isinstance(response, ModelResponse):
-                    _should_raise = self._should_raise_content_policy_error(
-                        model=model, response=response, kwargs=kwargs
+            with routing_trace_scope(deployment, kwargs):
+                compacted_input: Final = await compact_to_fit(self, deployment, input_kwargs, "chat")
+                async with contextlib.AsyncExitStack() as deployment_slot:
+                    if isinstance(max_parallel_requests_limit, MaxParallelRequestsLimit):
+                        deployment_slot.enter_context(max_parallel_requests_limit)
+                    await self.async_routing_strategy_pre_call_checks(
+                        deployment=deployment,
+                        logging_obj=logging_obj,
+                        parent_otel_span=parent_otel_span,
                     )
-                    if _should_raise:
-                        raise litellm.ContentPolicyViolationError(
-                            message="Response output was blocked.",
-                            model=model,
-                            llm_provider="",
+                    response = await litellm.acompletion(**compacted_input)
+
+                    ## CHECK CONTENT FILTER ERROR ##
+                    if isinstance(response, ModelResponse):
+                        _should_raise = self._should_raise_content_policy_error(
+                            model=model, response=response, kwargs=kwargs
+                        )
+                        if _should_raise:
+                            raise litellm.ContentPolicyViolationError(
+                                message="Response output was blocked.",
+                                model=model,
+                                llm_provider="",
+                            )
+
+                    if (
+                        isinstance(response, CustomStreamWrapper)
+                        and response.completion_stream is None
+                        and response.make_call is not None
+                    ):
+                        await response.fetch_stream()
+
+                    self.success_calls[model_name] += 1
+                    verbose_router_logger.info("litellm.acompletion(model=%s)\x1b[32m 200 OK\x1b[0m", model_name)
+                    # debug how often this deployment picked
+                    self._track_deployment_metrics(
+                        deployment=deployment,
+                        response=response,
+                        parent_otel_span=parent_otel_span,
+                    )
+
+                    if isinstance(response, CustomStreamWrapper):
+                        return await self._acompletion_streaming_iterator(
+                            model_response=response,
+                            messages=messages,
+                            initial_kwargs=input_kwargs_for_streaming_fallback,
+                            deployment_slot=deployment_slot.pop_all(),
                         )
 
-                if (
-                    isinstance(response, CustomStreamWrapper)
-                    and response.completion_stream is None
-                    and response.make_call is not None
-                ):
-                    await response.fetch_stream()
-
-                self.success_calls[model_name] += 1
-                verbose_router_logger.info("litellm.acompletion(model=%s)\x1b[32m 200 OK\x1b[0m", model_name)
-                # debug how often this deployment picked
-                self._track_deployment_metrics(
-                    deployment=deployment,
-                    response=response,
-                    parent_otel_span=parent_otel_span,
-                )
-
-                if isinstance(response, CustomStreamWrapper):
-                    return await self._acompletion_streaming_iterator(
-                        model_response=response,
-                        messages=messages,
-                        initial_kwargs=input_kwargs_for_streaming_fallback,
-                        deployment_slot=deployment_slot.pop_all(),
-                    )
-
-                return response
+                    return response
         except litellm.Timeout as e:
             deployment_request_timeout_param: Final = _timeout_debug_deployment_dict.get("litellm_params", {}).get(
                 "request_timeout", None
@@ -7645,6 +7651,9 @@ class Router:
         """
         Common utilities for async_function_with_fallbacks
         """
+        record_trace_event("router_fallback_evaluated", {
+            "model_group": model_group, "error_type": type(e).__name__, "disabled": bool(disable_fallbacks),
+        })
         if verbose_router_logger.isEnabledFor(logging.DEBUG):
             verbose_router_logger.debug("Traceback%s", redact_string(traceback.format_exc()))
         original_exception: Final = e
@@ -8150,6 +8159,10 @@ class Router:
                 all_deployments=_all_deployments,
             )
 
+            record_trace_event("router_retry_scheduled", {
+                "model_group": model_group, "retry_index": 1, "delay_seconds": retry_after,
+                "error_type": type(original_exception).__name__,
+            })
             await asyncio.sleep(retry_after)
 
             for current_attempt in range(num_retries):
@@ -8219,6 +8232,10 @@ class Router:
                         healthy_deployments=_healthy_deployments,
                         all_deployments=_all_deployments,
                     )
+                    record_trace_event("router_retry_scheduled", {
+                        "model_group": model_group, "retry_index": current_attempt + 2, "delay_seconds": _timeout,
+                        "error_type": type(e).__name__, "remaining_retries": remaining_retries,
+                    })
                     await asyncio.sleep(_timeout)
 
             if type(original_exception) in litellm.LITELLM_EXCEPTION_TYPES:
@@ -9095,16 +9112,19 @@ class Router:
     ) -> AsyncGenerator[None, None]:
         """Holds the deployment's max_parallel_requests slot, if it has one, around the provider call. Routing
         strategy pre-call checks run inside the slot so their rpm accounting stays concurrency-safe."""
-        max_parallel_requests_limit: Final = self._get_client(
-            deployment=deployment,
-            kwargs=kwargs,
-            client_type="max_parallel_requests",
-        )
-        async with contextlib.AsyncExitStack() as slot:
-            if isinstance(max_parallel_requests_limit, MaxParallelRequestsLimit):
-                slot.enter_context(max_parallel_requests_limit)
-            await self.async_routing_strategy_pre_call_checks(deployment=deployment, parent_otel_span=parent_otel_span)
-            yield
+        with routing_trace_scope(deployment, kwargs):
+            max_parallel_requests_limit: Final = self._get_client(
+                deployment=deployment,
+                kwargs=kwargs,
+                client_type="max_parallel_requests",
+            )
+            async with contextlib.AsyncExitStack() as slot:
+                with trace_router_phase("deployment_slot_wait"):
+                    if isinstance(max_parallel_requests_limit, MaxParallelRequestsLimit):
+                        slot.enter_context(max_parallel_requests_limit)
+                with trace_router_phase("routing_pre_call_checks"):
+                    await self.async_routing_strategy_pre_call_checks(deployment=deployment, parent_otel_span=parent_otel_span)
+                yield
 
     async def async_callback_filter_deployments(
         self,
@@ -13770,7 +13790,7 @@ class Router:
 
         Allows all cache calls to be made async => 10x perf impact (8rps -> 100 rps).
         """
-        with phase_span(f"route {model}"):
+        with phase_span(f"route {model}"), trace_router_phase("deployment_selection"):
             return await self._async_get_available_deployment(
                 model=model,
                 request_kwargs=request_kwargs,

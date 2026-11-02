@@ -241,3 +241,22 @@ CREATE TABLE IF NOT EXISTS retail_cache_observations (
     PRIMARY KEY (litellm_call_id,user_id,started_at)
 );
 CREATE INDEX IF NOT EXISTS retail_cache_observations_started_at ON retail_cache_observations(started_at);
+
+CREATE TABLE IF NOT EXISTS retail_request_traces (
+    trace_id TEXT PRIMARY KEY CHECK (length(trace_id) BETWEEN 1 AND 191),
+    call_id TEXT CHECK (call_id IS NULL OR length(call_id) BETWEEN 1 AND 191),
+    retail_request_id TEXT,
+    trace JSONB NOT NULL,
+    request_body JSONB,
+    body_expires_at TIMESTAMPTZ NOT NULL,
+    recorded_until_ms DOUBLE PRECISION NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS retail_request_traces_call_id ON retail_request_traces(call_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS retail_request_traces_body_expiry
+ON retail_request_traces(body_expires_at) WHERE request_body IS NOT NULL;
+CREATE INDEX IF NOT EXISTS retail_request_traces_created_at ON retail_request_traces(created_at);
+CREATE INDEX IF NOT EXISTS retail_request_traces_retail_request_id ON retail_request_traces(retail_request_id);
+CREATE INDEX IF NOT EXISTS retail_reservations_gateway_call_id
+ON retail_reservations((details->>'gateway_call_id')) WHERE details ? 'gateway_call_id';

@@ -16,7 +16,7 @@ from litellm.constants import (
     CLIENT_REQUESTED_MODEL_SCOPE_KEY,
     MAX_REQUEST_BODY_SIZE_TO_REPAIR_MB,
 )
-from litellm.integrations.otel.runtime import phase_event
+from litellm.integrations.otel.runtime import phase_event, phase_span
 from litellm.proxy._types import ProxyException
 from litellm.proxy.common_utils.callback_utils import (
     get_metadata_variable_name_from_kwargs,
@@ -262,7 +262,8 @@ async def read_request_body(request: Request | None) -> dict:
             )
         else:
             # Read the request body
-            body: Final = await request.body()
+            with phase_span("request.body_receive"):
+                body: Final = await request.body()
             _mark_body_received(len(body))
 
             # Return empty dict if body is empty or None
@@ -270,7 +271,8 @@ async def read_request_body(request: Request | None) -> dict:
                 parsed_body = {}
             else:
                 try:
-                    parsed_body = orjson.loads(body)
+                    with phase_span("request.json_parse"):
+                        parsed_body = orjson.loads(body)
                 except orjson.JSONDecodeError as e:
                     # The surrogate-repair fallback below runs two full-body re.sub
                     # passes, which block the event loop on multi-MB malformed bodies.

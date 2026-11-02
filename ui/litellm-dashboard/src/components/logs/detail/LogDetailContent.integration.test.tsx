@@ -657,6 +657,20 @@ describe("LogDetailContent", () => {
     expect(dateElements.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("converts offset timestamps to UTC before adding the UTC designator", () => {
+    render(
+      <LogDetailContent
+        logEntry={createLogEntry({
+          startTime: "2026-11-02T08:30:00.000+08:00",
+          endTime: "2026-11-02T08:30:01.500+08:00",
+        })}
+      />,
+    );
+    expect(screen.getByText("2026-11-02T00:30:00.000Z")).toBeVisible();
+    expect(screen.getByText("2026-11-02T00:30:01.500Z")).toBeVisible();
+    expect(screen.queryByText("2026-11-02T08:30:00.000Z")).not.toBeInTheDocument();
+  });
+
   it("should display Vector Store Requests when vector store data exists", () => {
     render(
       <LogDetailContent

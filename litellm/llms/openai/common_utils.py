@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from aiohttp import ClientSession
 
 import litellm
+from litellm.litellm_core_utils.request_trace_transport import merge_trace_hooks
 from litellm.litellm_core_utils.token_counter import token_counter
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.custom_httpx.http_handler import (
@@ -323,6 +324,7 @@ class BaseOpenAILLM:
 
         return httpx.AsyncClient(
             verify=ssl_config,
+            event_hooks=merge_trace_hooks(),
             transport=transport,
             mounts=AsyncHTTPHandler.create_httpx_proxy_mounts(transport, verify=ssl_config, cert=None),
             follow_redirects=True,

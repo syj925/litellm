@@ -193,6 +193,20 @@ async def test_pricing_preview_requires_an_administrator_even_though_it_is_read_
     assert response.status_code == 403, response.text
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", (LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
+async def test_request_traces_reject_non_admin_users_before_accessing_diagnostic_storage(role: LitellmUserRoles) -> None:
+    async def authenticated_user() -> UserAPIKeyAuth:
+        return UserAPIKeyAuth(user_id="trace-reader", user_role=role)
+
+    app: Final = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[user_api_key_auth] = authenticated_user
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://retail.test") as client:
+        response: Final = await client.get("/retail/admin/request-traces/request-id")
+    assert response.status_code == 403, response.text
+
+
 def test_expression_receipts_keep_verified_numeric_trace_and_remove_request_context() -> None:
     expression: Final = "p * 2 + c * 6"
     trace: Final = {

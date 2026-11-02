@@ -51,16 +51,22 @@ def phase_span(name: str) -> Generator[Span | None]:
     Yields ``None`` (a plain no-op) when the OTel SDK is unavailable or V2 is not
     the active logger.
     """
-    runtime: Final = _otel_runtime()
-    if runtime is None:
-        yield None
-        return
-    with runtime[0](name) as span:
-        yield span
+    from litellm.proxy.retail.request_tracing import trace_phase
+
+    with trace_phase(name):
+        runtime: Final = _otel_runtime()
+        if runtime is None:
+            yield None
+            return
+        with runtime[0](name) as span:
+            yield span
 
 
 def phase_event(name: str, attributes: PhaseEventAttributes | None = None) -> None:
     """Mark a point in the request on its span (no-op without V2)."""
+    from litellm.proxy.retail.request_tracing import record_event
+
+    record_event(name, attributes)
     runtime: Final = _otel_runtime()
     if runtime is None:
         return
@@ -69,6 +75,16 @@ def phase_event(name: str, attributes: PhaseEventAttributes | None = None) -> No
 
 def seed_request_identity(user_api_key_dict: object, model: object = None) -> None:
     """Seed request-identity Baggage at the auth boundary (no-op without V2)."""
+    from litellm.proxy.retail.request_tracing import current_trace
+
+    trace: Final = current_trace()
+    if trace is not None:
+        trace.set_attributes({
+            "user_id": getattr(user_api_key_dict, "user_id", None),
+            "team_id": getattr(user_api_key_dict, "team_id", None),
+            "credential_alias": getattr(user_api_key_dict, "key_alias", None),
+            "model": model,
+        })
     runtime: Final = _otel_runtime()
     if runtime is None:
         return
@@ -76,6 +92,11 @@ def seed_request_identity(user_api_key_dict: object, model: object = None) -> No
 
 
 def phase_attributes(attributes: PhaseAttributes) -> None:
+    from litellm.proxy.retail.request_tracing import current_trace
+
+    trace: Final = current_trace()
+    if trace is not None:
+        trace.set_attributes(attributes)
     runtime: Final = _otel_runtime()
     if runtime is None:
         return

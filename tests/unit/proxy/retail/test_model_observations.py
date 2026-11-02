@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Final
@@ -7,10 +8,56 @@ import pytest
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import UserAPIKeyAuth
-from litellm.proxy.retail.model_observations import ModelObservation, ModelObservationCollector, output_signal
+from litellm.proxy.retail.model_observations import (
+    ModelObservation,
+    ModelObservationCollector,
+    OutputDetector,
+    output_signal,
+)
 from litellm.types.utils import ModelResponseStream
 
+
+@pytest.mark.parametrize("payload", (
+    {"type": {}}, {"type": []}, {"output": [{"type": {}}]}, {"output": [{"type": []}]},
+))
+def test_unrecognized_json_type_fields_do_not_interrupt_the_response(payload: Mapping[str, object]) -> None:
+    detector: Final = OutputDetector()
+    assert detector.observe_signals(json.dumps(payload).encode()) == ()
+    assert detector.terminal_event is None
+
 _START: Final = datetime(2026, 1, 1, 1, 1, 1, 123456, tzinfo=timezone.utc)
+
+
+def test_detector_distinguishes_early_metadata_from_every_output_kind_in_the_same_network_chunk() -> None:
+    detector: Final = OutputDetector()
+    assert detector.observe_signals(b": keepalive\n\n") == () and not detector.has_event
+    assert detector.observe_signals(b'data: {"type":"message_start","message":{"role":"assistant"}}\n\n') == ()
+    assert detector.has_event
+    signals: Final = detector.observe_signals(
+        b'data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"private"}}\n\n'
+        b'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"visible"}}\n\n'
+        b'data: {"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{"}}\n\n'
+    )
+    assert tuple(signal.kind for signal in signals) == ("reasoning", "text", "tool_arguments")
+
+
+def test_detector_parses_fragmented_nonstream_json_and_preserves_multiple_kinds_in_one_payload() -> None:
+    detector: Final = OutputDetector()
+    assert detector.observe_signals(b'{"choices":[{"message":') == () and not detector.has_event
+    signals: Final = detector.observe_signals(b'{"content":"text","reasoning_content":"thought","tool_calls":'
+                                             b'[{"function":{"arguments":"{}"}}]}}]}')
+    assert detector.has_event
+    assert {signal.kind for signal in signals} == {"text", "reasoning", "tool_arguments"}
+
+
+@pytest.mark.parametrize("payload", (
+    {"type": "message", "content": [{"type": "thinking", "thinking": "thought"}, {"type": "text", "text": "visible"}]},
+    {"object": "response", "output": [{"type": "reasoning", "summary": [{"text": "thought"}]},
+                                        {"type": "message", "content": [{"type": "output_text", "text": "visible"}]}]},
+    {"candidates": [{"content": {"parts": [{"thought": True, "text": "thought"}, {"text": "visible"}]}}]},
+))
+def test_detector_keeps_reasoning_and_text_from_completed_native_responses(payload: dict[str, object]) -> None:
+    assert {signal.kind for signal in OutputDetector().observe_signals(payload)} == {"reasoning", "text"}
 
 
 def _request(call_id: str = "server-call") -> dict[str, object]:

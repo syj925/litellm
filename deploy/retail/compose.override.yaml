@@ -9,6 +9,13 @@ services:
     volumes:
       - ../litellm/deploy/retail/config.yaml:/app/config.yaml:ro
       - ../litellm/litellm/proxy/retail:/app/.venv/lib/python3.13/site-packages/litellm/proxy/retail:ro
+      - ../litellm/litellm/integrations/otel/runtime.py:/app/.venv/lib/python3.13/site-packages/litellm/integrations/otel/runtime.py:ro
+      - ../litellm/litellm/proxy/common_request_processing.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/common_request_processing.py:ro
+      - ../litellm/litellm/proxy/common_utils/http_parsing_utils.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/common_utils/http_parsing_utils.py:ro
+      - ../litellm/litellm/router.py:/app/.venv/lib/python3.13/site-packages/litellm/router.py:ro
+      - ../litellm/litellm/litellm_core_utils/request_trace_transport.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/request_trace_transport.py:ro
+      - ../litellm/litellm/llms/custom_httpx/http_handler.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/custom_httpx/http_handler.py:ro
+      - ../litellm/litellm/llms/openai/common_utils.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/openai/common_utils.py:ro
       - ../litellm/litellm/proxy/proxy_server.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/proxy_server.py:ro
       - ../litellm/litellm/proxy/_types.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/_types.py:ro
       - ../litellm/litellm/proxy/auth/route_checks.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/auth/route_checks.py:ro
