@@ -2677,6 +2677,10 @@ app.add_middleware(BudgetReservationReleaseMiddleware, release=release_unbound_b
 app.add_middleware(RedisRequestBatchMiddleware)
 app.add_middleware(InFlightRequestsMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+if os.getenv("RETAIL_PORTAL_ENABLED", "false").lower() == "true":
+    from litellm.proxy.retail.customer_response_middleware import CustomerResponsePrivacyMiddleware
+
+    app.add_middleware(CustomerResponsePrivacyMiddleware)
 app.add_middleware(GZipBufferedResponseMiddleware)
 
 
@@ -11933,9 +11937,9 @@ async def model_list(
         get_available_models_for_user,
     )
     from litellm.types.proxy.model_listing import ModelInfoResponse
-    from litellm.proxy.retail.customer_access import is_retail_customer
+    from litellm.proxy.retail.customer_access import needs_customer_privacy
 
-    list_metadata: Final = bool(include_metadata) and not is_retail_customer(user_api_key_dict)
+    list_metadata: Final = bool(include_metadata) and not needs_customer_privacy(user_api_key_dict)
 
     http_request: Final = cast(Request | None, request)  # cast-ok: in-process callers pass no request
     wants_anthropic_format: Final = (
@@ -16760,11 +16764,11 @@ async def _customer_visible_model_info(
     rows: Sequence[Mapping[str, object]], auth: UserAPIKeyAuth,
 ) -> Sequence[Mapping[str, object]]:
     from litellm.proxy.retail.customer_access import (
-        customer_model_deployment_ids, is_retail_customer, safe_customer_model_info,
+        customer_model_deployment_ids, needs_customer_privacy, safe_customer_model_info,
     )
     from litellm.proxy.retail.pricing import as_mapping
 
-    if not is_retail_customer(auth):
+    if not needs_customer_privacy(auth):
         return rows
     names: Final = tuple(name for row in rows if isinstance(name := row.get("model_name"), str))
     hidden: Final = await _names_hidden_by_listing_callbacks(auth, names)
@@ -17326,9 +17330,9 @@ async def model_group_info(
         user_api_key_dict, tuple(dict.fromkeys(public_group_names))
     )
 
-    from litellm.proxy.retail.customer_access import is_retail_customer, safe_customer_model_group
+    from litellm.proxy.retail.customer_access import needs_customer_privacy, safe_customer_model_group
 
-    if is_retail_customer(user_api_key_dict):
+    if needs_customer_privacy(user_api_key_dict):
         return {
             "data": [
                 safe_customer_model_group({**group.model_dump(), "model_group": public_name})

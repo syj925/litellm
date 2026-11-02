@@ -15,6 +15,8 @@ from litellm.proxy.retail.customer_access import (
     customer_key_generate_payload,
     customer_key_metadata,
     customer_resource_policy,
+    is_retail_customer,
+    needs_customer_privacy,
     safe_customer_key_info,
     safe_customer_model_group,
     safe_customer_model_info,
@@ -29,6 +31,23 @@ def enable_customer_portal(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _customer(**fields: object) -> UserAPIKeyAuth:
     return UserAPIKeyAuth(user_id="owner", user_role=LitellmUserRoles.INTERNAL_USER, **fields)
+
+
+@pytest.mark.parametrize("role", tuple(LitellmUserRoles) + (None,))
+def test_privacy_roles_are_independent_of_retail_account_authorization(role: LitellmUserRoles | None) -> None:
+    auth: Final = UserAPIKeyAuth(user_id="owner", user_role=role)
+    assert needs_customer_privacy(auth) is (role not in {
+        LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY,
+    })
+    if role in {LitellmUserRoles.ORG_ADMIN, LitellmUserRoles.TEAM}:
+        assert is_retail_customer(auth) is False
+
+
+def test_future_role_is_private_and_disabled_portal_preserves_native_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
+    auth: Final = UserAPIKeyAuth.model_construct(user_id="owner", user_role="future-role")
+    assert needs_customer_privacy(auth) is True
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "false")
+    assert needs_customer_privacy(auth) is False
 
 
 @pytest.mark.parametrize(
@@ -104,7 +123,7 @@ def test_customer_model_metadata_returns_capabilities_without_supplier_routing_o
     }
     assert safe_customer_model_info((row,)) == [{
         "model_name": "public-model", "litellm_params": {"model": "public-model"},
-        "model_info": {"id": "opaque-id", "supports_vision": True, "mode": "chat"},
+        "model_info": {"supports_vision": True, "mode": "chat"},
     }]
     assert safe_customer_model_group({"model_group": "public-model", "providers": ["private"], "mode": "chat"}) == {
         "model_group": "public-model", "mode": "chat",

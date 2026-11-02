@@ -23,10 +23,11 @@ def _customer() -> UserAPIKeyAuth:
 
 
 @pytest.mark.parametrize("paged", (False, True))
-def test_customer_logs_keep_public_usage_and_pool_without_supplier_cost_or_routing(paged: bool) -> None:
+def test_customer_logs_keep_public_usage_without_supplier_cost_pool_or_routing(paged: bool) -> None:
     row: Final = {
         "request_id": "request", "model": "vendor/private-model", "model_group": "public-model",
         "api_base": "https://private.example", "model_id": "private-deployment", "custom_llm_provider": "vendor",
+        "api_key": "private-native-hash",
         "spend": 3, "session_total_spend": 6, "mcp_tool_call_spend": 2,
         "total_tokens": 12, "status": "failure", "session_total_count": 2,
         "metadata": {
@@ -41,12 +42,41 @@ def test_customer_logs_keep_public_usage_and_pool_without_supplier_cost_or_routi
     rows: Final = actual["data"] if isinstance(actual, dict) else actual
     assert rows[0]["model"] == "public-model"
     assert rows[0]["total_tokens"] == 12
-    assert rows[0]["metadata"]["retail_resource_pool_name"] == "Allowed pool"
+    assert "retail_resource_pool_name" not in rows[0]["metadata"]
+    assert "retail_resource_pool_id" not in rows[0]["metadata"]
     assert rows[0]["status"] == "failure"
+    assert "api_key" not in rows[0]
     serialized: Final = json.dumps(actual)
     assert "private" not in serialized
     assert "spend" not in serialized
     assert "provider_cost" not in serialized
+
+
+@pytest.mark.parametrize("role", (
+    LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY, LitellmUserRoles.CUSTOMER,
+    LitellmUserRoles.TEAM, LitellmUserRoles.ORG_ADMIN, None,
+))
+def test_retail_log_privacy_covers_every_non_operator_role_and_preserves_their_conversation(
+    role: LitellmUserRoles | None,
+) -> None:
+    auth: Final = UserAPIKeyAuth(user_id="owner", user_role=role)
+    messages: Final = [{"role": "user", "content": "my request"}]
+    payload: Final = {
+        "request_id": "mine", "model_group": "public-alias", "api_base": "private-origin",
+        "model_id": "private-deployment", "spend": 3, "messages": messages,
+        "metadata": {"retail_resource_pool_id": "private-pool", "retail_resource_source_kind": "private-source",
+                     "error_information": {"traceback": "private-stack", "error_message": "private-error"}},
+        "proxy_server_request": {"headers": {"authorization": "private-credential"}, "body": {
+            "model": "public-alias", "messages": messages,
+        }},
+    }
+    listed: Final = customer_log_response([payload], auth)
+    detail: Final = customer_log_detail(payload, auth)
+    assert listed[0]["model"] == "public-alias"
+    assert "private" not in json.dumps(listed)
+    assert "private" not in json.dumps(detail)
+    assert detail["messages"] is messages
+    assert detail["proxy_server_request"]["body"]["messages"] is messages
 
 
 def test_customer_log_detail_keeps_own_conversation_without_private_headers_or_response_cost() -> None:
@@ -80,7 +110,21 @@ def test_customer_error_detail_does_not_return_raw_upstream_body() -> None:
     assert actual["response"]["error"]["type"] == "api_error"
 
 
-def test_customer_activity_preserves_counts_and_public_models_without_native_cost() -> None:
+def test_direct_stored_request_body_keeps_the_users_prompt_without_returning_private_transport_fields() -> None:
+    messages: Final = [{"role": "user", "content": "my prompt"}]
+    payload: Final = {"proxy_server_request": json.dumps({
+        "model": "public-alias", "messages": messages, "stream": True,
+        "api_base": "private-origin", "headers": {"authorization": "private-key"},
+    })}
+    detail: Final = customer_log_detail(payload, _customer())
+    assert detail["proxy_server_request"]["body"] == {"model": "public-alias", "messages": messages, "stream": True}
+    assert "private" not in json.dumps(detail)
+
+
+@pytest.mark.parametrize("role", (LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.ORG_ADMIN, None))
+def test_customer_activity_preserves_counts_and_public_models_without_native_cost(
+    role: LitellmUserRoles | None,
+) -> None:
     payload: Final = {
         "metadata": {"total_spend": 3, "total_tokens": 10},
         "results": [{
@@ -100,7 +144,7 @@ def test_customer_activity_preserves_counts_and_public_models_without_native_cos
     }
     assert "private" not in json.dumps(actual)
     assert "spend" not in json.dumps(actual)
-    response: Final = customer_activity_response(payload, _customer())
+    response: Final = customer_activity_response(payload, UserAPIKeyAuth(user_id="owner", user_role=role))
     assert json.loads(response.body) == actual
 
 
@@ -120,8 +164,9 @@ def test_disabled_portal_preserves_native_log_responses(monkeypatch: pytest.Monk
 
 
 @pytest.mark.parametrize("wrapped", (False, True))
+@pytest.mark.parametrize("role", (LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.ORG_ADMIN, None))
 def test_customer_user_info_keeps_account_limits_and_team_admin_membership_without_operator_metadata(
-    wrapped: bool,
+    wrapped: bool, role: LitellmUserRoles | None,
 ) -> None:
     account: Final = {
         "user_id": "owner", "user_email": "owner@example.test", "user_role": "internal_user", "spend": 10,
@@ -137,7 +182,7 @@ def test_customer_user_info_keeps_account_limits_and_team_admin_membership_witho
         "user_id": "owner", "user_info": account, "teams": [team],
         "keys": [{"token": "own-key", "spend": 10, "config": {"api_base": "private"}}],
     } if wrapped else account
-    result: Final = customer_user_info_response(payload, _customer())
+    result: Final = customer_user_info_response(payload, UserAPIKeyAuth(user_id="owner", user_role=role))
     actual: Final = json.loads(result.body)
     user: Final = actual["user_info"] if wrapped else actual
     assert user["max_budget"] == 100

@@ -5,7 +5,9 @@ import hashlib
 import json
 import re
 import sqlite3
+from collections.abc import Mapping, Sequence
 from datetime import timezone
+from typing import Final
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -7889,3 +7891,133 @@ async def test_management_team_lookup_without_memberships_keeps_own_user_scope()
     scope = await resolve_owned_read_scope(auth.user_id, lookup)
     assert scope == OwnedRows("caller")
     assert team_reads == []
+
+
+@pytest.mark.parametrize("role", (LitellmUserRoles.CUSTOMER, LitellmUserRoles.ORG_ADMIN, LitellmUserRoles.TEAM, None))
+def test_retail_spend_listing_scopes_every_non_operator_and_redacts_internal_fields(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, role: LitellmUserRoles | None,
+) -> None:
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    logs: Final = [
+        {"request_id": "mine", "user": "owner", "api_key": "own-key", "model": "private-model",
+         "model_group": "public-alias", "model_id": "private-deployment", "api_base": "private-origin", "spend": 2,
+         "startTime": "2026-01-01T12:00:00+00:00", "session_id": None, "team_id": None,
+         "metadata": {"retail_resource_pool_id": "private-pool", "retail_resource_source_kind": "private-source"}},
+        {"request_id": "foreign", "user": "another-owner", "api_key": "foreign-key", "model_group": "other-alias",
+         "spend": 5, "startTime": "2026-01-01T12:00:00+00:00", "session_id": None, "team_id": None},
+    ]
+
+    def visible(where: Mapping[str, object]) -> Sequence[Mapping[str, object]]:
+        return [row for row in logs if (
+            ("user" not in where or row["user"] == where["user"])
+            and ("model" not in where or row.get("model") == where["model"])
+            and ("model_group" not in where or row.get("model_group") == where["model_group"])
+        )]
+
+    monkeypatch.setattr(ps, "prisma_client", make_ui_spend_logs_mock_prisma(logs, visible))
+    monkeypatch.setitem(app.dependency_overrides, get_log_team_lookup, lambda: AsyncMock(return_value=()))
+    monkeypatch.setitem(app.dependency_overrides, ps.user_api_key_auth,
+                        lambda: UserAPIKeyAuth(user_id="owner", user_role=role))
+    response: Final = client.get("/spend/logs/ui", params={
+        "start_date": "2026-01-01 00:00:00", "end_date": "2026-01-02 00:00:00", "model": "public-alias",
+    })
+    assert response.status_code == 200, response.text
+    assert [row["request_id"] for row in response.json()["data"]] == ["mine"]
+    assert response.json()["data"][0]["model"] == "public-alias"
+    assert "private" not in response.text
+    assert '"spend"' not in response.text
+
+
+@pytest.mark.parametrize("private_filter", (
+    {"model_id": "private-id"}, {"error_message": "private-message"}, {"min_spend": "0.1"},
+    {"max_spend": "1"}, {"sort_by": "spend"}, {"used_client_oauth_token": "false"},
+))
+def test_retail_log_filters_cannot_be_used_to_infer_hidden_supplier_details(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, private_filter: Mapping[str, str],
+) -> None:
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    monkeypatch.setattr(ps, "prisma_client", make_ui_spend_logs_mock_prisma([], lambda where: []))
+    monkeypatch.setitem(app.dependency_overrides, ps.user_api_key_auth,
+                        lambda: UserAPIKeyAuth(user_id="owner", user_role=LitellmUserRoles.ORG_ADMIN))
+    response: Final = client.get("/spend/logs/ui", params={
+        "start_date": "2026-01-01 00:00:00", "end_date": "2026-01-02 00:00:00", **private_filter,
+    })
+    assert response.status_code == 403, response.text
+
+
+@pytest.mark.parametrize("private_identifiers,search,expected", (
+    (True, "private-deployment", ["mine"]), (False, "private-deployment", []), (False, "mine", ["mine"]),
+))
+def test_public_log_search_matches_request_ids_without_exposing_deployment_identifier_matches(
+    private_identifiers: bool, search: str, expected: Sequence[str],
+) -> None:
+    start: Final = datetime.datetime(2026, 1, 1, tzinfo=timezone.utc)
+    end: Final = start + datetime.timedelta(days=1)
+    condition: Final = spend_management_endpoints._build_spend_log_search_condition(
+        search, start, end, 1, private_identifiers=private_identifiers,
+    )
+    with sqlite3.connect(":memory:") as connection:
+        connection.execute('CREATE TABLE logs(request_id TEXT,litellm_call_id TEXT,api_key TEXT,team_id TEXT,"user" TEXT,'
+                           'end_user TEXT,session_id TEXT,model_id TEXT,"startTime" TEXT)')
+        connection.execute('INSERT INTO logs VALUES(?,?,?,?,?,?,?,?,?)', (
+            "mine", "call", "key", None, "owner", None, "session", "private-deployment", start.isoformat(),
+        ))
+        query: Final = "SELECT request_id FROM logs WHERE " + condition.sql.replace("::timestamptz AT TIME ZONE 'UTC'", "")
+        rows: Final = connection.execute(query, {"1": search, "2": start.isoformat(), "3": end.isoformat()}).fetchall()
+    assert [row[0] for row in rows] == expected
+
+
+def test_retail_legacy_log_export_ignores_another_users_filter(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    logs: Final = [{"request_id": "mine", "user": "owner", "model_group": "public", "spend": 3},
+                   {"request_id": "foreign", "user": "other", "model_group": "public", "spend": 5}]
+
+    class SpendTable:
+        async def find_many(
+            self, where: Mapping[str, object], order: Mapping[str, str], take: int,
+        ) -> Sequence[Mapping[str, object]]:
+            return [row for row in logs if row["user"] == where.get("user")] if "user" in where else logs
+
+    monkeypatch.setattr(ps, "prisma_client", MagicMock(db=MagicMock(litellm_spendlogs=SpendTable())))
+    monkeypatch.setitem(app.dependency_overrides, ps.user_api_key_auth,
+                        lambda: UserAPIKeyAuth(user_id="owner", user_role=LitellmUserRoles.ORG_ADMIN))
+    response: Final = client.get("/spend/logs", params={"user_id": "other"})
+    assert response.status_code == 200, response.text
+    assert [row["request_id"] for row in response.json()] == ["mine"]
+    assert '"spend"' not in response.text
+
+
+@pytest.mark.parametrize("path,params", (
+    ("/spend/logs/ui", {"start_date": "2026-01-01 00:00:00", "end_date": "2026-01-02 00:00:00"}),
+    ("/spend/logs/session/ui", {"session_id": "own-session"}), ("/spend/logs", {}),
+))
+def test_retail_log_storage_failures_do_not_return_internal_exception_details(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, path: str, params: Mapping[str, str],
+) -> None:
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+
+    class FailingStorage:
+        async def query_raw(self, query: str, *params: object) -> None:
+            raise RuntimeError("private-origin database traceback")
+
+        async def count(self, where: Mapping[str, object]) -> None:
+            raise RuntimeError("private-origin database traceback")
+
+        async def find_many(
+            self, where: Mapping[str, object], order: Mapping[str, str], take: int,
+        ) -> None:
+            raise RuntimeError("private-origin database traceback")
+
+    storage: Final = FailingStorage()
+    monkeypatch.setattr(ps, "prisma_client", MagicMock(db=MagicMock(
+        query_raw=storage.query_raw, litellm_spendlogs=storage,
+    )))
+    monkeypatch.setitem(app.dependency_overrides, get_log_team_lookup, lambda: AsyncMock(return_value=()))
+    monkeypatch.setitem(app.dependency_overrides, ps.user_api_key_auth,
+                        lambda: UserAPIKeyAuth(user_id="owner", user_role=LitellmUserRoles.ORG_ADMIN))
+    response: Final = client.get(path, params=params)
+    assert response.status_code == 500, response.text
+    assert "private-origin" not in response.text
+    assert "traceback" not in response.text

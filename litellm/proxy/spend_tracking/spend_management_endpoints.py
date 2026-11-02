@@ -51,9 +51,9 @@ from litellm.proxy.auth.authorization_dependencies import (
 )
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup
-from litellm.proxy.retail.customer_access import is_retail_customer
-from litellm.proxy.retail.customer_logs import customer_log_detail, customer_log_response
 from litellm.proxy.retail.cache_observations import enrich_cache_logs
+from litellm.proxy.retail.customer_access import needs_customer_privacy
+from litellm.proxy.retail.customer_logs import customer_log_detail, customer_log_response
 from litellm.proxy.spend_tracking.spend_capture_rate import (
     ProviderBillingCredentialMissing,
     ProviderBillingRequestFailed,
@@ -2453,17 +2453,19 @@ def _build_spend_log_search_condition(
     start_date: datetime,
     end_date: datetime,
     next_param_index: int,
+    private_identifiers: bool = True,
 ) -> _SpendLogSearchCondition:
     """request_id (indexed) matches across all time; the unindexed id columns only inside the window."""
     raw: Final = f"${next_param_index}"
     window_start: Final = f"${next_param_index + 1}"
     window_end: Final = f"${next_param_index + 2}"
+    deployment_search: Final = f" OR model_id = {raw}" if private_identifiers else ""
     sql: Final = (
         f"(request_id = {raw} OR ("
         f"\"startTime\" >= ({window_start}::timestamptz AT TIME ZONE 'UTC') "
         f"AND \"startTime\" <= ({window_end}::timestamptz AT TIME ZONE 'UTC') "
         f'AND (litellm_call_id = {raw} OR api_key = {raw} OR team_id = {raw} OR "user" = {raw} OR end_user = {raw} '
-        f"OR session_id = {raw} OR model_id = {raw})))"
+        f"OR session_id = {raw}{deployment_search})))"
     )
     return _SpendLogSearchCondition(sql=sql, params=(search, start_date, end_date))
 
@@ -2659,6 +2661,12 @@ async def ui_view_spend_logs(
 
     try:
         is_admin_view: Final = is_admin_view_safe(user_api_key_dict=user_api_key_dict)
+        private_view: Final = needs_customer_privacy(user_api_key_dict)
+        if private_view and (
+            model_id is not None or error_message is not None or used_client_oauth_token is not None
+            or min_spend is not None or max_spend is not None or sort_by == "spend"
+        ):
+            raise HTTPException(status_code=403, detail="Operator-only log filters are not available to this account")
         is_request_id_lookup: Final = request_id is not None and not is_v2
         is_search_lookup: Final = search is not None
         search_owns_window: Final = is_search_lookup and not is_v2
@@ -2722,7 +2730,7 @@ async def ui_view_spend_logs(
             where_conditions["request_id"] = request_id
 
         if model is not None:
-            where_conditions["model"] = model
+            where_conditions["model_group" if private_view else "model"] = model
 
         if model_id is not None:
             where_conditions["model_id"] = model_id
@@ -2787,7 +2795,7 @@ async def ui_view_spend_logs(
         user_scope_applies: Final = (
             not is_admin_view
             and team_id is None
-            and (is_request_id_lookup or _can_user_view_spend_log(user_api_key_dict=user_api_key_dict))
+            and (private_view or is_request_id_lookup or _can_user_view_spend_log(user_api_key_dict=user_api_key_dict))
         )
         read_scope: Final = (
             await _spend_log_read_scope(user_api_key_dict, log_team_lookup) if user_scope_applies else AllRows()
@@ -2809,7 +2817,7 @@ async def ui_view_spend_logs(
         skip: Final = (page - 1) * page_size
 
         # Build order clause from sort_by and sort_order
-        order_column: Final = sort_by
+        order_column: Final = "model_group" if private_view and sort_by == "model" else sort_by
         order_direction: Final = (sort_order or "desc").lower()
 
         # Build raw SQL to fetch paginated data WITHOUT heavy columns
@@ -2836,6 +2844,7 @@ async def ui_view_spend_logs(
                 start_date=start_date_obj,
                 end_date=end_date_obj,
                 next_param_index=p,
+                private_identifiers=not private_view,
             )
             sql_conditions.append(search_condition.sql)
             sql_params.extend(search_condition.params)
@@ -3058,6 +3067,8 @@ async def ui_view_spend_logs(
         return customer_log_response(await enrich_cache_logs(logs_response, user_api_key_dict), user_api_key_dict)
     except Exception as e:
         verbose_proxy_logger.exception("Error in ui_view_spend_logs: %s", e)
+        if needs_customer_privacy(user_api_key_dict) and not isinstance(e, (HTTPException, ProxyException)):
+            raise HTTPException(status_code=500, detail="Request logs are temporarily unavailable") from e
         raise handle_exception_on_proxy(e)
 
 
@@ -3548,10 +3559,12 @@ async def view_spend_logs(
     """
     from litellm.proxy.proxy_server import prisma_client
 
-    if is_retail_customer(user_api_key_dict) or (
+    if needs_customer_privacy(user_api_key_dict) or (
         user_api_key_dict.user_role == LitellmUserRoles.INTERNAL_USER
         or user_api_key_dict.user_role == LitellmUserRoles.INTERNAL_USER_VIEW_ONLY
     ):
+        if needs_customer_privacy(user_api_key_dict) and not user_api_key_dict.user_id:
+            raise HTTPException(status_code=403, detail="A user account is required to read request logs")
         user_id = user_api_key_dict.user_id
 
     try:
@@ -3673,7 +3686,8 @@ async def view_spend_logs(
         elif isinstance(e, ProxyException):
             raise e
         raise ProxyException(
-            message="/spend/logs Error" + str(e),
+            message="Request logs are temporarily unavailable" if needs_customer_privacy(user_api_key_dict)
+            else "/spend/logs Error" + str(e),
             type="internal_error",
             param=getattr(e, "param", "None"),
             code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -4549,7 +4563,7 @@ async def ui_view_session_spend_logs(
             AllRows()
             if is_admin_view_safe(user_api_key_dict=user_api_key_dict)
             else await _spend_log_read_scope(user_api_key_dict, log_team_lookup)
-            if _can_user_view_spend_log(user_api_key_dict=user_api_key_dict)
+            if needs_customer_privacy(user_api_key_dict) or _can_user_view_spend_log(user_api_key_dict=user_api_key_dict)
             else OwnedRows(user_api_key_dict.user_id)
         )
         scope_clause, scope_params = read_scope_sql(read_scope, 4)
@@ -4597,7 +4611,7 @@ async def ui_view_session_spend_logs(
         else:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=str(e),
+                detail="Request logs are temporarily unavailable" if needs_customer_privacy(user_api_key_dict) else str(e),
             )
 
 

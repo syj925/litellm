@@ -83,7 +83,7 @@ function TraceEventRow({ row, isSelected, onClick, showCosts }: TraceEventRowPro
         <span className="text-xs font-medium text-foreground truncate">
           {getEventDisplayName(row.call_type, row.model)}
         </span>
-        <ClassifyTag origin={row.metadata?.internal_call_origin} className="ml-auto" />
+        {showCosts && <ClassifyTag origin={row.metadata?.internal_call_origin} className="ml-auto" />}
       </div>
       <div className="text-[10px] text-muted-foreground mt-0 flex items-center gap-1.5 font-mono">
         <span>{durationValue}s</span>
@@ -417,7 +417,7 @@ export function LogDetailsDrawer({
               </div>
 
               <div className="flex-1 overflow-y-auto">
-                {normalizeGuardrailEntries(metadata?.guardrail_information).length > 0 && (
+                {showCosts && normalizeGuardrailEntries(metadata?.guardrail_information).length > 0 && (
                   <div className="px-3 pt-2">
                     <GuardrailJumpLink guardrailEntries={normalizeGuardrailEntries(metadata?.guardrail_information)} />
                   </div>
@@ -466,6 +466,7 @@ export function LogDetailsDrawer({
 
           <div className="flex-1 flex flex-col overflow-hidden">
             <DrawerHeader
+              showDiagnostics={showCosts}
               log={currentLog}
               onClose={onClose}
               isSidebarCollapsed={isSidebarCollapsed}

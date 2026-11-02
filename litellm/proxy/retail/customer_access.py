@@ -23,7 +23,7 @@ _PERSONAL_KEY_FIELDS: Final = frozenset(
 )
 _MODEL_INFO_FIELDS: Final = frozenset(
     {
-        "id", "mode", "max_tokens", "max_input_tokens", "max_output_tokens", "supports_system_messages",
+        "mode", "max_tokens", "max_input_tokens", "max_output_tokens", "supports_system_messages",
         "supports_function_calling", "supports_parallel_function_calling", "supports_vision", "supports_audio_input",
         "supports_audio_output", "supports_prompt_caching", "supports_response_schema", "supports_reasoning",
         "supports_web_search", "supported_openai_params", "supports_tool_choice", "supports_pdf_input",
@@ -41,6 +41,12 @@ _KEY_INFO_FIELDS: Final = frozenset(
 
 def is_retail_customer(auth: UserAPIKeyAuth) -> bool:
     return os.getenv("RETAIL_PORTAL_ENABLED", "false").lower() == "true" and auth.user_role in _CUSTOMER_ROLES
+
+
+def needs_customer_privacy(auth: UserAPIKeyAuth) -> bool:
+    return os.getenv("RETAIL_PORTAL_ENABLED", "false").lower() == "true" and auth.user_role not in {
+        LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY,
+    }
 
 
 def is_customer_personal_key(auth: UserAPIKeyAuth, team_id: str | None) -> bool:

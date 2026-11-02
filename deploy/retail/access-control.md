@@ -42,6 +42,12 @@ Customer model discovery uses authorized public models and deployments. Supplier
 
 LiteLLM native `spend` counters track gateway/provider accounting and are not the retail wallet's discounted customer ledger. Customer pages link to Wallet / Billing for actual charges rather than presenting those native counters as invoices. Budget caps remain available as invocation controls.
 
+In retail mode, log projections apply to every role except the two proxy administrator roles, including missing roles and delegated organization or team administrators. List, detail, session and legacy export reads enforce the caller's authorized ownership scope. Private deployment, credential, native-cost and raw-error filters are unavailable to customers so they cannot infer internal data through searches. The log UI removes raw diagnostics and JSON-copy controls for those roles, including after a role change
+
+Customer inference responses also filter transport headers and structured error envelopes. Supplier addresses, deployment IDs, supplier request IDs, native cost/spend, margin fields, credential fragments and stack traces do not become customer diagnostics. Customers receive the gateway's request ID, safe HTTP status/error codes and public parameter guidance. Error text is rebuilt from controlled messages; recognizing an actionable word is not enough to make arbitrary upstream text public. Public sale prices, the customer's frozen sale rule, reported usage and actual wallet charges remain available
+
+The response boundary processes JSON and fragmented SSE, including gzip/deflate error streams, without rewriting model-generated text or tool arguments. Invalid or unsupported encoded diagnostics fail closed rather than exposing their original bytes. Error bodies are bounded to 64 KiB, success JSON to 64 MiB and individual SSE frames to 16 MiB. Logs and administrator trace reads use `Cache-Control: no-store`. Proxy administrator viewers retain supported native diagnostic views; the new retail trace endpoint still requires a full proxy administrator
+
 ## Regression coverage
 
 Targeted tests cover dashboard navigation, search, direct routes, key create/edit payloads, ownership, viewer roles, model projections, pool grants and safe responses. Runtime verification uses a separate database and local mock upstream: customer creation, forbidden payload fields, cross-account access, zero-balance refusal, funded pool routing, rotation and administrator compatibility. No real supplier requests or production wallet credits are needed for these checks.

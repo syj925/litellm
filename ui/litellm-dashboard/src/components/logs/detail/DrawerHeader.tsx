@@ -20,6 +20,7 @@ import {
 } from "./constants";
 
 interface DrawerHeaderProps {
+  showDiagnostics?: boolean;
   log: LogEntry;
   onClose: () => void;
   onPrevious: () => void;
@@ -52,8 +53,9 @@ export function DrawerHeader({
   isSidebarCollapsed,
   onToggleSidebar,
   backTo,
+  showDiagnostics = true,
 }: DrawerHeaderProps) {
-  const provider = log.custom_llm_provider || "";
+  const provider = showDiagnostics ? log.custom_llm_provider || "" : "";
   const providerInfo = provider ? getProviderLogoAndName(provider) : null;
   const showToggleWithProvider = isSidebarCollapsed && Boolean(providerInfo || log.model);
   const showToggleWithRequestId = isSidebarCollapsed && !showToggleWithProvider;
@@ -83,8 +85,8 @@ export function DrawerHeader({
         {showToggleWithProvider && <SidebarToggle isCollapsed onToggle={onToggleSidebar} />}
         <ModelProviderSection
           model={log.model}
-          modelGroup={log.model_group}
-          internalCallOrigin={log.metadata?.internal_call_origin}
+          modelGroup={showDiagnostics ? log.model_group : undefined}
+          internalCallOrigin={showDiagnostics ? log.metadata?.internal_call_origin : undefined}
           providerLogo={providerInfo?.logo}
           providerName={providerInfo?.displayName}
         />

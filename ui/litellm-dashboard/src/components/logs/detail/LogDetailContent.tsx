@@ -87,12 +87,13 @@ export function LogDetailContent({
   const showTrace = canUseAdminControlPlane({ userRole, isViewOnly });
   const metadata = logEntry.metadata || {};
   const resourceRoute = recordedResourceRoute(metadata);
-  const hasError = metadata.status === "failure";
+  const hasError = logEntry.status === "failure" || metadata.status === "failure";
   const errorInfo = hasError ? metadata.error_information : null;
   const isClassifier =
+    showCosts &&
     metadata.internal_call_origin === AUTOROUTER_CLASSIFIER_ORIGIN &&
     ["completion", "acompletion", "responses", "aresponses"].includes(logEntry.call_type);
-  const rawRequest = formatData(logEntry.proxy_server_request || logEntry.messages);
+  const rawRequest = formatData(showCosts ? logEntry.proxy_server_request || logEntry.messages : logEntry.messages);
   const hasClassifierAudit =
     isClassifier && (rawRequest?.classifier_input != null || rawRequest?.originating_request_masked != null);
 
@@ -104,18 +105,21 @@ export function LogDetailContent({
   // Guardrail data
   const guardrailInfo = metadata?.guardrail_information;
   const guardrailEntries = normalizeGuardrailEntries(guardrailInfo);
-  const hasGuardrailData = guardrailEntries.length > 0;
+  const hasGuardrailData = showCosts && guardrailEntries.length > 0;
   const totalMaskedEntities = calculateTotalMaskedEntities(guardrailEntries);
   const primaryGuardrailLabel = getGuardrailLabel(guardrailEntries);
 
   // LLM Judge data
   const evalInfo = metadata?.eval_information;
-  const hasEvalData = evalInfo != null;
+  const hasEvalData = showCosts && evalInfo != null;
 
   // Vector store data
-  const hasVectorStoreData = checkHasVectorStoreData(metadata);
+  const hasVectorStoreData = showCosts && checkHasVectorStoreData(metadata);
 
   const getFormattedResponse = () => {
+    if (hasError && !showCosts) {
+      return { error: { message: "The request could not be completed.", type: "request_failed" } };
+    }
     if (hasError && errorInfo) {
       return {
         error: {
@@ -132,7 +136,7 @@ export function LogDetailContent({
   return (
     <div style={{ padding: `${DRAWER_CONTENT_PADDING} ${DRAWER_CONTENT_PADDING} 0` }}>
       {/* Error Alert */}
-      {hasError && errorInfo && (
+      {hasError && (
         <div
           role="alert"
           className="mb-6 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"
@@ -140,13 +144,17 @@ export function LogDetailContent({
           <CircleAlert className="size-4 shrink-0 text-destructive" />
           <div>
             <div className="font-medium text-destructive">Request Failed</div>
-            <ErrorDescription errorInfo={errorInfo} />
+            {showCosts && errorInfo ? (
+              <ErrorDescription errorInfo={errorInfo} />
+            ) : (
+              <p>The request could not be completed. Contact support with the request ID if you need help.</p>
+            )}
           </div>
         </div>
       )}
 
       {/* Tags */}
-      {logEntry.request_tags && Object.keys(logEntry.request_tags).length > 0 && (
+      {showCosts && logEntry.request_tags && Object.keys(logEntry.request_tags).length > 0 && (
         <TagsSection tags={logEntry.request_tags} />
       )}
 
@@ -159,29 +167,37 @@ export function LogDetailContent({
           <CardContent>
             <DescriptionList>
               <DescriptionItem label="Model">{logEntry.model}</DescriptionItem>
-              <DescriptionItem label="API integration">{logEntry.custom_llm_provider || "-"}</DescriptionItem>
-              <DescriptionItem label="Resource pool">
-                {resourceRoute.poolName ?? resourceRoute.poolId ?? "Not recorded"}
-              </DescriptionItem>
-              <DescriptionItem label="Resource source">
-                {resourceRoute.sourceKind ? sourceKindLabel(resourceRoute.sourceKind) : "Not recorded"}
-              </DescriptionItem>
+              {showCosts && (
+                <>
+                  <DescriptionItem label="API integration">{logEntry.custom_llm_provider || "-"}</DescriptionItem>
+                  <DescriptionItem label="Resource pool">
+                    {resourceRoute.poolName ?? resourceRoute.poolId ?? "Not recorded"}
+                  </DescriptionItem>
+                  <DescriptionItem label="Resource source">
+                    {resourceRoute.sourceKind ? sourceKindLabel(resourceRoute.sourceKind) : "Not recorded"}
+                  </DescriptionItem>
+                </>
+              )}
               <DescriptionItem label="Call Type">{logEntry.call_type}</DescriptionItem>
               {logEntry.user && (
                 <DescriptionItem label="User">
                   <UserIdentity userId={logEntry.user} email={userEmail} />
                 </DescriptionItem>
               )}
-              <DescriptionItem label="Deployment ID">
-                <TruncatedValue value={logEntry.model_id || "Not recorded"} />
-              </DescriptionItem>
-              <DescriptionItem label="API Base">
-                <TruncatedValue value={logEntry.api_base} maxWidth={API_BASE_MAX_WIDTH} />
-              </DescriptionItem>
+              {showCosts && (
+                <>
+                  <DescriptionItem label="Deployment ID">
+                    <TruncatedValue value={logEntry.model_id || "Not recorded"} />
+                  </DescriptionItem>
+                  <DescriptionItem label="API Base">
+                    <TruncatedValue value={logEntry.api_base} maxWidth={API_BASE_MAX_WIDTH} />
+                  </DescriptionItem>
+                </>
+              )}
               {logEntry.requester_ip_address && (
                 <DescriptionItem label="IP Address">{logEntry.requester_ip_address}</DescriptionItem>
               )}
-              {typeof logEntry.metadata?.used_client_oauth_token === "boolean" && (
+              {showCosts && typeof logEntry.metadata?.used_client_oauth_token === "boolean" && (
                 <DescriptionItem label="Credential">
                   {CREDENTIAL_LABELS[String(logEntry.metadata.used_client_oauth_token)]}
                 </DescriptionItem>
@@ -207,7 +223,7 @@ export function LogDetailContent({
           callId={logEntry.litellm_call_id || logEntry.request_id}
         />
       )}
-      <RoutingDecisionCard decision={metadata?.routing_decision as RoutingDecision | undefined} />
+      {showCosts && <RoutingDecisionCard decision={metadata?.routing_decision as RoutingDecision | undefined} />}
 
       {/* Metrics */}
       <MetricsSection logEntry={logEntry} metadata={metadata} showCosts={showCosts} />
@@ -238,10 +254,10 @@ export function LogDetailContent({
       )}
 
       {/* Tools */}
-      <ToolsSection log={logEntry} />
+      {showCosts && <ToolsSection log={logEntry} />}
 
       {/* Configuration Info Message */}
-      {missingData && (
+      {showCosts && missingData && (
         <div className="mb-6">
           <ConfigInfoMessage show={missingData} />
         </div>
@@ -294,7 +310,7 @@ export function LogDetailContent({
       {hasVectorStoreData && <VectorStoreViewer data={metadata.vector_store_request_metadata} />}
 
       {/* Metadata */}
-      {logEntry.metadata && Object.keys(logEntry.metadata).length > 0 && (
+      {showCosts && logEntry.metadata && Object.keys(logEntry.metadata).length > 0 && (
         <MetadataSection metadata={logEntry.metadata} />
       )}
 
@@ -581,35 +597,39 @@ function MetricsSection({
                 </Badge>
               </DescriptionItem>
             )}
-            {responseCacheKey && (
+            {showCosts && responseCacheKey && (
               <DescriptionItem
                 label={<MetricLabel label="Cache Key" tooltip={CACHE_KEY_TOOLTIP} docsUrl={RESPONSE_CACHE_DOCS_URL} />}
               >
                 <TruncatedValue value={responseCacheKey} />
               </DescriptionItem>
             )}
-            {metadata?.litellm_overhead_time_ms !== undefined && metadata.litellm_overhead_time_ms !== null && (
-              <DescriptionItem label="LiteLLM Overhead">
-                {metadata.litellm_overhead_time_ms.toFixed(2)} ms
+            {showCosts &&
+              metadata?.litellm_overhead_time_ms !== undefined &&
+              metadata.litellm_overhead_time_ms !== null && (
+                <DescriptionItem label="LiteLLM Overhead">
+                  {metadata.litellm_overhead_time_ms.toFixed(2)} ms
+                </DescriptionItem>
+              )}
+
+            {showCosts && (
+              <DescriptionItem label="Retries">
+                {metadata?.attempted_retries != null && metadata.attempted_retries > 0 && (
+                  <>
+                    {metadata.attempted_retries}
+                    {metadata.max_retries !== undefined && metadata.max_retries !== null
+                      ? ` / ${metadata.max_retries}`
+                      : ""}
+                  </>
+                )}
+                {metadata?.attempted_retries != null && metadata.attempted_retries <= 0 && (
+                  <Badge variant="secondary" className="bg-success/15 text-success">
+                    None
+                  </Badge>
+                )}
+                {metadata?.attempted_retries == null && "-"}
               </DescriptionItem>
             )}
-
-            <DescriptionItem label="Retries">
-              {metadata?.attempted_retries != null && metadata.attempted_retries > 0 && (
-                <>
-                  {metadata.attempted_retries}
-                  {metadata.max_retries !== undefined && metadata.max_retries !== null
-                    ? ` / ${metadata.max_retries}`
-                    : ""}
-                </>
-              )}
-              {metadata?.attempted_retries != null && metadata.attempted_retries <= 0 && (
-                <Badge variant="secondary" className="bg-success/15 text-success">
-                  None
-                </Badge>
-              )}
-              {metadata?.attempted_retries == null && "-"}
-            </DescriptionItem>
 
             <DescriptionItem label="Start Time">
               {moment.utc(logEntry.startTime).format("YYYY-MM-DDTHH:mm:ss.SSS[Z]")}
@@ -664,7 +684,10 @@ function RequestResponseSection({
   return (
     <div className="bg-card rounded-lg shadow-sm w-full max-w-full overflow-hidden mb-6">
       <Collapsible open={open} onOpenChange={setOpen}>
-        <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as "pretty" | "json")}>
+        <Tabs
+          value={showCosts ? viewMode : "pretty"}
+          onValueChange={(value) => setViewMode(value as "pretty" | "json")}
+        >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
             <CollapsibleTrigger className="flex flex-1 items-center gap-3 px-4 py-3 text-left">
               {open ? (
@@ -676,10 +699,12 @@ function RequestResponseSection({
                 Request & Response
               </h3>
             </CollapsibleTrigger>
-            <TabsList className="mr-4">
-              <TabsTrigger value="pretty">Pretty</TabsTrigger>
-              <TabsTrigger value="json">JSON</TabsTrigger>
-            </TabsList>
+            {showCosts && (
+              <TabsList className="mr-4">
+                <TabsTrigger value="pretty">Pretty</TabsTrigger>
+                <TabsTrigger value="json">JSON</TabsTrigger>
+              </TabsList>
+            )}
           </div>
           <CollapsibleContent>
             <div>
@@ -694,47 +719,49 @@ function RequestResponseSection({
                   }}
                 />
               </TabsContent>
-              <TabsContent value="json">
-                <Tabs
-                  value={activeTab}
-                  onValueChange={(key) => setActiveTab(key as typeof TAB_REQUEST | typeof TAB_RESPONSE)}
-                >
-                  <div className="flex items-center justify-between">
-                    <TabsList>
-                      <TabsTrigger value={TAB_REQUEST}>Request</TabsTrigger>
-                      <TabsTrigger value={TAB_RESPONSE}>Response</TabsTrigger>
-                    </TabsList>
-                    <CopyButton
-                      getText={getCopyText}
-                      label="Copy JSON"
-                      disabled={activeTab === TAB_RESPONSE && !hasResponse && !hasError}
-                    />
-                  </div>
-                  <TabsContent value={TAB_REQUEST}>
-                    <div style={{ paddingTop: SPACING_XLARGE, paddingBottom: SPACING_XLARGE }}>
-                      <JsonViewer data={getRawRequest()} mode="formatted" />
+              {showCosts && (
+                <TabsContent value="json">
+                  <Tabs
+                    value={activeTab}
+                    onValueChange={(key) => setActiveTab(key as typeof TAB_REQUEST | typeof TAB_RESPONSE)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <TabsList>
+                        <TabsTrigger value={TAB_REQUEST}>Request</TabsTrigger>
+                        <TabsTrigger value={TAB_RESPONSE}>Response</TabsTrigger>
+                      </TabsList>
+                      <CopyButton
+                        getText={getCopyText}
+                        label="Copy JSON"
+                        disabled={activeTab === TAB_RESPONSE && !hasResponse && !hasError}
+                      />
                     </div>
-                  </TabsContent>
-                  <TabsContent value={TAB_RESPONSE}>
-                    <div style={{ paddingTop: SPACING_XLARGE, paddingBottom: SPACING_XLARGE }}>
-                      {hasResponse || hasError ? (
-                        <JsonViewer data={getFormattedResponse()} mode="formatted" />
-                      ) : (
-                        <div
-                          style={{
-                            textAlign: "center",
-                            padding: 20,
-                            color: "var(--color-muted-foreground)",
-                            fontStyle: "italic",
-                          }}
-                        >
-                          Response data not available
-                        </div>
-                      )}
-                    </div>
-                  </TabsContent>
-                </Tabs>
-              </TabsContent>
+                    <TabsContent value={TAB_REQUEST}>
+                      <div style={{ paddingTop: SPACING_XLARGE, paddingBottom: SPACING_XLARGE }}>
+                        <JsonViewer data={getRawRequest()} mode="formatted" />
+                      </div>
+                    </TabsContent>
+                    <TabsContent value={TAB_RESPONSE}>
+                      <div style={{ paddingTop: SPACING_XLARGE, paddingBottom: SPACING_XLARGE }}>
+                        {hasResponse || hasError ? (
+                          <JsonViewer data={getFormattedResponse()} mode="formatted" />
+                        ) : (
+                          <div
+                            style={{
+                              textAlign: "center",
+                              padding: 20,
+                              color: "var(--color-muted-foreground)",
+                              fontStyle: "italic",
+                            }}
+                          >
+                            Response data not available
+                          </div>
+                        )}
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                </TabsContent>
+              )}
             </div>
           </CollapsibleContent>
         </Tabs>

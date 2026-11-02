@@ -9,12 +9,12 @@ from pydantic import BaseModel
 from litellm.proxy._types import UserAPIKeyAuth
 
 from .cache_observations import cache_usage_view, legacy_cache_usage
-from .customer_access import is_retail_customer, safe_customer_key_info
+from .customer_access import needs_customer_privacy, safe_customer_key_info
 
 _Payload = TypeVar("_Payload")
 _LOG_FIELDS: Final = frozenset(
     {
-        "request_id", "litellm_call_id", "session_id", "call_type", "api_key", "total_tokens", "prompt_tokens",
+        "request_id", "litellm_call_id", "session_id", "call_type", "total_tokens", "prompt_tokens",
         "completion_tokens", "startTime", "endTime", "completionStartTime", "user", "team_id", "organization_id",
         "end_user", "status", "cache_hit", "requester_ip_address", "request_duration_ms", "ttft_ms",
         "session_total_count", "session_total_duration_ms", "session_cache_hit_count", "session_llm_count",
@@ -25,8 +25,7 @@ _LOG_FIELDS: Final = frozenset(
 _LOG_METADATA_FIELDS: Final = frozenset(
     {
         "status", "user_api_key_alias", "user_api_key_team_alias", "user_api_key_user_id", "user_api_key_team_id",
-        "user_api_key_end_user_id", "retail_request_id", "retail_resource_pool_id", "retail_resource_pool_name",
-        "retail_resource_source_kind",
+        "user_api_key_end_user_id", "retail_request_id",
     }
 )
 _PAGE_FIELDS: Final = frozenset(
@@ -103,7 +102,7 @@ def _log_row(value: object) -> dict[str, object]:
 
 
 def customer_log_response(payload: _Payload, auth: UserAPIKeyAuth) -> _Payload | object:
-    if not is_retail_customer(auth):
+    if not needs_customer_privacy(auth):
         return payload
     if isinstance(payload, Sequence) and not isinstance(payload, (str, bytes)):
         return [_log_row(row) for row in payload]
@@ -120,7 +119,7 @@ def customer_log_response(payload: _Payload, auth: UserAPIKeyAuth) -> _Payload |
 
 def _safe_request(value: object) -> dict[str, object]:
     request: Final = _mapping(value)
-    body: Final = _mapping(request.get("body"))
+    body: Final = _mapping(request.get("body")) if "body" in request else request
     return {"body": {key: item for key, item in body.items() if key in _REQUEST_FIELDS}}
 
 
@@ -149,7 +148,7 @@ def _safe_completion(value: object, public_model: object = None, *, encoded: boo
 
 
 def customer_log_detail(payload: _Payload, auth: UserAPIKeyAuth) -> _Payload | object:
-    if not is_retail_customer(auth) or payload is None:
+    if not needs_customer_privacy(auth) or payload is None:
         return payload
     row: Final = _mapping(payload)
     request: Final = _safe_request(row.get("proxy_server_request"))
@@ -188,7 +187,7 @@ def public_activity_data(value: object, *, alias_map: bool = False) -> object:
 
 
 def customer_activity_response(payload: _Payload, auth: UserAPIKeyAuth) -> _Payload | JSONResponse:
-    if not is_retail_customer(auth):
+    if not needs_customer_privacy(auth):
         return payload
     return JSONResponse(jsonable_encoder(public_activity_data(payload)), headers={"Cache-Control": "no-store"})
 
@@ -218,7 +217,7 @@ def _safe_team_info(value: object) -> dict[str, object]:
 
 
 def customer_user_info_response(payload: _Payload, auth: UserAPIKeyAuth) -> _Payload | JSONResponse:
-    if not is_retail_customer(auth):
+    if not needs_customer_privacy(auth):
         return payload
     row: Final = _mapping(payload)
     keys: Final = row.get("keys")

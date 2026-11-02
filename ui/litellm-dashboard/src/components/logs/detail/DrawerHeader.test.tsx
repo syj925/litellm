@@ -28,10 +28,11 @@ const logEntry = (overrides: Partial<LogEntry>): LogEntry =>
     ...overrides,
   }) as LogEntry;
 
-const renderHeader = (log: LogEntry, isSidebarCollapsed: boolean) =>
+const renderHeader = (log: LogEntry, isSidebarCollapsed: boolean, showDiagnostics = true) =>
   render(
     <DrawerHeader
       log={log}
+      showDiagnostics={showDiagnostics}
       onClose={vi.fn()}
       onPrevious={vi.fn()}
       onNext={vi.fn()}
@@ -46,6 +47,13 @@ const renderHeader = (log: LogEntry, isSidebarCollapsed: boolean) =>
 const expandToggle = () => screen.getByLabelText("Expand trace sidebar");
 
 describe("DrawerHeader sidebar toggle", () => {
+  it("keeps private provider identity out of customer headers", () => {
+    renderHeader(logEntry({}), false, false);
+    expect(screen.getByText("gpt-4o")).toBeInTheDocument();
+    expect(screen.queryByText("OpenAI")).not.toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  });
+
   it("stays out of the header while the sidebar owns it", () => {
     renderHeader(logEntry({}), false);
 

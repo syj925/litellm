@@ -18,6 +18,7 @@ import { AGENT_CALL_TYPES, MCP_CALL_TYPES } from "../constants";
 import { AgentBadge, AgentIcon, BatchBadge, LlmBadge, McpBadge, SparkleIcon, WrenchIcon } from "./TypeBadges";
 
 export interface RequestLogsTableColumnsDeps {
+  showDiagnostics?: boolean;
   onKeyHashClick: (keyHash: string) => void;
   onSessionClick: (log: LogEntry) => void;
   resolveUserEmail?: (userId: string) => string | undefined;
@@ -79,6 +80,7 @@ export const getRequestLogsTableColumns = ({
   onKeyHashClick,
   onSessionClick,
   resolveUserEmail = () => undefined,
+  showDiagnostics = true,
 }: RequestLogsTableColumnsDeps): ColumnDef<LogEntry>[] => [
   {
     id: "startTime",
@@ -312,7 +314,7 @@ export const getRequestLogsTableColumns = ({
       const isSingleModel = modelNames.length === 1;
       return (
         <div className="flex items-center space-x-2">
-          {provider && isSingleModel && (
+          {showDiagnostics && provider && isSingleModel && (
             <img
               src={getLogoUrl(log, provider)}
               alt=""
@@ -388,12 +390,23 @@ export const getRequestLogsTableColumns = ({
       if (!recorded) return <span className="text-muted-foreground">—</span>;
       return (
         <div className="space-y-1 text-xs tabular-nums">
-          <p>Read {usage.cache_read_tokens?.toLocaleString() ?? "—"} · Write {usage.cache_write_tokens?.toLocaleString() ?? "—"}</p>
-          {parts.map(([ttl, tokens]) => <p key={ttl}>{cacheDurationLabel(ttl)}: {tokens.toLocaleString()}</p>)}
+          <p>
+            Read {usage.cache_read_tokens?.toLocaleString() ?? "—"} · Write{" "}
+            {usage.cache_write_tokens?.toLocaleString() ?? "—"}
+          </p>
+          {parts.map(([ttl, tokens]) => (
+            <p key={ttl}>
+              {cacheDurationLabel(ttl)}: {tokens.toLocaleString()}
+            </p>
+          ))}
           {(usage.cache_write_unclassified_tokens ?? 0) > 0 && (
-            <p className="text-muted-foreground">Unspecified: {usage.cache_write_unclassified_tokens?.toLocaleString()}</p>
+            <p className="text-muted-foreground">
+              Unspecified: {usage.cache_write_unclassified_tokens?.toLocaleString()}
+            </p>
           )}
-          {(row.original.session_total_count ?? 1) > 1 && <p className="text-muted-foreground">Representative request</p>}
+          {(row.original.session_total_count ?? 1) > 1 && (
+            <p className="text-muted-foreground">Representative request</p>
+          )}
         </div>
       );
     },

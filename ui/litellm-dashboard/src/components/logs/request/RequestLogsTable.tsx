@@ -94,9 +94,12 @@ export function RequestLogsTable({
 
   const columns = useMemo(() => {
     const resolveUserEmail = (userId: string) => emailByUserId?.[userId];
-    return getRequestLogsTableColumns({ onKeyHashClick, onSessionClick, resolveUserEmail }).filter(
-      (column) => showCosts || column.id !== "spend",
-    );
+    return getRequestLogsTableColumns({
+      onKeyHashClick,
+      onSessionClick,
+      resolveUserEmail,
+      showDiagnostics: showCosts,
+    }).filter((column) => showCosts || !["spend", "key_hash", "resource_pool"].includes(column.id ?? ""));
   }, [onKeyHashClick, onSessionClick, emailByUserId, showCosts]);
 
   const isFiltered = columnFilters.length > 0 || searchValue !== "";
