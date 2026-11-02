@@ -1,14 +1,47 @@
 import hashlib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from decimal import Context, Decimal, localcontext
 from typing import Final
 
 from pydantic import JsonValue
 
-from .expression_pricing import evaluate_expression, validate_expression_policy
+from litellm.llms.openai.data_residency import infer_openai_data_residency
+
+from .expression_pricing import evaluate_expression, response_attribute_value, validate_expression_policy
 from .expression_usage import expression_usage_facts
 from .models import cost_to_nanos, nanos_to_amount
 from .pricing import as_mapping
+
+
+def catalog_routing_attributes(
+    deployments: Sequence[Mapping[str, object]],
+    keys: frozenset[str] = frozenset(("data_residency", "vertex_location")),
+) -> dict[str, str]:
+    choices: Final = tuple(_deployment_attributes(item, keys) for item in deployments)
+    return {
+        key: values[0] for key in ("data_residency", "vertex_location")
+        if choices and len(values := tuple(dict.fromkeys(item.get(key) for item in choices))) == 1
+        and values[0] is not None
+    }
+
+
+def _deployment_attributes(deployment: Mapping[str, object], keys: frozenset[str]) -> dict[str, str]:
+    params: Final = as_mapping(deployment.get("litellm_params"))
+    info: Final = as_mapping(deployment.get("model_info"))
+    model: Final = str(params.get("model", ""))
+    provider: Final = params.get("custom_llm_provider") or model.partition("/")[0]
+    base: Final = params.get("api_base")
+    inferred: Final = infer_openai_data_residency(
+        str(provider), base if isinstance(base, str) else None,
+    ) or "global"
+    region: Final = info["pricing_data_residency"] if info.get("pricing_data_residency") is not None else inferred
+    location: Final = params.get("vertex_location")
+    return {
+        **({"data_residency": response_attribute_value("data_residency", region)}
+           if provider == "openai" and "data_residency" in keys else {}),
+        **({"vertex_location": response_attribute_value("vertex_location", location)}
+           if location is not None and str(provider).startswith("vertex_ai") and "vertex_location" in keys else {}),
+    }
 
 
 def expression_token_limits(card: Mapping[str, object]) -> dict[str, int]:
@@ -47,7 +80,14 @@ def expression_settlement(snapshot: Mapping[str, object], response: object) -> t
         "output_tokens" in limits and int(reported.get("output_tokens", 0)) > int(limits["output_tokens"])
     ):
         raise ValueError("Reported token usage exceeds the frozen expression token bound")
-    result: Final = evaluate_expression(policy, facts, context)
+    evaluated_facts: Final = {
+        **facts,
+        "attributes": {
+            **as_mapping(facts.get("attributes")),
+            **as_mapping(snapshot.get("expression_routing_attributes")),
+        },
+    }
+    result: Final = evaluate_expression(policy, evaluated_facts, context)
     discount: Final = Decimal(str(snapshot.get("discount", snapshot.get("multiplier"))))
     with localcontext(Context(prec=80)):
         unrounded: Final = Decimal(str(result["amount"])) * discount

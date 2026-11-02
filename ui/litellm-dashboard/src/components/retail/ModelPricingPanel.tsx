@@ -7,6 +7,7 @@ import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components
 import { StateMessage } from "@/components/shared/StateMessage";
 import { isProxyAdminRole } from "@/utils/roles";
 import ModelPrices from "./ModelPrices";
+import { upstreamSearchAllowanceNote } from "./expressionPricing";
 
 export default function ModelPricingPanel() {
   const { accessToken, userRole, isAuthorized, isLoading } = useAuthorized();
@@ -44,6 +45,7 @@ export default function ModelPricingPanel() {
           context tiers, modalities, service tiers and time conditions.
         </PageHeaderDescription>
       </PageHeader>
+      <p className="text-sm text-muted-foreground">{upstreamSearchAllowanceNote}</p>
       <ModelPrices accessToken={accessToken} enabled />
     </div>
   );

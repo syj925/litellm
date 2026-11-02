@@ -103,15 +103,17 @@ async def test_unpriced_endpoint_types_fail_before_wallet_or_provider_access(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("field", ("background", "batch"))
+@pytest.mark.parametrize(("field", "value"), (
+    ("background", True), ("batch", True), ("service_tier", "batch"), ("service_tier", "batches"),
+))
 async def test_async_execution_cannot_bypass_prepaid_request_lifecycle(
-    field: str, monkeypatch: pytest.MonkeyPatch
+    field: str, value: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("RETAIL_BILLING_ENABLED", "true")
     callback: Final = RetailBilling()
     user: Final = UserAPIKeyAuth(user_id="reader", user_role=LitellmUserRoles.INTERNAL_USER)
     with pytest.raises(HTTPException) as failure:
-        await callback.async_pre_call_hook(user, None, {"model": "test-model", field: True}, "aresponses")
+        await callback.async_pre_call_hook(user, None, {"model": "test-model", field: value}, "aresponses")
     assert failure.value.status_code == 400
 
 

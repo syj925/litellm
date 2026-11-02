@@ -4,14 +4,16 @@ from typing import Final
 
 from pydantic import JsonValue
 
-from .expression_parser import CACHE_TTL_VARIABLES
+from .expression_parser import CACHE_TTL_VARIABLES, REPORTED_ATTRIBUTE_PATHS
 from .expression_pricing import (
     ExpressionPolicy,
     ExpressionPricingError,
+    expression_attribute_keys,
     expression_cache_ttls,
     expression_reported_usage_keys,
     expression_usage_keys,
     expression_variables,
+    response_attribute_value,
 )
 from .pricing import UsageFacts, as_mapping, response_usage, usage_facts
 
@@ -222,7 +224,10 @@ def _input_modalities(
     )
     cached_image: Final = _cached_modality(image, reported_cached_image, cache_read)
     cached_audio: Final = _cached_modality(audio, reported_cached_audio, cache_read)
-    return {"img": _difference(image, cached_image), "ai": _difference(audio, cached_audio), "img_cr": cached_image}
+    return {
+        "img": _difference(image, cached_image), "ai": _difference(audio, cached_audio),
+        "img_cr": cached_image, "ai_cr": cached_audio,
+    }
 
 
 def _output_modalities(
@@ -277,7 +282,9 @@ def _standard_variables(
         "p": _subtract_selected(standard.input_tokens, {"img": inputs["img"], "ai": inputs["ai"]}, used),
         "c": _subtract_selected(standard.output_tokens, outputs, used),
         "len": standard.input_tokens + standard.cache_read_tokens + standard.cache_write_tokens,
-        "cr": _subtract_selected(standard.cache_read_tokens, {"img_cr": inputs["img_cr"]}, used),
+        "cr": _subtract_selected(
+            standard.cache_read_tokens, {"img_cr": inputs["img_cr"], "ai_cr": inputs["ai_cr"]}, used,
+        ),
         "cc": standard.cache_write_tokens - sum(cache_ttls.values()),
         **tiers,
     }
@@ -290,6 +297,18 @@ def _known_variables(variables: Mapping[str, int | None]) -> Mapping[str, JsonVa
 def _unit_value(key: str, units: Mapping[str, JsonValue], usage: Mapping[str, object]) -> str | None:
     value: Final = units.get(key, _path(usage, key))
     return _numeric(value) if value is not None else None
+
+
+def _response_attribute(
+    key: str, payload: Mapping[str, object], usage: Mapping[str, object],
+) -> str | None:
+    if key not in REPORTED_ATTRIBUTE_PATHS:
+        return None
+    sources: Final = (usage, payload) if key in {"inference_geo", "speed"} else (payload, usage)
+    value: Final = next((source[key] for source in sources if source.get(key) is not None), None)
+    if value is None:
+        return None
+    return response_attribute_value(key, value)
 
 
 def expression_usage_facts(
@@ -312,6 +331,9 @@ def expression_usage_facts(
     units: Final = _reported_units(payload, usage, evidence)
     unit_keys: Final = expression_usage_keys(policy).union(expression_reported_usage_keys(policy))
     unit_pairs: Final = tuple((key, _unit_value(key, units, usage)) for key in unit_keys)
+    attribute_pairs: Final = tuple(
+        (key, _response_attribute(key, payload, usage)) for key in expression_attribute_keys(policy)
+    )
     total: Final = (
         (standard.input_tokens + standard.cache_read_tokens + standard.cache_write_tokens + standard.output_tokens)
         if standard
@@ -323,6 +345,7 @@ def expression_usage_facts(
         **_known_variables(inputs),
         **_known_variables(outputs),
         "usage": {key: value for key, value in unit_pairs if value is not None},
+        "attributes": {key: value for key, value in attribute_pairs if value is not None},
         "cache_write_ttl_tokens": cache_ttls,
         **({"tokens": total} if total > 0 else {}),
     }

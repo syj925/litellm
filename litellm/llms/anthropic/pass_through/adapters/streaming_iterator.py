@@ -29,6 +29,7 @@ from litellm.types.llms.anthropic import (
     ContextManagementResponse,
     MessageBlockDelta,
     MessageDelta,
+    PricingUsageAttributes,
     StreamingContentBlockDeltaType,
     UsageDelta,
     UsageIteration,
@@ -351,6 +352,7 @@ class AnthropicStreamWrapper(AdapterCompletionStreamWrapper):
         self.compaction_block = compaction_block
         self.iterations_usage = iterations_usage
         self._refusal_text: str = ""
+        self._pricing_attributes: PricingUsageAttributes = {}
         self.sent_compaction_block: bool = False
         # Per-phase flags so the compaction block's start/delta/stop events
         # are emitted (and the public state machine is advanced) in
@@ -385,6 +387,20 @@ class AnthropicStreamWrapper(AdapterCompletionStreamWrapper):
             "list[AllMessageValues] | None", getattr(self.completion_stream, "messages", None)
         )
 
+    def _track_pricing_attributes(self, chunk: object) -> None:
+        from .transformation import reported_pricing_usage_attributes
+
+        self._pricing_attributes = {
+            **self._pricing_attributes,
+            **reported_pricing_usage_attributes(_optional_attr(chunk, "usage"), _optional_attr(chunk, "service_tier")),
+        }
+
+    def _with_pricing_attributes(self, message_delta_chunk: MessageBlockDelta) -> MessageBlockDelta:
+        usage: Final = message_delta_chunk.get("usage")
+        if usage is None or not self._pricing_attributes:
+            return message_delta_chunk
+        return {**message_delta_chunk, "usage": {**usage, **self._pricing_attributes}}
+
     def _merge_usage_into_held_stop_reason_chunk(self, chunk: Any) -> MessageBlockDelta:
         """Merge usage data from ``chunk`` into the held ``message_delta`` chunk.
 
@@ -404,7 +420,7 @@ class AnthropicStreamWrapper(AdapterCompletionStreamWrapper):
         from .transformation import LiteLLMAnthropicMessagesAdapter
 
         usage_dict: UsageDelta = LiteLLMAnthropicMessagesAdapter.translate_openai_usage_to_anthropic_usage_delta(
-            chunk.usage
+            chunk.usage, _optional_attr(chunk, "service_tier"),
         )
         if self.applied_edits and "context_management" not in merged_chunk:
             merged_chunk["context_management"] = ContextManagementResponse(applied_edits=list(self.applied_edits))
@@ -452,7 +468,9 @@ class AnthropicStreamWrapper(AdapterCompletionStreamWrapper):
         held-chunk flush path stays in sync with the merge path's guarantee
         when ``self.applied_edits`` is non-empty.
         """
-        message_delta_chunk = self._ensure_context_management_attached(message_delta_chunk)
+        message_delta_chunk = self._ensure_context_management_attached(
+            self._with_pricing_attributes(message_delta_chunk)
+        )
         if self.iterations_usage is None:
             return message_delta_chunk
         usage: Final = message_delta_chunk.get("usage")
@@ -590,6 +608,7 @@ class AnthropicStreamWrapper(AdapterCompletionStreamWrapper):
                 if chunk == "None" or chunk is None:
                     raise Exception
 
+                self._track_pricing_attributes(chunk)
                 if not getattr(chunk, "choices", None):
                     if self._handle_choiceless_chunk(chunk):
                         return self.chunk_queue.popleft()
@@ -825,6 +844,7 @@ class AnthropicStreamWrapper(AdapterCompletionStreamWrapper):
                 if chunk == "None" or chunk is None:
                     raise Exception
 
+                self._track_pricing_attributes(chunk)
                 if not getattr(chunk, "choices", None):
                     if self._handle_choiceless_chunk(chunk):
                         return self.chunk_queue.popleft()

@@ -14,7 +14,7 @@ These are example rates, not vendor price declarations
 | `cc5m`, `cc30m`, `cc1h`, `cc12h` | Explicitly reported cache write duration subsets |
 | `cache_write("750")` | Explicitly reported writes with a custom duration in seconds |
 | `img`, `img_cr`, `img_o` | Uncached image input, cached image input and image output tokens |
-| `ai`, `ao`, `reasoning` | Audio input, audio output and reasoning tokens |
+| `ai`, `ai_cr`, `ao`, `reasoning` | Uncached audio input, cached audio input, audio output and reasoning tokens |
 | `u("images")` | Actual returned image count |
 | `u("audio_seconds")` | Reported audio seconds, when the endpoint supplies this quantity |
 | `u("web_search_requests")` | Reported search count, without summing mirrored aliases |
@@ -28,6 +28,8 @@ Do not subtract these partitions again in the formula. `cc * 2.5 + cc1h * 4` alr
 `len > 200000 ? tier("long context", p * 4 + c * 16) : tier("standard", p * 2 + c * 8)` selects a rate using complete input length. Cache hits do not shrink the context used for this decision. `tier()` returns its numeric value and records its label on the bill
 
 `param("service_tier", "default") == "priority" ? tier("priority", p * 4 + c * 16) : tier("standard", p * 2 + c * 8)` selects a price from a safe request parameter. Supported scalar options include service tier, quality, size and resolution. Prompts, headers and credentials cannot be read. Only referenced permitted options are frozen privately in the reservation
+
+`attr("service_tier")` reads the actual served tier, while `param()` retains the requested tier. Generated OpenAI service prices require the returned tier, including Fast/Priority aliases and standard-price downgrades. Claude geographic and fast-mode multipliers require reported `inference_geo` and `speed`; missing or unknown values keep settlement pending. Modifiers multiply the token subtotal before search fees. `attr("data_residency")` and `attr("vertex_location")` come only from frozen deployment routing settings. Deployments with different pricing regions require separate model prices. Customers cannot set these routing facts through a request or response
 
 `weekday() != 0 && weekday() != 6 && hour() >= 9 && hour() < 18 ? tier("weekday peak", p * 4 + c * 16) : tier("off peak", p * 2 + c * 8)` defines a weekday peak period. `weekday()` uses Sunday 0 through Saturday 6. `hour`, `minute`, `weekday`, `month`, `day` and `date` use the configured IANA timezone or an explicit timezone argument. `date()` returns `YYYY-MM-DD`, allowing explicit holiday exceptions. Unknown timezones are rejected; holiday dates are configured rather than guessed from weekdays
 
@@ -43,7 +45,7 @@ Existing fixed prices and historical flat-token-v1, token-v2 and token-v3 snapsh
 
 Known token, context, service, modality and cache fields translate without flattening their dimensions. Unsupported or contradictory fields require explicit review. Original values and units remain available. Catalog imports require explicit administrator selection
 
-Automatic catalog translation also preserves supported reported search counts. OpenAI search fees require equal configured context-size prices; Anthropic uses its native medium search fee. Regional processing multipliers, shared daily search allowances and unrecognized pricing dimensions require manual pricing instead of a partially translated active rule. A model's availability in the catalog does not establish that it already has a complete billable price
+Automatic catalog translation also preserves supported reported search counts. OpenAI search fees require equal configured context-size prices; Anthropic uses its native medium search fee. Validated Claude, OpenAI and Vertex regional multipliers remain conditional rules. Gemini grounding uses the listed paid rates; shared upstream project free allowances are not allocated to customers. Missing facts remain pending, and unknown dimensions require review. The [dated source notes](catalog-pricing-sources.md) document verified long-context supplements and calendar rules. A model's availability in the catalog does not establish that every upstream can report its billable facts
 
 Chat, text completion, Responses, Anthropic Messages and embeddings share the expression engine. Image generation/editing, speech and transcription require an expression and its reported quantities. Priced server search requires an explicit search quantity. Missing facts never fall back to inactive fixed columns
 

@@ -1,3 +1,4 @@
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,6 +26,14 @@ MAX_USD: Final = Decimal(1_000_000)
 _MAX_NUMBER: Final = Decimal("1e36")
 _ZERO: Final = Decimal(0)
 _ONE: Final = Decimal(1)
+_ATTRIBUTE_VALUES: Final = {
+    "inference_geo": frozenset(("global", "us")),
+    "speed": frozenset(("standard", "fast")),
+    "data_residency": frozenset(("global", "eu", "us")),
+    "service_tier": frozenset((
+        "default", "auto", "standard", "priority", "fast", "flex", "batches", "batch", "ultrafast", "scale",
+    )),
+}
 
 
 def _decimal(value: object, label: str, *, nonnegative: bool = False) -> Decimal:
@@ -117,6 +126,10 @@ def expression_variables(policy: ExpressionPolicy) -> frozenset[str]:
 
 def expression_usage_keys(policy: ExpressionPolicy) -> frozenset[str]:
     return compile_expression(policy.expression).usage_keys
+
+
+def expression_attribute_keys(policy: ExpressionPolicy) -> frozenset[str]:
+    return compile_expression(policy.expression).attribute_paths
 
 
 def expression_cache_ttls(policy: ExpressionPolicy) -> frozenset[str]:
@@ -285,6 +298,31 @@ def _param(node: Node, environment: _Environment) -> _Result:
     return _Result(_decimal(safe, f"Request parameter '{path}'"))
 
 
+def response_attribute_value(path: str, value: object) -> str:
+    if not isinstance(value, str) or not value or len(value) > 256 or not value.isprintable():
+        raise ExpressionPricingError(f"Response attribute '{path}' must be a nonempty printable string")
+    normalized: Final = value.lower()
+    if path == "vertex_location":
+        if re.fullmatch(r"[a-z][a-z0-9-]{0,62}", normalized) is None:
+            raise ExpressionPricingError("Response attribute 'vertex_location' must be a valid location name")
+        return normalized
+    if normalized not in _ATTRIBUTE_VALUES.get(path, frozenset()):
+        raise ExpressionPricingError(f"Unknown pricing response attribute '{path}' value")
+    return normalized
+
+
+def _attribute(node: Node, environment: _Environment) -> _Result:
+    path: Final = node.children[0].value
+    attributes: Final = environment.facts.get("attributes")
+    value: Final = attributes.get(path) if isinstance(attributes, Mapping) else None
+    if value is None:
+        if len(node.children) == 2:
+            return _evaluate(node.children[1], environment)
+        raise ExpressionPricingError(f"Missing response attribute '{path}'")
+    safe: Final = response_attribute_value(path, value)
+    return _Result(safe, variables=((f"attr.{path}", safe),))
+
+
 def _reported(node: Node, environment: _Environment) -> _Result:
     path: Final = node.children[0].value
     usage: Final = environment.facts.get("usage")
@@ -299,6 +337,8 @@ def _reported(node: Node, environment: _Environment) -> _Result:
 def _call(node: Node, environment: _Environment) -> _Result:
     if node.value == "param":
         return _param(node, environment)
+    if node.value == "attr":
+        return _attribute(node, environment)
     if node.value == "reported":
         return _reported(node, environment)
     if node.value in TIME_PARTS or node.value in ("time", "date"):
@@ -476,6 +516,8 @@ def _bound_function(name: str, values: tuple[_Interval, ...]) -> _Interval:
 def _bound_call(node: Node, environment: _Environment, input_upper: Decimal, output_upper: Decimal) -> _BoundValue:
     if node.value == "param":
         return _bound_param(node, environment, input_upper, output_upper)
+    if node.value == "attr":
+        return ""
     if node.value == "reported":
         return _Interval(_ZERO, _ONE)
     if node.value in TIME_PARTS or node.value in ("time", "date"):

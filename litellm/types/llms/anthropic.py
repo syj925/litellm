@@ -556,7 +556,13 @@ class ServerToolUsage(TypedDict, total=False):
     web_search_requests: ReadOnly[int]
 
 
-class UsageDelta(TypedDict, total=False):
+class PricingUsageAttributes(TypedDict, total=False):
+    service_tier: ReadOnly[str]
+    inference_geo: ReadOnly[str]
+    speed: ReadOnly[str]
+
+
+class UsageDelta(PricingUsageAttributes, total=False):
     input_tokens: int
     output_tokens: int
     cache_creation_input_tokens: int

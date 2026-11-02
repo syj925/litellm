@@ -27,6 +27,8 @@ services:
       - ../litellm/litellm/types/llms/anthropic.py:/app/.venv/lib/python3.13/site-packages/litellm/types/llms/anthropic.py:ro
       - ../litellm/litellm/types/llms/anthropic_messages/anthropic_response.py:/app/.venv/lib/python3.13/site-packages/litellm/types/llms/anthropic_messages/anthropic_response.py:ro
       - ../litellm/litellm/llms/anthropic/pass_through/adapters/transformation.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/anthropic/pass_through/adapters/transformation.py:ro
+      - ../litellm/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:ro
+      - ../litellm/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py:ro
       - ../litellm/litellm/main.py:/app/.venv/lib/python3.13/site-packages/litellm/main.py:ro
       - ../litellm/litellm/llms/anthropic/common_utils.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/anthropic/common_utils.py:ro
       - ../litellm/litellm/llms/anthropic/pass_through/messages/transformation.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/anthropic/pass_through/messages/transformation.py:ro

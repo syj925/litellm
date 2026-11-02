@@ -24,7 +24,12 @@ import { formatMoney, retailRequest } from "./api";
 import ModelPriceCatalogTable from "./ModelPriceCatalogTable";
 import ExpressionPricingEditor from "./ExpressionPricingEditor";
 import ExpressionPricingRule from "./ExpressionPricingRule";
-import { parseUsageBounds, policyFromRates, type ExpressionPolicy } from "./expressionPricing";
+import {
+  parseUsageBounds,
+  policyFromRates,
+  upstreamSearchAllowanceNote,
+  type ExpressionPolicy,
+} from "./expressionPricing";
 import type { SalesPrice } from "./modelPriceCatalog";
 import {
   cacheDurationLabel,
@@ -227,6 +232,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
             <DialogDescription>
               Configure fixed rates or a dynamic pricing rule. Customer discounts apply separately.
             </DialogDescription>
+            <p className="text-xs text-muted-foreground">{upstreamSearchAllowanceNote}</p>
           </DialogHeader>
           <form onSubmit={savePrice} className="flex flex-col gap-5">
             <FieldGroup>
@@ -443,6 +449,7 @@ export default function ModelPrices({ accessToken, enabled }: { accessToken: str
               Review the LiteLLM reference catalog before applying it. This is a reference catalog, not a live check of
               provider websites. Importing replaces selected models&apos; base rates for new requests only.
             </DialogDescription>
+            <p className="text-xs text-muted-foreground">{upstreamSearchAllowanceNote}</p>
           </DialogHeader>
           {catalog.isPending && (
             <LoadingState

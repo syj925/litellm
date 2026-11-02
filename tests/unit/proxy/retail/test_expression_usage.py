@@ -455,3 +455,73 @@ def test_maps_grounding_distinguishes_unrequested_zero_from_requested_unknown(to
     assert expression_usage_facts({}, policy, evidence)["usage"] == {}
     response: Final = {"usage": {"prompt_tokens_details": {"google_maps_grounding_requests": 2}}}
     assert expression_usage_facts(response, policy, evidence)["usage"] == {"google_maps_grounding_requests": "2"}
+
+
+def test_cached_audio_rates_partition_cache_reads_without_changing_ordinary_input_or_full_context():
+    response: Final = {
+        "usageMetadata": {
+            "promptTokenCount": 1000,
+            "cachedContentTokenCount": 200,
+            "candidatesTokenCount": 100,
+            "promptTokensDetails": [
+                {"modality": "AUDIO", "tokenCount": 300}, {"modality": "TEXT", "tokenCount": 700},
+            ],
+            "cacheTokensDetails": [
+                {"modality": "AUDIO", "tokenCount": 80}, {"modality": "TEXT", "tokenCount": 120},
+            ],
+        },
+    }
+    policy: Final = _policy("p*2+ai*4+cr*0.2+ai_cr*0.4+c*8")
+    facts: Final = expression_usage_facts(response, policy, {})
+    assert {key: facts[key] for key in ("p", "ai", "cr", "ai_cr", "c", "len")} == {
+        "p": 580, "ai": 220, "cr": 120, "ai_cr": 80, "c": 100, "len": 1000,
+    }
+    result: Final = evaluate_expression(policy, facts, freeze_expression_context(policy, {}, _START))
+    assert Decimal(str(result["amount"])) == Decimal("0.002896")
+    aggregate: Final = expression_usage_facts(response, _policy("p+ai+cr+c"), {})
+    assert (aggregate["p"], aggregate["ai"], aggregate["cr"]) == (580, 220, 200)
+
+
+def test_reported_pricing_attributes_prefer_native_sources_and_normalize_case_without_copying_secrets():
+    policy: Final = _policy(
+        "attr('service_tier')=='default' && attr('inference_geo')=='us' && attr('speed')=='fast' ? fixed(2) : fixed(1)"
+    )
+    response: Final = {
+        "service_tier": "DEFAULT", "speed": "standard", "inference_geo": "global", "api_key": "private",
+        "usage": {"service_tier": "fast", "inference_geo": "US", "speed": "FAST", "api_key": "private"},
+    }
+    facts: Final = expression_usage_facts(response, policy, {})
+    assert facts["attributes"] == {"service_tier": "default", "inference_geo": "us", "speed": "fast"}
+    assert facts["usage"] == {}
+    assert "private" not in str(facts)
+    assert evaluate_expression(policy, facts, freeze_expression_context(policy, {}, _START))["amount"] == "2"
+
+
+def test_absent_response_attributes_remain_unknown_and_only_referenced_attributes_are_validated():
+    policy: Final = _policy("attr('service_tier','default')=='default' ? fixed(1) : fixed(2)")
+    facts: Final = expression_usage_facts({"usage": {"speed": {"private": "value"}}}, policy, {})
+    assert facts["attributes"] == {}
+    assert evaluate_expression(policy, facts, freeze_expression_context(policy, {}, _START))["amount"] == "1"
+    required: Final = _policy("attr('speed')=='fast' ? fixed(2) : fixed(1)")
+    with pytest.raises(ExpressionPricingError, match="Response attribute"):
+        expression_usage_facts({"usage": {"speed": {"private": "value"}}}, required, {})
+
+
+def test_deployment_pricing_attributes_cannot_be_supplied_by_response_fields():
+    policy: Final = _policy("attr('data_residency')=='eu' || attr('vertex_location')=='eu' ? fixed(2) : fixed(1)")
+    response: Final = {
+        "data_residency": "eu", "vertex_location": "eu", "usage": {"data_residency": "eu", "vertex_location": "eu"},
+    }
+    facts: Final = expression_usage_facts(response, policy, {})
+    assert facts["attributes"] == {}
+    with pytest.raises(ExpressionPricingError, match="Missing response attribute 'data_residency'"):
+        evaluate_expression(policy, facts, freeze_expression_context(policy, {}, _START))
+
+
+@pytest.mark.parametrize("path,value", [
+    ("inference_geo", "not_available"), ("speed", "turbo"), ("service_tier", "unknown"),
+])
+def test_unknown_native_pricing_attributes_remain_pending_instead_of_using_default_rates(path: str, value: str):
+    policy: Final = _policy(f"attr('{path}','global')=='global' ? fixed(1) : fixed(2)")
+    with pytest.raises(ExpressionPricingError, match="Unknown pricing response attribute"):
+        expression_usage_facts({"usage": {path: value}}, policy, {})

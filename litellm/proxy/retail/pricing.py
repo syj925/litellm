@@ -227,7 +227,13 @@ def _resolved_catalog_card(name: str, rates: Mapping[str, object]) -> dict[str, 
         "cache_creation_input_token_cost", "cache_creation_input_token_cost_above_1hr",
         "cache_creation_input_token_cost_above_12hr",
     })
-    additional: Final = any("cost" in key and value is not None and key not in canonical for key, value in rates.items())
+    additional: Final = any(
+        value is not None and (
+            "cost" in key and key not in canonical or "multiplier" in key or key == "search_free_requests"
+            or key == "provider_specific_entry" and any(name in as_mapping(value) for name in ("us", "fast"))
+        )
+        for key, value in rates.items()
+    )
     if flat is not None and not additional:
         return flat
     policy: Final = catalog_expression_policy(name, rates)

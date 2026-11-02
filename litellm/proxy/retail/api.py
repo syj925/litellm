@@ -345,7 +345,14 @@ def _public_expression_pricing(value: object) -> dict[str, JsonValue]:
     return {
         "version": "expression-v1", "expression_hash": digest, "started_at": started_at.isoformat(),
         **strings, **amounts,
-        "variables": _public_expression_numbers(raw.get("variables")),
+        "variables": {
+            **_public_expression_numbers(raw.get("variables")),
+            **{key: item for key, item in as_mapping(raw.get("variables")).items()
+               if key in {
+                   "attr.service_tier", "attr.inference_geo", "attr.speed", "attr.data_residency", "attr.vertex_location",
+               }
+               and isinstance(item, str) and 0 < len(item) <= 80 and item.isascii() and item.isprintable()},
+        },
         "usage": _public_expression_numbers(raw.get("usage")),
         "tiers": [tier for tier in tiers if isinstance(tier, str) and len(tier) <= 128]
         if isinstance(tiers, list) and len(tiers) <= 128 else [],

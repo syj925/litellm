@@ -9,6 +9,7 @@ from litellm.types.llms.anthropic import (
     AnthropicStopDetails,
     CompactionBlock,
     ContextManagementResponse,
+    PricingUsageAttributes,
     ServerToolUsage,
     UsageIteration,
 )
@@ -63,7 +64,7 @@ AnthropicResponseContentBlock: TypeAlias = (
 )
 
 
-class AnthropicUsage(TypedDict, total=False):
+class AnthropicUsage(PricingUsageAttributes, total=False):
     """
     Input and output tokens used in the request
     """

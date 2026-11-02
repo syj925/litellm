@@ -354,3 +354,85 @@ def test_reported_tokens_marker_is_available_only_as_a_presence_predicate():
 def test_reported_predicate_rejects_dynamic_or_unsafe_paths(expression: str):
     with pytest.raises(ExpressionPricingError):
         _policy(expression)
+
+
+def test_response_attributes_select_actual_tier_and_record_only_consumed_public_fields():
+    policy: Final = _policy(
+        "attr('service_tier',param('service_tier'))=='fast' ? tier('fast',p*6) : tier('standard',p*2)"
+    )
+    context: Final = freeze_expression_context(policy, {"service_tier": "fast", "api_key": "private"}, _START)
+    downgraded: Final = evaluate_expression(
+        policy, {"p": 100, "attributes": {"service_tier": "default", "api_key": "private"}}, context,
+    )
+    assert Decimal(str(downgraded["amount"])) == Decimal("0.0002")
+    assert downgraded["tiers"] == ["standard"]
+    assert downgraded["variables"] == {"attr.service_tier": "default", "p": "100"}
+    assert "private" not in str(downgraded)
+    fallback: Final = evaluate_expression(policy, {"p": 100}, context)
+    assert Decimal(str(fallback["amount"])) == Decimal("0.0006")
+    assert context["params"] == {"service_tier": "fast"}
+
+
+def test_missing_response_attributes_fail_only_when_referenced_and_reserve_all_possible_rates():
+    policy: Final = _policy("attr('inference_geo')=='us' ? p*4 : p*2")
+    context: Final = freeze_expression_context(policy, {}, _START)
+    reservation: Final = reserve_expression(policy, context, 100, 0)
+    assert reservation == Decimal("0.0004")
+    for geo in ("us", "global"):
+        actual: Final = evaluate_expression(policy, {"p": 100, "attributes": {"inference_geo": geo}}, context)
+        assert Decimal(str(actual["amount"])) <= reservation
+    with pytest.raises(ExpressionPricingError, match="Missing response attribute 'inference_geo'"):
+        evaluate_expression(policy, {"p": 100}, context)
+    lazy: Final = _policy("1 ? p : attr('inference_geo')=='us' ? p*4 : p*2")
+    assert evaluate_expression(lazy, {"p": 100}, freeze_expression_context(lazy, {}, _START))["amount"] == "0.0001"
+
+
+@pytest.mark.parametrize("value", ["", "x" * 257, "us\nprivate", 1, True, {}])
+def test_response_attribute_values_must_be_bounded_printable_strings(value: object):
+    policy: Final = _policy("attr('speed')=='fast' ? p*4 : p*2")
+    with pytest.raises(ExpressionPricingError, match="Response attribute"):
+        evaluate_expression(
+            policy, {"p": 100, "attributes": {"speed": value}}, freeze_expression_context(policy, {}, _START),
+        )
+
+
+@pytest.mark.parametrize("expression", ["attr('api_key')", "attr('headers')", "attr(p)", "attr('usage.inference_geo')"])
+def test_response_attribute_paths_cannot_access_arbitrary_response_or_usage_fields(expression: str):
+    with pytest.raises(ExpressionPricingError):
+        _policy(expression)
+
+
+def test_inference_geo_and_speed_request_fallbacks_freeze_safe_scalars():
+    policy: Final = _policy("param('inference_geo')=='us' && param('speed')=='fast' ? p*4 : p*2")
+    context: Final = freeze_expression_context(
+        policy, {"inference_geo": "us", "speed": "fast", "messages": "private"}, _START,
+    )
+    assert context["params"] == {"inference_geo": "us", "speed": "fast"}
+    assert evaluate_expression(policy, {"p": 100}, context)["amount"] == "0.0004"
+
+
+@pytest.mark.parametrize(
+    "path, value",
+    [
+        ("inference_geo", "not_available"),
+        ("inference_geo", "eu"),
+        ("speed", "turbo"),
+        ("data_residency", "unresolved"),
+        ("service_tier", "unknown"),
+        ("vertex_location", "https://private.example"),
+        ("vertex_location", "x" * 64),
+    ],
+)
+def test_unknown_pricing_attributes_cannot_silently_choose_the_base_branch(path: str, value: str):
+    policy: Final = _policy(f"attr('{path}')=='us' ? fixed(2) : fixed(1)")
+    with pytest.raises(ExpressionPricingError, match="attribute"):
+        evaluate_expression(policy, {"attributes": {path: value}}, freeze_expression_context(policy, {}, _START))
+
+
+def test_deployment_vertex_location_is_normalized_and_available_to_comparisons():
+    policy: Final = _policy("attr('vertex_location')=='europe-west4' ? fixed(2) : fixed(1)")
+    actual: Final = evaluate_expression(
+        policy, {"attributes": {"vertex_location": "EUROPE-WEST4"}}, freeze_expression_context(policy, {}, _START),
+    )
+    assert actual["amount"] == "2"
+    assert actual["variables"] == {"attr.vertex_location": "europe-west4"}

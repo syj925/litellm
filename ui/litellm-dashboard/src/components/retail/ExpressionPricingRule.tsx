@@ -20,12 +20,13 @@ export default function ExpressionPricingRule({ policy }: { policy: ExpressionPo
         <p>
           p: other uncached input; c: other output; len: full prompt context; cr: other cache reads; cc: other cache
           writes; cc5m / cc30m / cc1h / cc12h: cache write durations. img / img_cr / img_o: image input, cached input
-          and output tokens. ai / ao: audio input and output tokens. reasoning: reasoning output tokens. Referenced
-          modality subsets are separated from p or c. Referenced cached image tokens are separated from cr; referenced
-          write durations are separated from cc. u(&apos;name&apos;) is a reported usage unit. tier() names the applied
-          branch; param() reads an allowed request parameter. cache_write(&apos;750&apos;) reads separately priced write
-          tokens for a custom duration in seconds. reported(&apos;tokens&apos;) selects token pricing when usable token
-          usage is present.
+          and output tokens. ai / ai_cr / ao: audio input, cached input and output tokens. reasoning: reasoning output
+          tokens. Referenced modality subsets are separated from p or c. Referenced cached image and audio tokens are
+          separated from cr; referenced write durations are separated from cc. u(&apos;name&apos;) is a reported usage
+          unit. tier() names the applied branch; param() reads a frozen request parameter; attr() reads verified
+          response or routing attributes, with an optional fallback. cache_write(&apos;750&apos;) reads separately
+          priced write tokens for a custom duration in seconds. reported(&apos;tokens&apos;) selects token pricing when
+          usable token usage is present.
         </p>
       </details>
     </section>

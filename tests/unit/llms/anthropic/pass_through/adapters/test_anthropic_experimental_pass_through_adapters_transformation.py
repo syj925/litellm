@@ -60,6 +60,40 @@ def test_anthropic_usage_bridge_preserves_cache_duration_counts() -> None:
     }
 
 
+def test_adapted_usage_preserves_reported_pricing_attributes_without_private_fields() -> None:
+    usage: Final = Usage(
+        prompt_tokens=100, completion_tokens=10, inference_geo="us", speed="fast", service_tier="priority",
+        private_api_key="private",
+    )
+    response: Final = ModelResponse(
+        model="fixture", choices=[Choices(message=Message(content="Answer"), finish_reason="stop")],
+        usage=usage, service_tier="default",
+    )
+    translated: Final = LiteLLMAnthropicMessagesAdapter().translate_openai_response_to_anthropic(response)
+    assert translated["usage"] == {
+        "input_tokens": 100, "output_tokens": 10, "service_tier": "default", "inference_geo": "us", "speed": "fast",
+    }
+    assert "private" not in str(translated)
+
+
+def test_adapted_terminal_stream_usage_preserves_served_tier_and_provider_modifiers() -> None:
+    response: Final = ModelResponse(
+        model="fixture", choices=[Choices(message=Message(content=None), finish_reason="stop")],
+        usage=Usage(prompt_tokens=100, completion_tokens=10, inference_geo="us", speed="fast"), service_tier="default",
+    )
+    translated: Final = LiteLLMAnthropicMessagesAdapter().translate_streaming_openai_response_to_anthropic(response, 0)
+    assert translated["usage"] == {
+        "input_tokens": 100, "output_tokens": 10, "service_tier": "default", "inference_geo": "us", "speed": "fast",
+    }
+
+
+def test_adapted_usage_does_not_invent_missing_pricing_attributes() -> None:
+    usage: Final = Usage(prompt_tokens=100, completion_tokens=10)
+    assert LiteLLMAnthropicMessagesAdapter.translate_openai_usage_to_anthropic_usage_delta(usage) == {
+        "input_tokens": 100, "output_tokens": 10,
+    }
+
+
 def test_translate_openai_response_to_anthropic_empty_choices() -> None:
     response: Final = ModelResponse(
         id="chatcmpl-empty",

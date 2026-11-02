@@ -5,7 +5,7 @@ from typing import Final
 import pytest
 
 from litellm.proxy.retail.billing import price_snapshot
-from litellm.proxy.retail.expression_billing import expression_settlement
+from litellm.proxy.retail.expression_billing import catalog_routing_attributes, expression_settlement
 from litellm.proxy.retail.pricing import reserve_quote
 
 _DISCOUNT: Final = {"model": "fixture", "discount": "0.7", "discount_source": "customer_model", "plan_id": "standard"}
@@ -17,6 +17,60 @@ _BASIS: Final = {
     "cache_read_input_token_cost": "0.0000002",
     "cache_creation_input_token_cost": "0.0000025",
 }
+
+
+def test_verified_deployment_region_is_frozen_and_cannot_be_spoofed_by_response_or_request() -> None:
+    deployment: Final = {"litellm_params": {"model": "openai/fixture", "api_base": "https://eu.api.openai.com/v1"}}
+    attributes: Final = catalog_routing_attributes((deployment,))
+    assert attributes == {"data_residency": "eu"}
+    snapshot: Final = price_snapshot(
+        {**_BASIS, "expression_policy": {"expression": "p * (attr('data_residency')=='eu' ? 4 : 2)"}},
+        _DISCOUNT, "acompletion", request_data={"data_residency": "us"},
+        routing_attributes=attributes,
+    )
+    amount, details = expression_settlement(snapshot, {
+        "usage": {"prompt_tokens": 100, "completion_tokens": 0, "data_residency": "us"},
+        "data_residency": "us",
+    })
+    assert Decimal(amount) == Decimal("0.00028")
+    assert details["expression_pricing"]["variables"]["attr.data_residency"] == "eu"
+    assert "api_base" not in str(snapshot)
+    assert "data_residency" not in snapshot["expression_context"]["params"]
+
+
+def test_mixed_deployment_regions_are_rejected_before_a_catalog_rule_can_be_used() -> None:
+    deployments: Final = tuple(
+        {"litellm_params": {"model": "openai/fixture", "api_base": base}}
+        for base in ("https://eu.api.openai.com/v1", "https://api.openai.com/v1")
+    )
+    assert catalog_routing_attributes(deployments) == {}
+    with pytest.raises(ValueError, match="verified pricing region"):
+        price_snapshot(
+            {**_BASIS, "expression_policy": {"expression": "p * (attr('data_residency')=='eu' ? 4 : 2)"}},
+            _DISCOUNT, "acompletion", routing_attributes=catalog_routing_attributes(deployments),
+        )
+
+
+def test_vertex_region_comes_from_server_deployment_configuration_only() -> None:
+    assert catalog_routing_attributes(({
+        "litellm_params": {"model": "vertex_ai/fixture", "vertex_location": "us-central1"},
+    },)) == {"vertex_location": "us-central1"}
+    with pytest.raises(ValueError, match="Response attribute"):
+        catalog_routing_attributes(({"litellm_params": {"model": "vertex_ai/fixture", "vertex_location": " "}},))
+
+
+def test_compatible_gateway_uses_retail_global_rates_unless_deployment_has_an_explicit_region() -> None:
+    params: Final = {"model": "openai/fixture", "api_base": "https://compatible.invalid/v1"}
+    assert catalog_routing_attributes(({"litellm_params": params},)) == {"data_residency": "global"}
+    assert catalog_routing_attributes(({
+        "litellm_params": params, "model_info": {"pricing_data_residency": "eu"},
+    },)) == {"data_residency": "eu"}
+
+
+def test_prices_without_routing_conditions_do_not_read_unrelated_deployment_locations() -> None:
+    assert catalog_routing_attributes(({
+        "litellm_params": {"model": "vertex_ai/fixture", "vertex_location": " "},
+    },), frozenset()) == {}
 
 
 def _snapshot(

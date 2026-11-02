@@ -15,8 +15,13 @@ from litellm.integrations.custom_logger import CustomLogger
 from litellm.proxy._types import UserAPIKeyAuth
 
 from .customer_access import customer_resource_policy
-from .expression_billing import expression_settlement, expression_token_limits
-from .expression_pricing import expression_usage_keys, freeze_expression_context, validate_expression_policy
+from .expression_billing import catalog_routing_attributes, expression_settlement, expression_token_limits
+from .expression_pricing import (
+    expression_attribute_keys,
+    expression_usage_keys,
+    freeze_expression_context,
+    validate_expression_policy,
+)
 from .expression_usage import request_usage_evidence
 from .models import InsufficientFunds, ParallelLimitExceeded
 from .pool_routing import (
@@ -107,8 +112,16 @@ def price_snapshot(
     pool: PoolRouteDecision | None = None,
     request_data: Mapping[str, object] | None = None,
     started_at: datetime | None = None,
+    routing_attributes: Mapping[str, str] | None = None,
 ) -> dict[str, JsonValue]:
     policy: Final = validate_expression_policy(card["expression_policy"]) if card.get("expression_policy") else None
+    required_routing: Final = (
+        expression_attribute_keys(policy).intersection({"data_residency", "vertex_location"}) if policy else frozenset()
+    )
+    if routing_attributes is not None and required_routing.difference(routing_attributes):
+        raise ValueError(
+            "Configured deployments do not share a verified pricing region. Use separate model prices for each region"
+        )
     expression_context: Final = (
         freeze_expression_context(policy, request_data or {}, started_at or datetime.now(timezone.utc)) if policy else {}
     )
@@ -127,6 +140,7 @@ def price_snapshot(
             "expression_context": expression_context,
             "expression_usage_evidence": request_usage_evidence(request_data or {}, call_type),
             "expression_limits": expression_token_limits(card),
+            "expression_routing_attributes": dict(routing_attributes or {}),
         } if policy else {}),
         **(
             {
@@ -229,7 +243,7 @@ class RetailBilling(CustomLogger):
             raise HTTPException(403, "Wallet billing requires an API key owned by a user")
         if call_type not in _SUPPORTED and call_type not in _EXPRESSION_MEDIA:
             raise HTTPException(403, "This API endpoint is not enabled for prepaid wallets yet")
-        if data.get("background") or data.get("batch"):
+        if data.get("background") or data.get("batch") or data.get("service_tier") in ("batch", "batches"):
             raise HTTPException(400, "Background and batch requests are not enabled for prepaid wallets yet")
         image_call: Final = call_type in {"image_generation", "aimage_generation", "image_edit", "aimage_edit"}
         if image_call and (
@@ -297,7 +311,14 @@ class RetailBilling(CustomLogger):
             else await store.get_model_discount(user_id, model)
         )
         try:
-            snapshot: Final = price_snapshot(card, discount, call_type, pool, data)
+            routing_keys: Final = (
+                expression_attribute_keys(validate_expression_policy(card["expression_policy"]))
+                if card.get("expression_policy") else frozenset()
+            )
+            snapshot: Final = price_snapshot(
+                card, discount, call_type, pool, data,
+                routing_attributes=catalog_routing_attributes(priced_deployments, routing_keys),
+            )
             if call_type in _EXPRESSION_MEDIA and snapshot["version"] != "expression-v1":
                 raise ValueError("This media endpoint requires an explicit expression price with reported billing quantities")
             if priced_tools and (
@@ -318,7 +339,7 @@ class RetailBilling(CustomLogger):
         limit_key: Final = "max_output_tokens" if call_type in {"responses", "aresponses"} else "max_tokens"
         output_limit: Final = _request_output_limit(snapshot, data, call_type)
         request_id: Final = str(uuid4())
-        opaque_input: Final = any(
+        opaque_input: Final = bool(priced_tools) or any(
             data.get(key) for key in ("previous_response_id", "conversation", "file", "attachments")
         ) or any(
             marker in json.dumps({key: data.get(key) for key in ("messages", "input", "tools")}, default=str)

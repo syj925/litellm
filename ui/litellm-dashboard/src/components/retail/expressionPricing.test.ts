@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { fixedRatesExpression, parseUsageBounds, parsePreviewParameters, policyFromRates } from "./expressionPricing";
+import {
+  fixedRatesExpression,
+  parseUsageBounds,
+  parsePreviewParameters,
+  parsePreviewAttributes,
+  policyFromRates,
+} from "./expressionPricing";
 
 const rates = {
   model: "fixture",
@@ -42,5 +48,29 @@ describe("expression drafts", () => {
     });
     expect(parsePreviewParameters('{"prompt":"private data"}').error).not.toBeNull();
     expect(parsePreviewParameters('{"quality":{}}').error).not.toBeNull();
+  });
+  it("keeps reported attributes separate from request options and rejects unsafe response fields", () => {
+    const attributes = {
+      service_tier: "default",
+      inference_geo: "us",
+      speed: "fast",
+      data_residency: "eu",
+      vertex_location: "global",
+    };
+    expect(parsePreviewAttributes(JSON.stringify(attributes))).toEqual({ attributes, error: null });
+    expect(parsePreviewAttributes("{}")).toEqual({ attributes: {}, error: null });
+    for (const value of [
+      '{"api_key":"private"}',
+      '{"service_tier":3}',
+      '{"service_tier":{}}',
+      '{"service_tier":""}',
+      JSON.stringify({ service_tier: "fast\n" }),
+      JSON.stringify({ service_tier: "a".repeat(257) }),
+      "null",
+      "[]",
+      "{",
+    ]) {
+      expect(parsePreviewAttributes(value)).toMatchObject({ attributes: {}, error: expect.any(String) });
+    }
   });
 });

@@ -164,6 +164,9 @@ it("loads defaults and saved overrides without importing or writing prices", asy
   expect(screen.getByText(/Site-wide base rates in USD per 1M tokens/)).toHaveTextContent(
     "Customer charges use these rates with the applicable customer, plan, or resource pool discount.",
   );
+  expect(screen.getByText(/Built-in search rules use published paid rates/)).toHaveTextContent(
+    "Upstream project free allowances are not allocated to customers.",
+  );
   expect(screen.getByRole("row", { name: /public-one/ })).toHaveTextContent("Built-in default");
   expect(screen.getByRole("row", { name: /legacy-model/ })).toHaveTextContent("Custom price");
   expect(requests).toEqual(["/retail/admin/pricing-catalog"]);
@@ -197,6 +200,7 @@ it("requires explicit catalog import and a choice for aliases with multiple refe
   renderPanel();
   expect(await screen.findByRole("row", { name: /legacy-model/ })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Import catalog prices" }));
+  expect(within(screen.getByRole("dialog")).getByText(/Upstream project free allowances/)).toBeInTheDocument();
   expect(await screen.findByRole("checkbox", { name: "Import base price for public-two" })).toHaveAttribute(
     "aria-disabled",
     "true",
@@ -478,6 +482,7 @@ it("edits an existing expression, retains the draft across pricing method change
   expect(screen.getByText("0 saved overrides · 0 built-in defaults · 1 dynamic rule")).toBeInTheDocument();
   expect(within(row).queryByText("$2.00")).not.toBeInTheDocument();
   fireEvent.click(within(row).getByRole("button", { name: "Edit dynamic pricing" }));
+  expect(within(screen.getByRole("dialog")).getByText(/Upstream project free allowances/)).toBeInTheDocument();
   expect(screen.getByRole("textbox", { name: "Pricing expression" })).toHaveValue(policy.expression);
   const edited = "tier('updated', p * 3 + c * 12)";
   fireEvent.change(screen.getByRole("textbox", { name: "Pricing expression" }), { target: { value: edited } });
@@ -540,6 +545,12 @@ it("simulates the local rule on the server with explicit time and service tier w
   fireEvent.change(screen.getByRole("textbox", { name: "Service tier", exact: true }), {
     target: { value: "priority" },
   });
+  fireEvent.change(screen.getByRole("textbox", { name: "Synthetic response attributes for attr() (JSON)" }), {
+    target: { value: '{"service_tier":"default","inference_geo":"us"}' },
+  });
+  fireEvent.change(screen.getByRole("textbox", { name: "Cached input audio tokens (ai_cr)" }), {
+    target: { value: "120" },
+  });
   fireEvent.change(screen.getByRole("textbox", { name: "Full prompt context tokens (len)" }), {
     target: { value: "210001" },
   });
@@ -557,7 +568,15 @@ it("simulates the local rule on the server with explicit time and service tier w
     request: { service_tier: "priority", n: 1 },
     started_at: "2026-01-05T10:00:00+08:00",
     discount: "0.5",
-    facts: { p: "1000", len: "210001", tokens: "1", cache_write_ttl_tokens: { "750": "100" }, usage: {} },
+    facts: {
+      p: "1000",
+      len: "210001",
+      ai_cr: "120",
+      tokens: "1",
+      cache_write_ttl_tokens: { "750": "100" },
+      usage: {},
+      attributes: { service_tier: "default", inference_geo: "us" },
+    },
     expression_policy: { timezone: "Asia/Shanghai" },
   });
   expect(writes).toEqual([]);
@@ -566,7 +585,7 @@ it("simulates the local rule on the server with explicit time and service tier w
 it("starts a reviewed dynamic draft with all server-translated reference conditions intact", async () => {
   const expression_policy = {
     version: "expression-v1" as const,
-    expression: "len > 200000 ? tier('long', p * 4 + c * 16) : tier('standard', p * 2 + c * 8)",
+    expression: "attr('inference_geo') == 'us' ? tier('regional', p * 3 + c * 12) : tier('global', p * 2 + c * 8)",
     timezone: "UTC",
     usage_bounds: {},
   };
@@ -584,7 +603,7 @@ it("starts a reviewed dynamic draft with all server-translated reference conditi
       },
     ],
   };
-  const { writes } = serveApi({ entries: [entry] });
+  const { writes, simulations } = serveApi({ entries: [entry] });
   renderPanel();
   fireEvent.click(
     within(await screen.findByRole("row", { name: /public-one/ })).getByRole("button", { name: "Review price" }),
@@ -592,5 +611,14 @@ it("starts a reviewed dynamic draft with all server-translated reference conditi
   fireEvent.click(screen.getByRole("button", { name: "Configure dynamic pricing" }));
   expect(screen.getByRole("textbox", { name: "Pricing expression" })).toHaveValue(expression_policy.expression);
   expect(screen.getByRole("textbox", { name: "Rule timezone" })).toHaveValue(expression_policy.timezone);
+  fireEvent.change(screen.getByRole("textbox", { name: "Synthetic response attributes for attr() (JSON)" }), {
+    target: { value: '{"inference_geo":"us"}' },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Simulate charge" }));
+  expect(await screen.findByRole("region", { name: "Simulated charge" })).toHaveTextContent("$0.123456789 USD");
+  expect(simulations[0]?.body).toMatchObject({
+    expression_policy,
+    facts: { attributes: { inference_geo: "us" } },
+  });
   expect(writes).toEqual([]);
 });

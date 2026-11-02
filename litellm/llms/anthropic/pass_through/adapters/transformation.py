@@ -168,6 +168,7 @@ from litellm.types.llms.anthropic import (
     ContextManagementResponse,
     MessageBlockDelta,
     MessageDelta,
+    PricingUsageAttributes,
     ServerToolUsage,
     StreamingContentBlockDeltaType,
     UsageDelta,
@@ -209,6 +210,20 @@ if TYPE_CHECKING:
     from litellm.types.llms.anthropic import ContentBlockContentBlockDict
 
 ToolResultContent: TypeAlias = str | list[ToolMessageContentPart]
+_PRICING_USAGE_ATTRIBUTES: Final = TypeAdapter(PricingUsageAttributes)
+
+
+def reported_pricing_usage_attributes(usage: object, service_tier: object = None) -> PricingUsageAttributes:
+    tier: Final = service_tier if service_tier is not None else _optional_attr(usage, "service_tier")
+    attributes: Final = {
+        "service_tier": tier,
+        "inference_geo": _optional_attr(usage, "inference_geo"),
+        "speed": _optional_attr(usage, "speed"),
+    }
+    return _PRICING_USAGE_ATTRIBUTES.validate_python({
+        key: value for key, value in attributes.items()
+        if isinstance(value, str) and 0 < len(value) <= 256 and value.isprintable()
+    })
 
 
 def target_supports_mid_conversation_system(model: str | None, custom_llm_provider: str | None) -> bool:
@@ -1502,7 +1517,9 @@ class LiteLLMAnthropicMessagesAdapter:
         return cls._first_positive_prompt_tokens_detail_value(usage, ("web_search_requests",))
 
     @classmethod
-    def translate_openai_usage_to_anthropic_usage_delta(cls, usage: Usage) -> UsageDelta:
+    def translate_openai_usage_to_anthropic_usage_delta(
+        cls, usage: Usage, service_tier: object = None,
+    ) -> UsageDelta:
         cache_read_input_tokens: Final = cls._get_cache_read_input_tokens(usage)
         cache_creation_input_tokens: Final = cls._get_cache_creation_input_tokens(usage)
         web_search_requests: Final = cls._get_web_search_request_count(usage)
@@ -1519,6 +1536,7 @@ class LiteLLMAnthropicMessagesAdapter:
         }
 
         usage_delta: Final = UsageDelta(
+            **reported_pricing_usage_attributes(usage, service_tier),
             input_tokens=input_tokens,
             output_tokens=usage.completion_tokens or 0,
             **({"cache_creation": duration_tokens} if duration_tokens else {}),
@@ -1537,10 +1555,10 @@ class LiteLLMAnthropicMessagesAdapter:
     _translate_openai_usage_to_anthropic_usage_delta = translate_openai_usage_to_anthropic_usage_delta
 
     @classmethod
-    def translate_openai_usage_to_anthropic_usage(cls, usage: Usage) -> AnthropicUsage:
+    def translate_openai_usage_to_anthropic_usage(cls, usage: Usage, service_tier: object = None) -> AnthropicUsage:
         return cast(
             AnthropicUsage,
-            cls.translate_openai_usage_to_anthropic_usage_delta(usage),
+            cls.translate_openai_usage_to_anthropic_usage_delta(usage, service_tier),
         )
 
     _translate_openai_usage_to_anthropic_usage = translate_openai_usage_to_anthropic_usage
@@ -1588,7 +1606,9 @@ class LiteLLMAnthropicMessagesAdapter:
         )
         # extract usage
         usage: Final[Usage] = getattr(response, "usage")
-        message_usage: Final = self.translate_openai_usage_to_anthropic_usage(usage)
+        message_usage: Final = self.translate_openai_usage_to_anthropic_usage(
+            usage, _optional_attr(response, "service_tier"),
+        )
         polyfill_iterations: Final = polyfill_result.iterations_usage if polyfill_result is not None else None
         anthropic_usage: Final[AnthropicUsage] = (
             TypeAdapter(AnthropicUsage).validate_python(
@@ -1764,7 +1784,9 @@ class LiteLLMAnthropicMessagesAdapter:
                     else None
                 )
             if litellm_usage_chunk is not None:
-                usage_delta = self.translate_openai_usage_to_anthropic_usage_delta(litellm_usage_chunk)
+                usage_delta = self.translate_openai_usage_to_anthropic_usage_delta(
+                    litellm_usage_chunk, _optional_attr(response, "service_tier"),
+                )
             else:
                 usage_delta = UsageDelta(input_tokens=0, output_tokens=0)
             message_block: Final = MessageBlockDelta(

@@ -12,6 +12,7 @@ import {
   expressionTemplates,
   parseUsageBounds,
   parsePreviewParameters,
+  parsePreviewAttributes,
   type ExpressionPolicy,
   type ExpressionPreview,
 } from "./expressionPricing";
@@ -30,6 +31,7 @@ const factFields = [
   ["img_cr", "Cached image tokens"],
   ["img_o", "Output image tokens"],
   ["ai", "Input audio tokens"],
+  ["ai_cr", "Cached input audio tokens"],
   ["ao", "Output audio tokens"],
   ["reasoning", "Reasoning tokens"],
 ] as const;
@@ -50,6 +52,7 @@ export default function ExpressionPricingEditor({
   const [usageText, setUsageText] = useState("{}");
   const [cacheTtlText, setCacheTtlText] = useState("{}");
   const [requestText, setRequestText] = useState("{}");
+  const [attributesText, setAttributesText] = useState("{}");
   const [startedAt, setStartedAt] = useState(() => new Date().toISOString());
   const [serviceTier, setServiceTier] = useState("default");
   const [imageCount, setImageCount] = useState("1");
@@ -91,24 +94,23 @@ export default function ExpressionPricingEditor({
         ? "Custom cache durations and their token counts must be whole numbers."
         : null);
     const requestParameters = parsePreviewParameters(requestText);
+    const responseAttributes = parsePreviewAttributes(attributesText);
     const invalidFact = Object.values(facts).some((value) => value !== "" && !/^\d+(?:\.\d+)?$/.test(value));
-    const invalidInputs = [
+    const parsingError = [
       bounds.error,
       usage.error,
       cacheTtlError,
       requestParameters.error,
+      responseAttributes.error,
+    ].find(Boolean);
+    const invalidInputs = [
+      parsingError,
       invalidFact,
       !/^\d+(?:\.\d+)?$/.test(discount),
       !/^\d+$/.test(imageCount),
     ].some(Boolean);
     if (invalidInputs) {
-      setLocalError(
-        bounds.error ||
-          usage.error ||
-          cacheTtlError ||
-          requestParameters.error ||
-          "Use non-negative decimal usage and discount values, and an integer image count.",
-      );
+      setLocalError(parsingError || "Use non-negative decimal usage and discount values, and an integer image count.");
       return;
     }
     if (!/(Z|[+-]\d{2}:\d{2})$/.test(startedAt) || Number.isNaN(Date.parse(startedAt))) {
@@ -126,6 +128,7 @@ export default function ExpressionPricingEditor({
         ...(hasTokenUsage ? { tokens: "1" } : {}),
         cache_write_ttl_tokens: cacheTtl.bounds,
         usage: usage.bounds,
+        attributes: responseAttributes.attributes,
       },
       request: { ...requestParameters.params, service_tier: serviceTier, n: Number(imageCount) },
       started_at: startedAt,
@@ -201,9 +204,15 @@ export default function ExpressionPricingEditor({
           checks for usable reported token usage before choosing a per-image fallback.
         </p>
         <p>
+          attr(&apos;service_tier&apos;) reads the actual reported response tier. attr(&apos;inference_geo&apos;),
+          attr(&apos;speed&apos;), attr(&apos;data_residency&apos;) and attr(&apos;vertex_location&apos;) read verified
+          response or routing attributes. An optional second argument supplies a fallback when the attribute is absent.
+          param() keeps the request option frozen at request start.
+        </p>
+        <p>
           When an image, audio or reasoning variable is referenced, billing excludes that subset from p or c so it is
-          charged separately. Referenced cached image tokens are excluded from cr; referenced write durations are
-          excluded from cc. Synthetic values here must already exclude those separately priced subsets.
+          charged separately. Referenced cached image and audio tokens are excluded from cr; referenced write durations
+          are excluded from cc. Synthetic values here must already exclude those separately priced subsets.
           u(&apos;name&apos;) reads a reported numeric usage unit.
         </p>
       </details>
@@ -309,6 +318,23 @@ export default function ExpressionPricingEditor({
             <p className="text-xs text-muted-foreground">
               Optional quality, size, resolution, duration, reasoning_effort and prompt_cache_retention values for
               param().
+            </p>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="preview-attributes">Synthetic response attributes for attr() (JSON)</FieldLabel>
+            <Textarea
+              id="preview-attributes"
+              className="font-mono text-xs"
+              value={attributesText}
+              disabled={disabled || preview.isPending}
+              onChange={(event) => {
+                preview.reset();
+                setAttributesText(event.target.value);
+              }}
+            />
+            <p className="text-xs text-muted-foreground">
+              For example {`{"service_tier":"default","inference_geo":"us"}`}. Keep this separate from the requested
+              tier to test downgrades and regional processing. These values are synthetic for this preview.
             </p>
           </Field>
           <Field>

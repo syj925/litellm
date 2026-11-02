@@ -187,13 +187,17 @@ def test_expression_receipts_keep_verified_numeric_trace_and_remove_request_cont
         "version": "expression-v1", "expression": expression,
         "expression_hash": hashlib.sha256(expression.encode()).hexdigest(),
         "timezone": "UTC", "started_at": "2026-01-01T00:00:00+00:00", "tiers": ["weekday"],
-        "variables": {"p": "100", "c": "10", "api_key": "private"}, "usage": {"images": "4"},
+        "variables": {
+            "p": "100", "c": "10", "attr.service_tier": "default", "attr.inference_geo": "us", "api_key": "private",
+        }, "usage": {"images": "4"},
         "undiscounted_amount": "0.00026", "discount": "0.7", "amount": "0.000182",
         "params": {"api_key": "private"}, "context": {"messages": ["private"]},
     }
     details: Final = _public_ledger_details({"expression_pricing": trace})
     assert details == {"expression_pricing": {
-        key: value for key, value in {**trace, "variables": {"p": "100", "c": "10"}}.items()
+        key: value for key, value in {
+            **trace, "variables": {"p": "100", "c": "10", "attr.service_tier": "default", "attr.inference_geo": "us"},
+        }.items()
         if key not in {"params", "context"}
     }}
     assert "private" not in str(details)

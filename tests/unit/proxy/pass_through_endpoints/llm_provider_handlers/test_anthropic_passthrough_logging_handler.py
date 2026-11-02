@@ -16,6 +16,36 @@ from litellm.proxy.pass_through_endpoints.llm_provider_handlers.anthropic_passth
 )
 
 
+@pytest.mark.parametrize("usage_only", (False, True))
+def test_stream_reassembly_preserves_the_last_reported_service_tier(usage_only: bool) -> None:
+    events: Final = (
+        {"type": "message_start", "message": {
+            "id": "fixture", "model": "claude-opus-5-5", "type": "message", "role": "assistant", "content": [],
+            "usage": {"input_tokens": 10, "output_tokens": 0, "service_tier": "fast"},
+        }},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello"}},
+        {"type": "content_block_stop", "index": 0},
+        {"type": "message_delta", "delta": {"stop_reason": "end_turn"},
+         "usage": {"output_tokens": 3, "service_tier": "default"}},
+        {"type": "message_stop"},
+    )
+    chunks: Final = tuple(f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in events)
+    logging: Final = LiteLLMLoggingObj(
+        model="claude-opus-5-5", messages=[], stream=True, call_type="completion", start_time=datetime(2026, 1, 1),
+        litellm_call_id="fixture", function_id="fixture",
+    )
+    response: Final = (
+        AnthropicPassthroughLoggingHandler.build_usage_only_response_from_chunks(chunks, "claude-opus-5-5")
+        if usage_only else AnthropicPassthroughLoggingHandler.build_complete_streaming_response(
+            chunks, logging, "claude-opus-5-5",
+        )
+    )
+    assert response is not None
+    assert response.model_dump()["service_tier"] == "default"
+    assert response.usage.completion_tokens == 3
+
+
 async def _drain_tasks():
     """Await the fire-and-forget managed object write and let its done callback run."""
     pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]

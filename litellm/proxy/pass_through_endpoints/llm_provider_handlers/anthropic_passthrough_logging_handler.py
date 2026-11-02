@@ -541,6 +541,25 @@ class AnthropicPassthroughLoggingHandler:
         return events
 
     @staticmethod
+    def _reported_service_tier_from_chunks(all_chunks: Sequence[str | bytes]) -> str | None:
+        for raw in reversed(all_chunks):
+            for event in reversed(AnthropicPassthroughLoggingHandler._split_sse_chunk_into_events(raw)):
+                data: Final = AnthropicPassthroughLoggingHandler._extract_sse_data(event)
+                if not data:
+                    continue
+                payload: Final = _JSON_OBJECT.validate_python(data)
+                message: Final = payload.get("message")
+                container: Final = (
+                    _JSON_OBJECT.validate_python(message)
+                    if payload.get("type") == "message_start" and isinstance(message, Mapping) else payload
+                )
+                usage: Final = container.get("usage")
+                tier: Final = usage.get("service_tier") if isinstance(usage, Mapping) else None
+                if isinstance(tier, str) and 0 < len(tier) <= 256 and tier.isprintable():
+                    return tier
+        return None
+
+    @staticmethod
     def build_complete_streaming_response(
         all_chunks: Sequence[str | bytes],
         litellm_logging_obj: LiteLLMLoggingObj,
@@ -565,19 +584,14 @@ class AnthropicPassthroughLoggingHandler:
         text run removes O(num_output_tokens) of it.
         """
         collapsed: Final = AnthropicPassthroughLoggingHandler._collapse_pure_text_chunks(all_chunks)
-        if collapsed is not None:
-            return AnthropicPassthroughLoggingHandler._build_complete_streaming_response_legacy(
-                all_chunks=collapsed,
-                litellm_logging_obj=litellm_logging_obj,
-                model=model,
-                speed=speed,
-            )
-        return AnthropicPassthroughLoggingHandler._build_complete_streaming_response_legacy(
-            all_chunks=all_chunks,
+        response: Final = AnthropicPassthroughLoggingHandler._build_complete_streaming_response_legacy(
+            all_chunks=collapsed if collapsed is not None else all_chunks,
             litellm_logging_obj=litellm_logging_obj,
             model=model,
             speed=speed,
         )
+        tier: Final = AnthropicPassthroughLoggingHandler._reported_service_tier_from_chunks(all_chunks)
+        return response.model_copy(update={"service_tier": tier}) if response is not None and tier else response
 
     _build_complete_streaming_response = build_complete_streaming_response
 
@@ -886,6 +900,7 @@ class AnthropicPassthroughLoggingHandler:
         usage_obj: Final = AnthropicConfig().calculate_usage(
             usage_object=usage_object, reasoning_content=None, speed=speed
         )
+        tier: Final = AnthropicPassthroughLoggingHandler._reported_service_tier_from_chunks(all_chunks)
         return ModelResponse(
             model=resolved_model,
             choices=[
@@ -896,6 +911,7 @@ class AnthropicPassthroughLoggingHandler:
                 )
             ],
             usage=usage_obj,
+            **({"service_tier": tier} if tier else {}),
         )
 
     _build_usage_only_response_from_chunks = build_usage_only_response_from_chunks

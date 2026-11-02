@@ -18,6 +18,9 @@ export interface ExpressionPreview {
   timezone: string;
 }
 
+export const upstreamSearchAllowanceNote =
+  "Built-in search rules use published paid rates. Upstream project free allowances are not allocated to customers.";
+
 const usableRate = (value: string) => (/^\d+(?:\.\d+)?$/.test(value) ? value : "0");
 const ttlVariables: Record<string, string> = { "300": "cc5m", "1800": "cc30m", "3600": "cc1h", "43200": "cc12h" };
 
@@ -64,13 +67,13 @@ export const expressionTemplates = [
   {
     id: "multimodal",
     label: "Image / audio tokens",
-    expression: "p * 2 + img * 3 + ai * 10 + c * 8 + img_o * 12 + ao * 20 + cr * 0.2 + cc * 2.5",
+    expression: "p * 2 + img * 3 + ai * 10 + ai_cr * 1 + c * 8 + img_o * 12 + ao * 20 + cr * 0.2 + cc * 2.5",
   },
   {
     id: "service",
     label: "Service tiers",
     expression:
-      "param('service_tier') == 'priority' ? tier('priority', (p * 2 + c * 8) * 2) : tier('standard', p * 2 + c * 8)",
+      "attr('service_tier', param('service_tier')) == 'priority' || attr('service_tier', param('service_tier')) == 'fast' ? tier('priority', (p * 2 + c * 8) * 2) : tier('standard', p * 2 + c * 8)",
   },
   { id: "images", label: "Per-image fee", expression: "fixed(u('images') * 0.04)", usage_bounds: { images: "4" } },
 ] satisfies { id: string; label: string; expression: string; usage_bounds?: Record<string, string> }[];
@@ -117,5 +120,33 @@ export function parsePreviewParameters(value: string): { params: Record<string, 
         };
   } catch {
     return { params: {}, error: "Enter valid JSON for synthetic request parameters." };
+  }
+}
+
+function isPreviewAttributeValue(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 256) return false;
+  return Array.from(value).every((character) => {
+    const code = character.charCodeAt(0);
+    return code >= 32 && (code < 127 || code > 159);
+  });
+}
+
+export function parsePreviewAttributes(value: string): { attributes: Record<string, string>; error: string | null } {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+      return { attributes: {}, error: "Synthetic response attributes must be a JSON object." };
+    const supported = new Set(["service_tier", "inference_geo", "speed", "data_residency", "vertex_location"]);
+    const entries = Object.entries(parsed);
+    const valid = entries.every(([key, item]) => supported.has(key) && isPreviewAttributeValue(item));
+    return valid
+      ? { attributes: Object.fromEntries(entries) as Record<string, string>, error: null }
+      : {
+          attributes: {},
+          error:
+            "Use nonempty printable strings for service_tier, inference_geo, speed, data_residency or vertex_location (up to 256 characters).",
+        };
+  } catch {
+    return { attributes: {}, error: "Enter valid JSON for synthetic response attributes." };
   }
 }

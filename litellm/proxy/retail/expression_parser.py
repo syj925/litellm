@@ -9,12 +9,19 @@ class ExpressionPricingError(ValueError):
 
 
 VARIABLES: Final = frozenset(
-    ("p", "c", "len", "cr", "cc", "cc5m", "cc1h", "cc30m", "cc12h", "img", "img_cr", "img_o", "ai", "ao", "reasoning")
+    (
+        "p", "c", "len", "cr", "cc", "cc5m", "cc1h", "cc30m", "cc12h", "img", "img_cr", "img_o", "ai", "ai_cr",
+        "ao", "reasoning",
+    )
 )
 CACHE_TTL_VARIABLES: Final = {"cc5m": "300", "cc30m": "1800", "cc1h": "3600", "cc12h": "43200"}
+REPORTED_ATTRIBUTE_PATHS: Final = frozenset(("service_tier", "inference_geo", "speed"))
+ATTRIBUTE_PATHS: Final = REPORTED_ATTRIBUTE_PATHS.union(("data_residency", "vertex_location"))
 PARAM_PATHS: Final = frozenset(
     (
         "service_tier",
+        "inference_geo",
+        "speed",
         "quality",
         "size",
         "resolution",
@@ -34,6 +41,7 @@ _ARITIES: Final = {
     "cache_write": (1, 1),
     "reported": (1, 1),
     "param": (1, 2),
+    "attr": (1, 2),
     "tier": (2, 2),
     "min": (1, 32),
     "max": (1, 32),
@@ -69,6 +77,7 @@ class Program:
     variables: frozenset[str]
     usage_keys: frozenset[str]
     param_paths: frozenset[str]
+    attribute_paths: frozenset[str]
     cache_ttls: frozenset[str]
     reported_usage_keys: frozenset[str]
 
@@ -109,10 +118,12 @@ def _call(name: str, args: tuple[Node, ...]) -> Node:
     lower, upper = _ARITIES[name]
     if not lower <= len(args) <= upper:
         raise ExpressionPricingError(f"Invalid argument count for '{name}'")
-    if name in ("u", "cache_write", "reported", "param", "tier", "time") and args[0].kind != "string":
+    if name in ("u", "cache_write", "reported", "param", "attr", "tier", "time") and args[0].kind != "string":
         raise ExpressionPricingError(f"'{name}' requires a literal string as its first argument")
     if name == "param" and args[0].value not in PARAM_PATHS:
         raise ExpressionPricingError("Request parameter path is not allowlisted")
+    if name == "attr" and args[0].value not in ATTRIBUTE_PATHS:
+        raise ExpressionPricingError("Response attribute path is not allowlisted")
     if name == "u" and not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9.:-]{0,127}", args[0].value):
         raise ExpressionPricingError("Invalid usage fact name")
     if name == "reported" and not (
@@ -213,6 +224,9 @@ def compile_expression(expression: str) -> Program:
         usage_keys=frozenset(node.children[0].value for node in nodes if node.kind == "call" and node.value == "u"),
         param_paths=frozenset(
             node.children[0].value for node in nodes if node.kind == "call" and node.value == "param"
+        ),
+        attribute_paths=frozenset(
+            node.children[0].value for node in nodes if node.kind == "call" and node.value == "attr"
         ),
         cache_ttls=named_ttls.union(function_ttls),
         reported_usage_keys=frozenset(

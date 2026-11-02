@@ -19,8 +19,8 @@ def test_saved_expression_policy_is_the_active_price_in_the_admin_catalog() -> N
 
 
 @pytest.mark.parametrize(("provider", "extra", "expected"), (
-    ("openai", {"regional_processing_uplift_multiplier_eu": "1.1"}, ("regional_processing_uplift_multiplier_eu",)),
-    ("anthropic", {"provider_specific_entry": {"us": "1.1"}}, ("provider_specific_entry",)),
+    ("openai", {"regional_processing_uplift_multiplier_asia": "1.1"}, ("regional_processing_uplift_multiplier_asia",)),
+    ("anthropic", {"provider_specific_entry": {"us": "1.1", "future": "2"}}, ("provider_specific_entry",)),
 ))
 def test_unmapped_catalog_dimensions_name_the_exact_fields_without_offering_a_partial_policy(
     provider: str, extra: dict[str, object], expected: tuple[str, ...],
@@ -40,6 +40,22 @@ def test_unmapped_catalog_dimensions_name_the_exact_fields_without_offering_a_pa
     assert row.reason == "Manual pricing is required for unresolved catalog fields: " + ", ".join(expected)
     assert row.review_references[0].expression_policy is None
     assert "0.0123456789" not in row.reason and "1.1" not in row.reason
+
+
+def test_shared_free_allowance_note_is_visible_on_a_complete_paid_rate_rule() -> None:
+    metadata: Final = {
+        "litellm_provider": "gemini", "mode": "chat",
+        "input_cost_per_token": "0.000002", "output_cost_per_token": "0.000006",
+        "search_context_cost_per_query": {"search_context_size_medium": "0.012"},
+        "search_free_requests": {"count": 10, "period": "day", "shared_group": "fixture"},
+    }
+    row: Final = build_pricing_catalog(
+        {"public-model": ({"litellm_params": {"model": "fixture"}},)}, (), {"fixture": metadata}, "Catalog fixture",
+    ).items[0]
+    assert row.status == "expression" and row.price is not None
+    assert row.reason is not None and "free allowances are not passed through" in row.reason
+    assert "paid rates" in row.reason
+    assert row.price.expression_policy["usage_bounds"]["web_search_requests"] == "64"
 
 
 def test_manual_review_reasons_bound_field_counts_and_never_copy_urls_or_values() -> None:

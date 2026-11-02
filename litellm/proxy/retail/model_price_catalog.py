@@ -6,7 +6,13 @@ from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from .catalog_expression import _parse_rate, catalog_expression_policy, unsupported_catalog_pricing_metadata
+from .catalog_expression import (
+    _parse_rate,
+    catalog_expression_policy,
+    excluded_endpoint_rate,
+    unsupported_catalog_pricing_metadata,
+)
+from .catalog_pricing_metadata import catalog_pricing_note, supported_pricing_metadata
 from .pricing import (
     _catalog_card,
     _catalog_model,
@@ -169,6 +175,10 @@ def _categories(
 def _unresolved_pricing_field(key: str, value: object, metadata: Mapping[str, object]) -> bool:
     if value is None or re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,119}", key) is None:
         return False
+    if key in supported_pricing_metadata(metadata):
+        return False
+    if excluded_endpoint_rate(key, value, metadata):
+        return False
     if unsupported_catalog_pricing_metadata({key: value}):
         return True
     if "cost" not in key or _parse_rate(key, value) is not None:
@@ -223,6 +233,7 @@ def _catalog_entry(
             status=status,
             price=saved, candidates=candidates,
             review_references=review_references,
+            reason=catalog_pricing_note(catalog.get(saved.catalog_model or "", {})),
         )
     try:
         catalog_snapshot(model, deployments, "1", catalog)
@@ -242,6 +253,7 @@ def _catalog_entry(
         status="expression" if candidates[0].expression_policy is not None else "default",
         price=candidates[0], candidates=candidates,
         review_references=review_references,
+        reason=catalog_pricing_note(catalog.get(candidates[0].catalog_model or "", {})),
     )
 
 

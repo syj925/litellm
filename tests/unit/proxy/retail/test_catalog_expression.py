@@ -57,6 +57,7 @@ def test_loaded_catalog_context_and_service_rules_use_full_input_boundary(
             "cr": context_length - 10,
             "cc": 0,
             "cc12h": 0,
+            "attributes": {"service_tier": service},
         },
         context,
     )
@@ -87,8 +88,8 @@ def test_unknown_cost_dimensions_are_not_silently_dropped_from_generated_rules()
     {"off_peak_pricing": {"input_cost_per_token": "0.000001", "windows": [{"hours_utc": "00:00-06:00"}]}},
     {"tiered_pricing": [{"input_cost_per_token": "0.000001", "range": [0, 100]}]},
     {"regional_endpoint_uplift_multiplier": "1.1"},
-    {"regional_processing_uplift_multiplier_eu": "1.1"},
-    {"regional_processing_uplift_multiplier_us": "1.1"},
+    {"regional_processing_uplift_multiplier_eu": "NaN"},
+    {"regional_processing_uplift_multiplier_us": "0.5"},
     {"provider_specific_entry": {"us": "1.1"}},
     {"provider_specific_entry": {"input_cost_per_token": "0.000001"}},
     {"search_free_requests": {"count": 100, "period": "day", "shared_group": "fixture"}},
@@ -172,6 +173,7 @@ def test_explicit_custom_cache_durations_survive_context_and_service_conversion_
             "cc": 1,
             "cc12h": 100,
             "cache_write_ttl_tokens": {"750": 49},
+            "attributes": {"service_tier": "default"},
         },
         context,
     )
@@ -192,5 +194,71 @@ def test_service_suffix_before_context_uses_the_same_explicit_rate() -> None:
     context: Final = freeze_expression_context(
         policy, {"service_tier": "priority"}, datetime(2026, 1, 1, tzinfo=timezone.utc)
     )
-    result: Final = evaluate_expression(policy, {"p": 100, "c": 0, "len": 201, "cr": 0, "cc": 0, "cc12h": 0}, context)
+    result: Final = evaluate_expression(policy, {
+        "p": 100, "c": 0, "len": 201, "cr": 0, "cc": 0, "cc12h": 0,
+        "attributes": {"service_tier": "priority"},
+    }, context)
     assert Decimal(str(result["amount"])) == Decimal("0.0009")
+
+
+@pytest.mark.parametrize("served", ("fast", "priority", "default"))
+def test_catalog_service_prices_use_reported_tier_including_fast_alias_and_downgrade(served: str) -> None:
+    metadata: Final = {
+        "litellm_provider": "openai", "mode": "chat",
+        "input_cost_per_token": "0.000002", "output_cost_per_token": "0.000004",
+        "input_cost_per_token_fast": "0.000006", "output_cost_per_token_fast": "0.000008",
+    }
+    policy: Final = validate_expression_policy(catalog_expression_policy("fixture", metadata))
+    context: Final = freeze_expression_context(
+        policy, {"service_tier": "fast"}, datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    facts: Final = {"p": 100, "c": 10, "len": 100, "cr": 0, "cc": 0, "attributes": {"service_tier": served}}
+    result: Final = evaluate_expression(policy, facts, context)
+    expected: Final = Decimal("0.00024") if served == "default" else Decimal("0.00068")
+    assert Decimal(str(result["amount"])) == expected
+    assert result["variables"]["attr.service_tier"] == served
+
+
+def test_regional_modifier_cannot_be_imported_as_a_flat_price_without_its_condition() -> None:
+    metadata: Final = {
+        "litellm_provider": "openai", "mode": "chat",
+        "input_cost_per_token": "0.000002", "output_cost_per_token": "0.000004",
+        "regional_processing_uplift_multiplier_eu": "1.2",
+    }
+    snapshot: Final = catalog_snapshot(
+        "public", ({"litellm_params": {"model": "openai/fixture"}},), "1", {"fixture": metadata},
+    )
+    policy: Final = validate_expression_policy(snapshot["expression_policy"])
+    result: Final = evaluate_expression(
+        policy, {"p": 100, "c": 0, "cr": 0, "cc": 0, "attributes": {"data_residency": "eu"}},
+        freeze_expression_context(policy, {}, datetime(2026, 1, 1, tzinfo=timezone.utc)),
+    )
+    assert Decimal(str(result["amount"])) == Decimal("0.00024")
+
+
+def test_endpoint_specific_decision_prices_do_not_block_chat_or_become_a_selectable_service() -> None:
+    metadata: Final = {
+        **_METADATA, "input_cost_per_token_decisions": "0.000001", "output_cost_per_token_decisions": "0",
+    }
+    policy: Final = catalog_expression_policy("fixture", metadata)
+    assert policy == catalog_expression_policy("fixture", _METADATA)
+    assert "decisions" not in policy["expression"]
+    assert catalog_expression_policy("fixture", {**metadata, "output_cost_per_pixel_decisions": "0.1"}) is None
+
+
+def test_reasoning_that_mirrors_output_follows_its_context_and_service_rates() -> None:
+    policy: Final = validate_expression_policy(catalog_expression_policy("fixture", {
+        **_METADATA, "output_cost_per_reasoning_token": _METADATA["output_cost_per_token"],
+        "output_cost_per_token_priority": "0.000030",
+        "output_cost_per_token_above_100_tokens_priority": "0.000060",
+    }))
+    context: Final = freeze_expression_context(policy, {}, datetime(2026, 1, 1, tzinfo=timezone.utc))
+    result: Final = evaluate_expression(policy, {
+        "p": 0, "c": 1, "reasoning": 9, "len": 101, "cr": 0, "cc": 0, "cc12h": 0,
+        "attributes": {"service_tier": "priority"},
+    }, context)
+    assert Decimal(str(result["amount"])) == Decimal("0.0006")
+
+
+def test_conflicting_fast_priority_aliases_cannot_generate_an_arbitrary_active_price() -> None:
+    assert catalog_expression_policy("fixture", {**_METADATA, "input_cost_per_token_fast": "0.000099"}) is None
