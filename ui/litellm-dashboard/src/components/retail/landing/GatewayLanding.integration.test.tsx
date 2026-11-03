@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setServerRootPath } from "@/lib/serverRootPath";
@@ -68,6 +68,11 @@ describe("public gateway homepage", () => {
     }
     expect(screen.getByRole("link", { name: "Create an account" })).toHaveAttribute("href", "/team-x/ui/signup/");
     expect(screen.getByRole("link", { name: "AI Gateway home" })).toHaveAttribute("href", "/team-x/ui/welcome/");
+    expect(screen.getByRole("link", { name: "Models", exact: true })).toHaveAttribute("href", "/team-x/ui/models/");
+    for (const link of screen.getAllByRole("link", { name: "Developers", exact: true })) {
+      expect(link).toHaveAttribute("href", "/team-x/ui/developers/");
+    }
+    expect(screen.getByRole("link", { name: "Pricing", exact: true })).toHaveAttribute("href", "/team-x/ui/pricing/");
     expect(screen.getByRole("tabpanel")).toHaveTextContent("https://gateway.example/team-x/v1/chat/completions");
   });
 
@@ -113,6 +118,19 @@ describe("public gateway homepage", () => {
     await user.keyboard("{Enter}");
     expect(menu).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByLabelText("Mobile navigation")).not.toHaveAttribute("hidden");
+    const mobileNavigation = screen.getByLabelText("Mobile navigation");
+    expect(within(mobileNavigation).getByText("Models", { exact: true })).toHaveAttribute(
+      "href",
+      "/team-x/ui/models/",
+    );
+    expect(within(mobileNavigation).getByText("Developers", { exact: true })).toHaveAttribute(
+      "href",
+      "/team-x/ui/developers/",
+    );
+    expect(within(mobileNavigation).getByText("Pricing", { exact: true })).toHaveAttribute(
+      "href",
+      "/team-x/ui/pricing/",
+    );
     await user.keyboard("{Escape}");
     expect(menu).toHaveAttribute("aria-expanded", "false");
     expect(menu).toHaveFocus();

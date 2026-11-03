@@ -8,13 +8,15 @@ import { buttonVariants } from "@/components/ui/button";
 import { uiHref } from "@/utils/uiHref";
 import ModelCatalogBrowser from "./ModelCatalogBrowser";
 import { LoadingState } from "@/components/shared/LoadingState";
+import { useAuth } from "@/contexts/AuthContext";
 
-export default function PublicModelCatalog() {
+export default function PublicModelCatalog({ mode = "models" }: { mode?: "models" | "pricing" }) {
+  const { authLoading } = useAuth();
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground" data-auth-loading={authLoading}>
       <header className="sticky top-0 z-chrome border-b bg-background/95 backdrop-blur">
         <nav
-          className="mx-auto flex h-14 max-w-[1600px] items-center gap-4 px-5 sm:px-8"
+          className="mx-auto flex min-h-14 max-w-[1600px] flex-wrap items-center gap-4 px-5 py-2 sm:px-8"
           aria-label="Public navigation"
         >
           <Link href={uiHref("welcome/")} aria-label="AI Gateway home" className="mr-auto shrink-0">
@@ -29,17 +31,25 @@ export default function PublicModelCatalog() {
               className="hidden h-6 w-auto max-w-36 object-contain dark:block"
             />
           </Link>
-          <Link href={uiHref("models")} aria-current="page" className="hidden text-sm font-medium sm:block">
-            Models
-          </Link>
-          <a
-            href="https://docs.litellm.ai/docs/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden text-sm text-muted-foreground hover:text-foreground sm:block"
-          >
-            Docs
-          </a>
+          <div className="order-last flex w-full items-center gap-5 border-t pt-2 text-sm sm:order-none sm:w-auto sm:border-0 sm:pt-0">
+            <Link
+              href={uiHref("models/")}
+              aria-current={mode === "models" ? "page" : undefined}
+              className="flex min-h-11 items-center font-medium hover:underline"
+            >
+              Models
+            </Link>
+            <Link href={uiHref("developers/")} className="flex min-h-11 items-center font-medium hover:underline">
+              Developers
+            </Link>
+            <Link
+              href={uiHref("pricing/")}
+              aria-current={mode === "pricing" ? "page" : undefined}
+              className="flex min-h-11 items-center font-medium hover:underline"
+            >
+              Pricing
+            </Link>
+          </div>
           <ThemeToggle />
           <Link href={uiHref("login")} className={buttonVariants({ variant: "outline", size: "sm" })}>
             Sign in
@@ -50,8 +60,15 @@ export default function PublicModelCatalog() {
         </nav>
       </header>
       <main className="mx-auto max-w-[1600px]">
-        <Suspense fallback={<LoadingState title="Loading model catalog" description="Loading published models." />}>
-          <ModelCatalogBrowser publicView />
+        <Suspense
+          fallback={
+            <LoadingState
+              title={mode === "pricing" ? "Loading pricing" : "Loading model catalog"}
+              description="Loading published models and reference prices."
+            />
+          }
+        >
+          <ModelCatalogBrowser publicView publicMode={mode} />
         </Suspense>
       </main>
       <footer className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 border-t px-7 py-6 text-xs text-muted-foreground">

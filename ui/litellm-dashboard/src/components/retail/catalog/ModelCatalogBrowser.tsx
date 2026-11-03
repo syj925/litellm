@@ -30,17 +30,26 @@ const sortOptions = [
 const subscribeToOrigin = () => () => {};
 const browserOrigin = () => window.location.origin;
 const serverOrigin = () => "";
+const publicTitles = { models: "Models", pricing: "Pricing" } as const;
+const pricingParsers = {
+  ...catalogParsers,
+  view: catalogParsers.view.withDefault("table"),
+  model_tab: catalogParsers.model_tab.withDefault("pricing"),
+};
 
 export default function ModelCatalogBrowser({
   publicView = false,
   accessToken = null,
   userId = null,
+  publicMode = "models",
 }: {
   publicView?: boolean;
   accessToken?: string | null;
   userId?: string | null;
+  publicMode?: "models" | "pricing";
 }) {
-  const [filters, setFilters] = useQueryStates(catalogParsers);
+  const pricingView = publicView && publicMode === "pricing";
+  const [filters, setFilters] = useQueryStates(pricingView ? pricingParsers : catalogParsers);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const origin = useSyncExternalStore(subscribeToOrigin, browserOrigin, serverOrigin);
@@ -98,8 +107,10 @@ export default function ModelCatalogBrowser({
   if (catalog.isPending)
     return (
       <LoadingState
-        title="Loading model catalog"
-        description="Loading published models and your available resources."
+        title={pricingView ? "Loading pricing" : "Loading model catalog"}
+        description={
+          publicView ? "Loading published models and reference prices." : "Loading your available models and resources."
+        }
       />
     );
   if (catalog.error)
@@ -144,7 +155,15 @@ export default function ModelCatalogBrowser({
     <div className={publicView ? "min-w-0 p-5 lg:p-6" : "min-w-0 p-5 lg:p-7"}>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{publicView ? "Models" : "My models"}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {publicView ? publicTitles[publicMode] : "My models"}
+          </h1>
+          {pricingView && (
+            <p className="mt-1.5 max-w-3xl text-sm leading-6 text-muted-foreground">
+              Published reference rates in USD per million tokens. Open a model for cache pricing, tool fees and
+              applicable usage conditions. Sign in to see your account rates.
+            </p>
+          )}
           {!publicView && (
             <p className="mt-1.5 text-sm text-muted-foreground">
               Your available models, resource pools and account prices.

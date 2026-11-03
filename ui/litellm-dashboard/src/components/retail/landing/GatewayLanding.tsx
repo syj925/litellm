@@ -57,6 +57,8 @@ export default function GatewayLanding() {
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const apiBase = gatewayBase(authLoading);
   const modelsHref = uiHref("models/");
+  const developersHref = uiHref("developers/");
+  const pricingHref = uiHref("pricing/");
   const loginHref = uiHref("login/");
   const signupHref = uiHref("signup/");
   const homeHref = uiHref("welcome/");
@@ -141,9 +143,9 @@ export default function GatewayLanding() {
             AI Gateway
           </a>
           <nav className={styles["navlinks"]} aria-label="Main navigation">
-            <a href="#models">Models</a>
-            <a href="#developers">Developers</a>
-            <a href="#pricing">Pricing</a>
+            <a href={modelsHref}>Models</a>
+            <a href={developersHref}>Developers</a>
+            <a href={pricingHref}>Pricing</a>
           </nav>
           <a className={styles["signin"]} href={loginHref}>
             Sign in
@@ -166,9 +168,9 @@ export default function GatewayLanding() {
           hidden={!menuOpen}
           onClick={closeMenu}
         >
-          <a href="#models">Models</a>
-          <a href="#developers">Developers</a>
-          <a href="#pricing">Pricing</a>
+          <a href={modelsHref}>Models</a>
+          <a href={developersHref}>Developers</a>
+          <a href={pricingHref}>Pricing</a>
         </nav>
       </header>
       <main id="main">
@@ -578,7 +580,7 @@ export default function GatewayLanding() {
               </a>
               <p className={styles["footer-note"]}>One connection. More possibilities.</p>
               <nav className={styles["footer-links"]} aria-label="Footer navigation">
-                <a href="#developers">Developers</a>
+                <a href={developersHref}>Developers</a>
                 <a href={loginHref}>Sign in</a>
               </nav>
             </footer>

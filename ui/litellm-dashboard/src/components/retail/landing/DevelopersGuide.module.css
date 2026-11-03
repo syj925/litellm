@@ -1,0 +1,354 @@
+.guide {
+  min-height: 100dvh;
+}
+.frame {
+  max-width: 1500px;
+  margin-inline: auto;
+  padding-inline: clamp(22px, 3.25vw, 72px);
+}
+.header {
+  display: flex;
+  gap: 40px;
+  align-items: center;
+  min-height: 88px;
+}
+.brand {
+  font-size: clamp(25px, 2.4vw, 38px);
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+  margin-right: auto;
+}
+.navigation {
+  display: flex;
+  gap: clamp(24px, 3vw, 56px);
+}
+.navigation a,
+.signIn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  white-space: nowrap;
+  font-size: 17px;
+  font-weight: 500;
+}
+.navigation a:hover,
+.signIn:hover,
+.inlineLink:hover {
+  text-decoration: underline;
+}
+.navigation a[aria-current="page"] {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 8px;
+}
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 9%;
+  align-items: end;
+  padding-block: 70px 88px;
+}
+.guide .title {
+  max-width: 880px;
+  font-size: clamp(56px, 6.6vw, 96px);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
+}
+.heroCopy {
+  max-width: 480px;
+}
+.guide .heroCopy p {
+  font-size: 19px;
+  line-height: 1.6;
+}
+.heroActions {
+  display: flex;
+  align-items: center;
+  gap: 25px;
+  margin-top: 26px;
+  flex-wrap: wrap;
+}
+.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px;
+  padding: 12px 20px;
+  background: var(--signal);
+  font-weight: 550;
+  font-size: 16px;
+  white-space: nowrap;
+}
+.primary:hover {
+  background: #d3e607;
+}
+.inlineLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.guide .section {
+  padding-block: 76px;
+  scroll-margin-top: 24px;
+}
+.guide .section h2 {
+  font-size: clamp(36px, 3.5vw, 54px);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+  font-weight: 550;
+}
+.intro {
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+  gap: 9%;
+  align-items: start;
+}
+.guide .intro > p {
+  max-width: 650px;
+  font-size: 17px;
+  line-height: 1.7;
+}
+.steps {
+  margin: 44px 0 0;
+  padding-left: 22px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 40px;
+}
+.steps li {
+  padding-left: 8px;
+}
+.guide .steps h3 {
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  margin-bottom: 15px;
+}
+.guide .steps p {
+  font-size: 16px;
+  line-height: 1.65;
+  max-width: 380px;
+}
+.steps .inlineLink {
+  margin-top: 14px;
+  text-decoration: underline;
+}
+.requestField {
+  background: var(--soft);
+}
+.requestGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+  gap: 9%;
+  margin-top: 42px;
+  align-items: start;
+}
+.guide .endpointLabel {
+  font-size: 16px;
+  margin-bottom: 12px;
+}
+.endpointValue {
+  display: block;
+  overflow-wrap: anywhere;
+  font-family: var(--font-gateway-mono), monospace;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.guide .requestAside p {
+  font-size: 16px;
+  line-height: 1.7;
+  margin-top: 24px;
+}
+.requestAside .inlineLink {
+  margin-top: 17px;
+  text-decoration: underline;
+}
+.readingGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+  gap: 9%;
+}
+.articles {
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+}
+.guide .articles h3 {
+  font-size: 24px;
+  line-height: 1.25;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  margin-bottom: 12px;
+}
+.guide .articles p {
+  font-size: 17px;
+  line-height: 1.7;
+  max-width: 680px;
+}
+.articles code {
+  font-family: var(--font-gateway-mono), monospace;
+  font-size: 0.88em;
+}
+.errorTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 16px;
+  line-height: 1.6;
+  margin-top: 10px;
+}
+.errorTable th,
+.errorTable td {
+  text-align: left;
+  padding: 17px 16px 17px 0;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+.errorTable th {
+  font-weight: 500;
+}
+.errorTable td:first-child {
+  width: 90px;
+  font-variant-numeric: tabular-nums;
+}
+.accountActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 32px;
+  margin-top: 21px;
+}
+.accountActions a {
+  text-decoration: underline;
+}
+.footer {
+  padding-block: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+}
+.footer .brand {
+  font-size: 27px;
+}
+.footerLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+.footerLinks a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 30px;
+    padding-top: 46px;
+  }
+  .heroCopy {
+    max-width: 650px;
+  }
+  .guide .title {
+    font-size: clamp(56px, 8.5vw, 86px);
+  }
+  .intro,
+  .requestGrid,
+  .readingGrid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 30px;
+  }
+  .steps {
+    gap: 25px;
+  }
+  .guide .section {
+    padding-block: 60px;
+  }
+}
+@media (max-width: 640px) {
+  .header {
+    min-height: 76px;
+    gap: 12px 24px;
+    flex-wrap: wrap;
+    padding-top: 15px;
+    padding-bottom: 12px;
+  }
+  .brand {
+    font-size: 26px;
+  }
+  .signIn {
+    font-size: 15px;
+  }
+  .navigation {
+    order: 3;
+    width: 100%;
+    gap: 26px;
+  }
+  .navigation a {
+    font-size: 15px;
+  }
+  .hero {
+    padding-block: 42px 52px;
+  }
+  .guide .title {
+    font-size: clamp(40px, 9.8vw, 62px);
+  }
+  .guide .heroCopy p {
+    font-size: 17px;
+  }
+  .heroActions {
+    gap: 15px;
+  }
+  .steps {
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 32px;
+    gap: 28px;
+  }
+  .guide .steps h3 {
+    font-size: 22px;
+    margin-bottom: 10px;
+  }
+  .guide .section h2 {
+    font-size: 37px;
+  }
+  .guide .section {
+    padding-block: 48px;
+  }
+  .requestGrid {
+    margin-top: 30px;
+    gap: 28px;
+  }
+  .guide .articles p,
+  .guide .intro > p {
+    font-size: 16px;
+  }
+  .guide .articles h3 {
+    font-size: 23px;
+  }
+  .errorTable {
+    font-size: 15px;
+  }
+  .errorTable td:first-child {
+    width: 64px;
+  }
+  .footer {
+    flex-direction: column;
+    align-items: start;
+    gap: 16px;
+    padding-block: 28px;
+  }
+  .footerLinks {
+    gap: 22px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .primary {
+    transition: none;
+  }
+}
