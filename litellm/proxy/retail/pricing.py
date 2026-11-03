@@ -311,11 +311,16 @@ def charge_for_usage(snapshot: Mapping[str, object], usage: UsageFacts) -> str:
 
 
 def cost_breakdown(snapshot: Mapping[str, object], usage: UsageFacts) -> dict[str, JsonValue]:
+    return dict(usage_charge(snapshot, usage)[1])
+
+
+def usage_charge(snapshot: Mapping[str, object], usage: UsageFacts) -> tuple[str, Mapping[str, JsonValue]]:
+    unrounded: Final = _usage_amount(snapshot, usage)
+    amount: Final = nanos_to_amount(cost_to_nanos(unrounded))
     discount: Final = Decimal(str(snapshot.get("discount", snapshot.get("multiplier"))))
     tiers: Final = validated_cache_write_tiers(snapshot.get("cache_write_tiers", {}))
     current: Final = snapshot.get("version") in {"token-v2", "token-v3"}
-    _cache_write_cost(snapshot, usage)
-    return {
+    return amount, {
         "input": format(Decimal(str(snapshot["input_cost_per_token"])) * usage.input_tokens * discount, "f"),
         "output": format(Decimal(str(snapshot["output_cost_per_token"])) * usage.output_tokens * discount, "f"),
         "cache_read": format(
@@ -330,9 +335,7 @@ def cost_breakdown(snapshot: Mapping[str, object], usage: UsageFacts) -> dict[st
             key: format(Decimal(tiers.get(key, snapshot["cache_creation_input_token_cost"])) * count * discount, "f")
             for key, count in usage.cache_write_ttl_tokens.items() if current
         },
-        "rounding_adjustment": format(
-            Decimal(charge_for_usage(snapshot, usage)) - _usage_amount(snapshot, usage), "f"
-        ),
+        "rounding_adjustment": format(Decimal(amount) - unrounded, "f"),
     }
 
 

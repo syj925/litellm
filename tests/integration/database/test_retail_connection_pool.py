@@ -13,6 +13,7 @@ from psycopg_pool import PoolTimeout, TooManyRequests
 from pydantic import JsonValue
 
 from litellm.proxy.retail.database import RetailDatabase
+from litellm.proxy.retail.models import WalletNotFound
 from litellm.proxy.retail.store import WalletStore
 
 
@@ -320,6 +321,21 @@ async def _billing_context(store: WalletStore) -> None:
     assert wallet["balance"] == wallet["reserved"] == "0.000000000"
     assert created["discount"] == await store.get_model_discount("new-context-wallet", "model")
     assert created["price"] == context["price"]
+    async with store.transaction() as connection:
+        await connection.execute(
+            """INSERT INTO retail_resource_pools(id,name,source_kind,default_discount)
+               VALUES ('context-pool','Context pool','custom',0.7)"""
+        )
+    for user_id in ("hot", "new-pool-context-wallet"):
+        pooled: Final = await store.get_billing_context(user_id, "model", "context-pool")
+        assert pooled["discount"] == await store.get_model_discount(user_id, "model", "context-pool")
+        assert pooled["discount"]["discount"] == "0.700000000"
+        assert pooled["price"] == context["price"]
+        assert (await store.get_wallet(user_id))["user_id"] == user_id
+    with pytest.raises(WalletNotFound):
+        await store.get_billing_context("invalid-context-wallet", "model", "missing-pool")
+    with pytest.raises(WalletNotFound):
+        await store.get_wallet("invalid-context-wallet")
 
 
 async def _external_lock_timeout_rolls_back(store: WalletStore, dsn: str) -> None:

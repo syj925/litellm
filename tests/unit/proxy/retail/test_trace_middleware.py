@@ -10,8 +10,9 @@ from starlette.requests import Request
 from starlette.types import Message, Receive, Scope, Send
 
 from litellm.proxy.retail.admission import RequestAdmission
-from litellm.proxy.retail.request_tracing import bind_call_id, current_trace
-from litellm.proxy.retail.trace_middleware import RequestTraceMiddleware
+from litellm.proxy.retail.model_observations import OutputDetector, _parse_payload
+from litellm.proxy.retail.request_tracing import TraceCollector, bind_call_id, current_trace
+from litellm.proxy.retail.trace_middleware import RequestTraceMiddleware, _Exchange
 from litellm.proxy.retail.trace_writer import TraceWriter
 
 
@@ -50,6 +51,41 @@ async def test_middleware_preserves_wire_data_and_redacts_captured_body() -> Non
     assert isinstance(milestones, dict)
     assert "first_model_write" in milestones and "first_text_write" in milestones
     assert row["response_status"] == 200 and current_trace() is None
+
+
+@pytest.mark.asyncio
+async def test_first_output_metrics_stop_decoding_after_text_but_forward_and_count_every_write() -> None:
+    parsed: Final[list[str | bytes]] = []
+    forwarded: Final[list[Message]] = []
+
+    def parse(payload: str | bytes) -> Mapping[str, JsonValue]:
+        parsed.append(payload)
+        return _parse_payload(payload)
+
+    async def receive() -> Message:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: Message) -> None:
+        forwarded.append(message)
+
+    trace: Final = TraceCollector("POST", "/v1/messages")
+    exchange: Final = _Exchange(trace, receive, send, "application/json", OutputDetector(_parse=parse))
+    frames: Final = (
+        b'data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"hmm"}}\n\n',
+        b'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"first"}}\n\n',
+        b'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"later"}}\n\n',
+        b'data: {"type":"message_stop"}\n\n',
+    )
+    for index, frame in enumerate(frames):
+        await exchange.send({"type": "http.response.body", "body": frame, "more_body": index < len(frames) - 1})
+    snapshot: Final = trace.snapshot()
+    milestones: Final = snapshot["milestones"]
+    phases: Final = snapshot["phases"]
+    assert isinstance(milestones, dict) and "first_model_write" in milestones and "first_text_write" in milestones
+    assert "response_complete" in milestones
+    assert isinstance(phases, list) and isinstance(phases[0], dict) and phases[0]["samples"] == len(frames)
+    assert tuple(message["body"] for message in forwarded) == frames
+    assert len(parsed) == 2
 
 
 @pytest.mark.asyncio

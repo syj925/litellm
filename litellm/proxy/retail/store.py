@@ -416,6 +416,7 @@ class WalletStore:
         if owner is None:
             raise ReservationNotFound("Request reservation does not exist")
         async with self.account_transaction(owner.user_id) as connection:
+            await self._lock_wallet_identity(connection, owner.user_id)
             yield connection
 
     async def aclose(self) -> None:
@@ -624,15 +625,14 @@ class WalletStore:
                 raise InsufficientFunds("Insufficient available wallet balance")
             if wallet.pending_requests >= max_parallel:
                 raise ParallelLimitExceeded("The wallet's concurrent request limit has been reached")
-            await connection.execute(
-                "UPDATE retail_wallets SET reserved_nanos=reserved_nanos+%s,updated_at=now() WHERE user_id=%s",
-                (nanos, user_id),
-            )
             reservation: Final = await _one(
                 connection,
-                """INSERT INTO retail_reservations(request_id,user_id,model,reserved_nanos,price_snapshot,active_until)
-                   VALUES (%s,%s,%s,%s,%s,now()+(%s * interval '1 second')) RETURNING *""",
-                (request_id, user_id, model, nanos, Jsonb(snapshot), self._active_lease_seconds),
+                """WITH held AS (
+                     UPDATE retail_wallets SET reserved_nanos=reserved_nanos+%s,updated_at=now()
+                     WHERE user_id=%s RETURNING user_id
+                   ) INSERT INTO retail_reservations(request_id,user_id,model,reserved_nanos,price_snapshot,active_until)
+                   SELECT %s,held.user_id,%s,%s,%s,now()+(%s * interval '1 second') FROM held RETURNING *""",
+                (nanos, user_id, request_id, model, nanos, Jsonb(snapshot), self._active_lease_seconds),
                 _ReservationRow,
             )
             if reservation is None:
@@ -950,21 +950,25 @@ class WalletStore:
         self, user_id: str, model: str, pool_id: str | None = None,
     ) -> Mapping[str, JsonValue]:
         async with self.transaction() as connection:
-            existing: Final = await _one(
-                connection, "SELECT user_id FROM retail_wallets WHERE user_id=%s", (user_id,), _UserIdRow
-            )
-            if existing is None:
-                await connection.execute(
-                    "INSERT INTO retail_wallets(user_id) VALUES (%s) ON CONFLICT (user_id) DO NOTHING", (user_id,)
-                )
+            discount: Final = await self._billing_discount(connection, user_id, model, pool_id)
             price: Final = await _one(
                 connection, "SELECT * FROM retail_model_prices WHERE model=%s", (model,), _ModelPriceRow
             )
-            discount: Final = await self._read_model_discount(connection, user_id, model, pool_id)
             return {
                 "price": _model_price_view(price) if price is not None else None,
                 "discount": dict(discount),
             }
+
+    async def _billing_discount(
+        self, connection: psycopg.AsyncConnection, user_id: str, model: str, pool_id: str | None,
+    ) -> Mapping[str, JsonValue]:
+        try:
+            return await self._read_model_discount(connection, user_id, model, pool_id)
+        except WalletNotFound:
+            await connection.execute(
+                "INSERT INTO retail_wallets(user_id) VALUES (%s) ON CONFLICT (user_id) DO NOTHING", (user_id,)
+            )
+            return await self._read_model_discount(connection, user_id, model, pool_id)
 
     async def get_model_discount(self, user_id: str, model: str, pool_id: str | None = None) -> Mapping[str, JsonValue]:
         async with self.transaction() as connection:
@@ -1175,12 +1179,6 @@ class WalletStore:
         return await self._read_wallet(connection, user_id)
 
     async def _lock_reservation(self, connection: psycopg.AsyncConnection, request_id: str) -> _ReservationRow:
-        owner: Final = await _one(
-            connection, "SELECT user_id FROM retail_reservations WHERE request_id=%s", (request_id,), _UserIdRow
-        )
-        if owner is None:
-            raise ReservationNotFound("Request reservation does not exist")
-        await self._lock_wallet_identity(connection, owner.user_id)
         row: Final = await _one(
             connection,
             "SELECT * FROM retail_reservations WHERE request_id=%s FOR UPDATE",

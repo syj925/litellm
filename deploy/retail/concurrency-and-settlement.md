@@ -12,6 +12,14 @@ A bounded settlement worker claims facts with `FOR UPDATE SKIP LOCKED` and a lea
 
 Missing or inconsistent reported usage stays unknown and retains its financial hold. A request's active lease is separate from that hold. Completed or disconnected requests stop renewing their active lease; a crashed process cannot permanently consume the account's concurrent-request slots. Unknown usage is not automatically refunded or charged as zero
 
+## Phase measurements
+
+Administrator traces split billing preparation into `resource_pool.resolve`, `billing.context`, `billing.price_snapshot`, `billing.quote` and `billing.reserve`. Terminal handling records `billing.usage_normalization` for token usage and `billing.settlement_compute` for charge arithmetic. These are nested inside `billing.prepare` or `billing.persist_facts`; their durations must not be added to the parent duration
+
+`billing.context` includes database acquisition and reads, and can appear twice when a model needs its initial price created. `billing.persist_facts` includes frozen-price lookup, normalization, arithmetic and the durable write, rather than only SQL execution. Missing phases are not zero-duration observations. Pool queue counters and PostgreSQL statement measurements help distinguish application scheduling, connection waits and server execution
+
+The reservation keeps its advisory lock, wallet row lock and separate fresh concurrency count. Its final wallet update and reservation insert run as one dependent statement. Settlement also retains the wallet-before-reservation lock order. No financial transaction is replayed automatically
+
 ## Resource budgets
 
 These limits are per process. Include all application processes, Prisma connections, workers and administrative tools when sizing the PostgreSQL connection budget

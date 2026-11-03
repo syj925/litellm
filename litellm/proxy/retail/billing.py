@@ -46,9 +46,8 @@ from .pool_store import PoolRouteDecision, PoolStore, router_deployments
 from .pricing import (
     as_mapping,
     catalog_snapshot,
-    charge_for_usage,
-    cost_breakdown,
     reserve_quote,
+    usage_charge,
     usage_facts,
     validate_requested_cache_ttls,
 )
@@ -364,75 +363,82 @@ class RetailBilling(CustomLogger):
             if pool is not None
             else deployments
         )
-        context: Final = await store.get_billing_context(user_id, model, pool.pool_id if pool is not None else None)
+        with trace_phase("billing.context"):
+            context: Final = await store.get_billing_context(user_id, model, pool.pool_id if pool is not None else None)
         price: Final = as_mapping(context.get("price"))
         try:
             initial: Final = None if price else catalog_snapshot(model, priced_deployments, "1")
-            card: Final = price or await store.get_model_price(model, initial)
+            if price:
+                card: Final = price
+            else:
+                with trace_phase("billing.context"):
+                    card = await store.get_model_price(model, initial)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         if card is None:
             raise HTTPException(422, "A model sales price is required")
-        if priced_tools and (
-            not card.get("expression_policy") or "web_search_requests" not in expression_usage_keys(
-                validate_expression_policy(card["expression_policy"])
-            )
-        ):
-            raise HTTPException(400, "Server-priced search requires an expression with reported web_search_requests")
-        if call_type in _EXPRESSION_MEDIA and not card.get("expression_policy"):
-            raise HTTPException(422, "This media endpoint requires an explicit expression price with reported billing quantities")
-        discount: Final = as_mapping(context["discount"])
-        try:
-            routing_keys: Final = (
-                expression_attribute_keys(validate_expression_policy(card["expression_policy"]))
-                if card.get("expression_policy") else frozenset()
-            )
-            snapshot: Final = price_snapshot(
-                card, discount, call_type, pool, data,
-                routing_attributes=catalog_routing_attributes(priced_deployments, routing_keys),
-            )
-            if call_type in _EXPRESSION_MEDIA and snapshot["version"] != "expression-v1":
-                raise ValueError("This media endpoint requires an explicit expression price with reported billing quantities")
+        with trace_phase("billing.price_snapshot"):
             if priced_tools and (
-                snapshot["version"] != "expression-v1" or "web_search_requests" not in expression_usage_keys(
-                    validate_expression_policy(snapshot["expression_policy"])
+                not card.get("expression_policy") or "web_search_requests" not in expression_usage_keys(
+                    validate_expression_policy(card["expression_policy"])
                 )
             ):
-                raise ValueError("Server-priced search requires an expression with reported web_search_requests")
-            if image_call and snapshot["version"] == "expression-v1":
-                policy: Final = validate_expression_policy(snapshot["expression_policy"])
-                image_bound: Final = policy.usage_bounds.get("images", policy.usage_bounds.get("image_count"))
-                if image_bound is not None and data.get("n", 1) > Decimal(image_bound):
-                    raise ValueError("Requested image count exceeds the expression's configured usage bound")
-            validate_requested_cache_ttls(snapshot, data)
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
-        embedding: Final = call_type in {"embedding", "aembedding"}
-        limit_key: Final = "max_output_tokens" if call_type in {"responses", "aresponses"} else "max_tokens"
-        output_limit: Final = _request_output_limit(snapshot, data, call_type)
-        request_id: Final = str(uuid4())
-        opaque_payload: Final = json.dumps({key: data.get(key) for key in ("messages", "input", "tools")}, default=str)
-        opaque_input: Final = bool(priced_tools) or any(
-            data.get(key) for key in ("previous_response_id", "conversation", "file", "attachments")
-        ) or any(
-            marker in opaque_payload
-            for marker in (
-                "image_url",
-                "input_image",
-                "input_audio",
-                "file_id",
-                '"mcp"',
-                '"image"',
-                '"document"',
-                '"audio"',
+                raise HTTPException(400, "Server-priced search requires an expression with reported web_search_requests")
+            if call_type in _EXPRESSION_MEDIA and not card.get("expression_policy"):
+                raise HTTPException(422, "This media endpoint requires an explicit expression price with reported billing quantities")
+            discount: Final = as_mapping(context["discount"])
+            try:
+                routing_keys: Final = (
+                    expression_attribute_keys(validate_expression_policy(card["expression_policy"]))
+                    if card.get("expression_policy") else frozenset()
+                )
+                snapshot: Final = price_snapshot(
+                    card, discount, call_type, pool, data,
+                    routing_attributes=catalog_routing_attributes(priced_deployments, routing_keys),
+                )
+                if call_type in _EXPRESSION_MEDIA and snapshot["version"] != "expression-v1":
+                    raise ValueError("This media endpoint requires an explicit expression price with reported billing quantities")
+                if priced_tools and (
+                    snapshot["version"] != "expression-v1" or "web_search_requests" not in expression_usage_keys(
+                        validate_expression_policy(snapshot["expression_policy"])
+                    )
+                ):
+                    raise ValueError("Server-priced search requires an expression with reported web_search_requests")
+                if image_call and snapshot["version"] == "expression-v1":
+                    policy: Final = validate_expression_policy(snapshot["expression_policy"])
+                    image_bound: Final = policy.usage_bounds.get("images", policy.usage_bounds.get("image_count"))
+                    if image_bound is not None and data.get("n", 1) > Decimal(image_bound):
+                        raise ValueError("Requested image count exceeds the expression's configured usage bound")
+                validate_requested_cache_ttls(snapshot, data)
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+        with trace_phase("billing.quote"):
+            embedding: Final = call_type in {"embedding", "aembedding"}
+            limit_key: Final = "max_output_tokens" if call_type in {"responses", "aresponses"} else "max_tokens"
+            output_limit: Final = _request_output_limit(snapshot, data, call_type)
+            request_id: Final = str(uuid4())
+            opaque_payload: Final = json.dumps({key: data.get(key) for key in ("messages", "input", "tools")}, default=str)
+            opaque_input: Final = bool(priced_tools) or any(
+                data.get(key) for key in ("previous_response_id", "conversation", "file", "attachments")
+            ) or any(
+                marker in opaque_payload
+                for marker in (
+                    "image_url",
+                    "input_image",
+                    "input_audio",
+                    "file_id",
+                    '"mcp"',
+                    '"image"',
+                    '"document"',
+                    '"audio"',
+                )
             )
-        )
-        try:
-            quote: Final = reserve_quote(
-                snapshot, data, output_limit, minimum_input_tokens=1_000_000 if opaque_input else 0
-            )
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
+            try:
+                quote: Final = reserve_quote(
+                    snapshot, data, output_limit, minimum_input_tokens=1_000_000 if opaque_input else 0
+                )
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
         try:
             with trace_phase("billing.reserve"):
                 await store.reserve(
@@ -502,7 +508,8 @@ class RetailBilling(CustomLogger):
         cost_value: Final = _known_provider_cost(provider_cost)
         if snapshot.get("version") == "expression-v1":
             try:
-                expression_amount, expression_details = expression_settlement(snapshot, response)
+                with trace_phase("billing.settlement_compute"):
+                    expression_amount, expression_details = expression_settlement(snapshot, response)
             except ValueError as exc:
                 await record_facts(store, request_id, None, {"billing_error": type(exc).__name__})
                 unregister_request_activity(request_id)
@@ -517,7 +524,8 @@ class RetailBilling(CustomLogger):
             notify_settlement()
             record_event("billing.facts_committed", {"retail_request_id": request_id, "amount": expression_amount})
             return
-        facts: Final = usage_facts(response, allow_input_only=snapshot.get("billing_mode") == "embedding")
+        with trace_phase("billing.usage_normalization"):
+            facts: Final = usage_facts(response, allow_input_only=snapshot.get("billing_mode") == "embedding")
         if facts is None:
             await record_facts(store,
                 request_id, None, {"billing_error": "Reported token usage is missing, incomplete or inconsistent"}
@@ -526,8 +534,8 @@ class RetailBilling(CustomLogger):
             record_event("billing.pending", {"reason": "reported_usage_incomplete"})
             return
         try:
-            amount: Final = charge_for_usage(snapshot, facts)
-            breakdown: Final = cost_breakdown(snapshot, facts)
+            with trace_phase("billing.settlement_compute"):
+                amount, breakdown = usage_charge(snapshot, facts)
         except ValueError as exc:
             await record_facts(store, request_id, None, {"usage": facts.model_dump(), "billing_error": type(exc).__name__})
             unregister_request_activity(request_id)
@@ -535,7 +543,7 @@ class RetailBilling(CustomLogger):
             return
         details: Final[dict[str, JsonValue]] = {
             "usage": facts.model_dump(),
-            "cost_breakdown": breakdown,
+            "cost_breakdown": dict(breakdown),
             "provider_cost": cost_value,
             "gateway_call_id": str(data.get("litellm_call_id", "")),
             "billing_basis": "reported_usage",

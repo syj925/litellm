@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from typing import Any, Dict, Final, List
 from unittest.mock import AsyncMock, MagicMock
 
@@ -647,6 +647,84 @@ async def test_flush_returns_the_bytes_it_took_off_the_queue(mock_prisma_client:
     await enqueue_spend_logs(mock_prisma_client, [make_spend_log_row(request_id="row9")], max_bytes=budget)
 
     assert [row["request_id"] for row in mock_prisma_client.spend_log_transactions] == ["row9"]
+
+
+class _CountedSpendLogQueue(list[dict[str, object]]):
+    def __init__(self, rows: Sequence[dict[str, object]]) -> None:
+        super().__init__(rows)
+        self.rows_read = 0
+
+    def __iter__(self) -> Iterator[dict[str, object]]:
+        for row in super().__iter__():
+            self.rows_read += 1
+            yield row
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backlog_size", [0, 512])
+async def test_enqueue_under_budget_preserves_fifo_without_reading_backlog(
+    mock_prisma_client: Any, make_spend_log_row: Any, backlog_size: int,
+) -> None:
+    existing: Final = tuple(make_spend_log_row(request_id=f"queued-{index}") for index in range(backlog_size))
+    incoming: Final = tuple(make_spend_log_row(request_id=f"incoming-{index}") for index in range(3))
+    queue: Final = _CountedSpendLogQueue(existing)
+    expected: Final = [*existing, *incoming]
+    budget: Final = sum(spend_log_row_bytes(row) for row in expected)
+    mock_prisma_client.spend_log_transactions = queue
+    PrismaClient.spend_log_queue_bytes = sum(spend_log_row_bytes(row) for row in existing)
+
+    await enqueue_spend_logs(mock_prisma_client, incoming, max_bytes=budget)
+
+    assert queue == expected
+    assert PrismaClient.spend_log_queue_bytes == budget
+    assert queue.rows_read == 0
+
+
+@pytest.mark.asyncio
+async def test_enqueue_during_two_flushes_keeps_failed_batch_and_byte_accounting(
+    mock_prisma_client: Any, make_spend_log_row: Any,
+) -> None:
+    first: Final = tuple(make_spend_log_row(request_id=f"first-{index}") for index in range(2))
+    second: Final = tuple(make_spend_log_row(request_id=f"second-{index}") for index in range(2))
+    started: Final = asyncio.Event()
+    finish_failure: Final = asyncio.Event()
+    failed: Final = asyncio.Event()
+    attempts: Final[list[tuple[str, ...]]] = []
+
+    async def write_batch(*, data: Sequence[dict[str, object]], skip_duplicates: bool) -> None:
+        ids: Final = tuple(str(row["request_id"]) for row in data)
+        attempts.append(ids)
+        if ids == ("first-0", "first-1") and not failed.is_set():
+            started.set()
+            await finish_failure.wait()
+            failed.set()
+            raise _data_error("Can't reach database server at db-host:5432 (P1001)")
+
+    mock_prisma_client.db.litellm_spendlogs.create_many = AsyncMock(side_effect=write_batch)
+    mock_prisma_client.spend_log_transactions = []
+    proxy_logging: Final = MagicMock()
+    proxy_logging.failure_handler = AsyncMock()
+    await enqueue_spend_logs(mock_prisma_client, first)
+    flushing: Final = asyncio.create_task(ProxyUpdateSpend.update_spend_logs(
+        n_retry_times=0, prisma_client=mock_prisma_client, db_writer_client=None, proxy_logging_obj=proxy_logging,
+    ))
+    await started.wait()
+    await enqueue_spend_logs(mock_prisma_client, second)
+    await ProxyUpdateSpend.update_spend_logs(
+        n_retry_times=0, prisma_client=mock_prisma_client, db_writer_client=None, proxy_logging_obj=proxy_logging,
+    )
+    finish_failure.set()
+    with pytest.raises(type(_data_error("x"))):
+        await flushing
+
+    assert mock_prisma_client.spend_log_transactions == list(first)
+    assert PrismaClient.spend_log_queue_bytes == sum(spend_log_row_bytes(row) for row in first)
+    await ProxyUpdateSpend.update_spend_logs(
+        n_retry_times=0, prisma_client=mock_prisma_client, db_writer_client=None, proxy_logging_obj=proxy_logging,
+    )
+    assert attempts == [("first-0", "first-1"), ("second-0", "second-1"), ("first-0", "first-1")]
+    assert mock_prisma_client.spend_log_transactions == []
+    assert PrismaClient.spend_log_queue_bytes == 0
 
 
 @pytest.mark.asyncio

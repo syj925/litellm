@@ -7689,12 +7689,17 @@ async def enqueue_spend_logs(
     """
     added: Final = sum(spend_log_row_bytes(row) for row in logs)
     async with prisma_client._spend_log_transactions_lock:
+        total_bytes: Final = PrismaClient.spend_log_queue_bytes + added
+        if not at_head and total_bytes <= max_bytes:
+            prisma_client.spend_log_transactions.extend(logs)
+            PrismaClient.spend_log_queue_bytes = total_bytes
+            return
         queued: Final = (
             tuple(logs) + tuple(prisma_client.spend_log_transactions)
             if at_head
             else tuple(prisma_client.spend_log_transactions) + tuple(logs)
         )
-        kept, kept_bytes = spend_log_queue_within_budget(queued, PrismaClient.spend_log_queue_bytes + added, max_bytes)
+        kept, kept_bytes = spend_log_queue_within_budget(queued, total_bytes, max_bytes)
         prisma_client.spend_log_transactions[:] = kept
         PrismaClient.spend_log_queue_bytes = kept_bytes
     if len(kept) < len(queued):

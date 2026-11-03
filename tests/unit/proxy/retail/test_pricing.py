@@ -13,6 +13,7 @@ from litellm.proxy.retail.pricing import (
     charge_for_usage,
     cost_breakdown,
     reserve_quote,
+    usage_charge,
     usage_facts,
     validate_requested_cache_ttls,
     validated_cache_write_tiers,
@@ -83,7 +84,14 @@ def test_unknown_usage_stays_pending_instead_of_becoming_a_free_request():
 
 def test_fractional_nano_charge_rounds_up_once_and_quote_covers_same_facts():
     snapshot = {**SNAPSHOT, "input_cost_per_token": "0.00000000001", "multiplier": "1"}
-    assert charge_for_usage(snapshot, UsageFacts(input_tokens=1, output_tokens=0)) == "0.000000001"
+    facts: Final = UsageFacts(input_tokens=1, output_tokens=0)
+    amount, breakdown = usage_charge(snapshot, facts)
+    assert amount == charge_for_usage(snapshot, facts) == "0.000000001"
+    assert breakdown == {
+        "input": "0.00000000001", "output": "0.000000", "cache_read": "0.0000000",
+        "cache_write_unclassified": "0.0000000", "cache_write_tiers": {},
+        "rounding_adjustment": "0.00000000099",
+    }
     quote = reserve_quote(SNAPSHOT, {"messages": [{"role": "user", "content": "hello"}]}, 32)
     charge = charge_for_usage(SNAPSHOT, UsageFacts(input_tokens=20, output_tokens=32))
     assert Decimal(quote) >= Decimal(charge)
@@ -196,9 +204,10 @@ def test_duration_rates_discount_and_rounding_are_applied_once_with_reconstructa
     )
     expected: Final = (Decimal("0.000002") * 10 + Decimal("0.000010") * 2 + Decimal("0.0000002") * 5
                        + Decimal("0.000003") * 2 + Decimal("0.000005") * 3 + Decimal("0.0000025") * 4) * Decimal("0.7")
-    amount: Final = charge_for_usage(snapshot, facts)
+    amount, breakdown = usage_charge(snapshot, facts)
     assert Decimal(amount) == expected
-    breakdown: Final = cost_breakdown(snapshot, facts)
+    assert amount == charge_for_usage(snapshot, facts)
+    assert breakdown == cost_breakdown(snapshot, facts)
     assert breakdown["cache_write_tiers"] == {"300": "0.0000042", "3600": "0.0000105"}
     assert breakdown["cache_write_unclassified"] == "0.00000700"
     assert breakdown["rounding_adjustment"] == "0.000000000"
@@ -268,8 +277,7 @@ def test_new_snapshots_charge_unconfigured_durations_at_the_frozen_default_witho
         Decimal("0.000002") * 2 + Decimal("0.000010") + Decimal("0.0000002") * 3
         + Decimal("0.000004") * 2 + Decimal(default_rate) * 8
     ) * Decimal("0.65")
-    amount: Final = charge_for_usage(snapshot, facts)
-    details: Final = cost_breakdown(snapshot, facts)
+    amount, details = usage_charge(snapshot, facts)
     assert Decimal(amount) == expected
     assert details["cache_write_tiers"] == {
         "300": format(Decimal("0.000004") * 2 * Decimal("0.65"), "f"),

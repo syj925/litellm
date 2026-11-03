@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from contextlib import suppress
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -10,6 +10,9 @@ from .admission import RequestAdmission, get_request_admission
 from .customer_response_privacy import customer_error_body
 from .request_tracing import TraceCollector, activate_trace, redact_body, reset_trace
 from .trace_writer import TraceSink, TraceWriter, close_traces, get_trace_writer
+
+if TYPE_CHECKING:
+    from .model_observations import OutputDetector
 
 _LOG: Final = logging.getLogger(__name__)
 _JSON: Final = TypeAdapter(JsonValue)
@@ -38,7 +41,10 @@ async def _cleanup() -> None:
 
 
 class _Exchange:
-    def __init__(self, trace: TraceCollector, receive: Receive, send: Send, content_type: str) -> None:
+    def __init__(
+        self, trace: TraceCollector, receive: Receive, send: Send, content_type: str,
+        output: "OutputDetector | None" = None,
+    ) -> None:
         from .model_observations import OutputDetector
 
         self.trace = trace
@@ -48,7 +54,7 @@ class _Exchange:
         self._body = bytearray()
         self._body_complete = False
         self._capture_omitted = False
-        self._output = OutputDetector()
+        self._output: OutputDetector | None = output if output is not None else OutputDetector()
         self._observable = True
 
     async def receive(self) -> Message:
@@ -105,7 +111,7 @@ class _Exchange:
             await self._send(message)
             return
         body: Final = message.get("body", b"")
-        signals: Final = self._output.observe_signals(body) if self._observable else ()
+        signals: Final = self._output.observe_signals(body) if self._observable and self._output is not None else ()
         started: Final = self.trace.offset_ms()
         await self._send(message)
         self.trace.phase("client.write", started, "ok")
@@ -115,6 +121,7 @@ class _Exchange:
             self.trace.milestone("first_model_write")
             if signal.kind == "text":
                 self.trace.milestone("first_text_write")
+                self._output = None
         if not message.get("more_body", False):
             self.trace.milestone("response_complete")
 

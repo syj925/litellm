@@ -32,6 +32,7 @@ services:
       - ../litellm/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py:ro
       - ../litellm/litellm/llms/openai/common_utils.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/openai/common_utils.py:ro
       - ../litellm/litellm/proxy/proxy_server.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/proxy_server.py:ro
+      - ../litellm/litellm/proxy/utils.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/utils.py:ro
       - ../litellm/litellm/proxy/_types.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/_types.py:ro
       - ../litellm/litellm/proxy/auth/route_checks.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/auth/route_checks.py:ro
       - ../litellm/litellm/proxy/spend_tracking/spend_management_endpoints.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/spend_tracking/spend_management_endpoints.py:ro

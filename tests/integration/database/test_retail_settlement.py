@@ -13,7 +13,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.retail.billing import RetailBilling
-from litellm.proxy.retail.models import IdempotencyConflict
+from litellm.proxy.retail.models import IdempotencyConflict, InsufficientFunds, ParallelLimitExceeded
 from litellm.proxy.retail.settlement_store import claim_facts, record_facts, release_claims
 from litellm.proxy.retail.settlement_worker import SettlementWorker, finish_request_activity, register_request_activity
 from litellm.proxy.retail.store import WalletStore
@@ -324,6 +324,108 @@ async def test_an_inflight_terminal_needs_no_finance_connection_even_without_the
         assert await anext(wrapped) == "data: [DONE]\n\n"
     await wrapped.aclose()
     assert await SettlementWorker(store).run_once() == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("amount", "max_parallel", "error", "held"),
+    [("0.75", 512, InsufficientFunds, "0.750000000"), ("0.1", 1, ParallelLimitExceeded, "0.100000000")],
+)
+async def test_concurrent_reservations_recheck_balance_and_activity_after_locking_the_wallet(
+    settlement_store: WalletStore, amount: str, max_parallel: int, error: type[Exception], held: str,
+) -> None:
+    store: Final = settlement_store
+    peer: Final = WalletStore(store.database_url)
+    try:
+        async with await psycopg.AsyncConnection.connect(store.database_url) as blocker:
+            await blocker.execute("SELECT user_id FROM retail_wallets WHERE user_id='user' FOR UPDATE")
+            pending: Final = asyncio.gather(
+                store.reserve("user", "concurrent-one", "model", amount, {}, max_parallel),
+                peer.reserve("user", "concurrent-two", "model", amount, {}, max_parallel),
+                return_exceptions=True,
+            )
+            try:
+                async with await psycopg.AsyncConnection.connect(store.database_url, autocommit=True) as observer:
+                    async def both_wait_for_the_wallet() -> None:
+                        while True:
+                            row: Final = await (
+                                await observer.execute(
+                                    """SELECT count(*) FROM pg_stat_activity WHERE datname=current_database()
+                                       AND wait_event_type='Lock' AND query LIKE
+                                       'SELECT user_id FROM retail_wallets WHERE user_id=% FOR UPDATE'"""
+                                )
+                            ).fetchone()
+                            if row is not None and row[0] == 2:
+                                return
+                            await asyncio.sleep(0.005)
+
+                    await asyncio.wait_for(both_wait_for_the_wallet(), timeout=0.75)
+            finally:
+                await blocker.rollback()
+                results: Final = await pending
+    finally:
+        await peer.aclose()
+    assert sum(isinstance(result, error) for result in results) == 1
+    assert sum(isinstance(result, dict) for result in results) == 1
+    wallet: Final = await store.get_wallet("user")
+    assert wallet["balance"] == "1.000000000"
+    assert wallet["reserved"] == held
+    assert wallet["pending_requests"] == 1
+
+
+@pytest.mark.asyncio
+async def test_duplicate_reserve_updates_the_hold_once_and_rejects_changed_frozen_data(
+    settlement_store: WalletStore,
+) -> None:
+    store: Final = settlement_store
+    await asyncio.gather(*(_reserve(store, "same-request") for _ in range(8)))
+    wallet: Final = await store.get_wallet("user")
+    assert wallet["reserved"] == "0.010000000" and wallet["pending_requests"] == 1
+    with pytest.raises(IdempotencyConflict):
+        await store.reserve("user", "same-request", "model", "0.02", {})
+    assert await store.get_wallet("user") == wallet
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["settle", "release", "record_pending_usage"])
+async def test_reservation_mutations_lock_the_wallet_before_waiting_for_the_reservation(
+    settlement_store: WalletStore, operation: str,
+) -> None:
+    store: Final = settlement_store
+    await _reserve(store, "lock-order")
+    async with await psycopg.AsyncConnection.connect(store.database_url) as blocker:
+        await blocker.execute("SELECT request_id FROM retail_reservations WHERE request_id='lock-order' FOR UPDATE")
+        pending: Final = asyncio.create_task(
+            store.settle("lock-order", "0.000032", {}) if operation == "settle"
+            else store.release("lock-order", "Rejected") if operation == "release"
+            else store.record_pending_usage("lock-order", {"billing_error": "missing_usage"})
+        )
+        try:
+            async with await psycopg.AsyncConnection.connect(store.database_url, autocommit=True) as observer:
+                async def awaiting_reservation_lock() -> None:
+                    while True:
+                        row: Final = await (
+                            await observer.execute(
+                                """SELECT 1 FROM pg_stat_activity WHERE datname=current_database()
+                                   AND wait_event_type='Lock' AND query LIKE
+                                   'SELECT * FROM retail_reservations WHERE request_id=% FOR UPDATE'"""
+                            )
+                        ).fetchone()
+                        if row is not None:
+                            return
+                        await asyncio.sleep(0.005)
+
+                await asyncio.wait_for(awaiting_reservation_lock(), timeout=0.75)
+                with pytest.raises(psycopg.errors.LockNotAvailable):
+                    await observer.execute("SELECT user_id FROM retail_wallets WHERE user_id='user' FOR UPDATE NOWAIT")
+        finally:
+            await blocker.rollback()
+            await pending
+    reservation: Final = await store.get_reservation("lock-order")
+    assert reservation is not None
+    assert reservation["status"] == {
+        "settle": "settled", "release": "released", "record_pending_usage": "reserved",
+    }[operation]
 
 
 @pytest.mark.asyncio
