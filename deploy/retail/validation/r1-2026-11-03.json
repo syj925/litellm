@@ -1,0 +1,247 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-03",
+  "implementation_commit": "b8c27ba2dd39a5021fcd8cf85ad43e2f3775c19a",
+  "scope": "R0 and first R1 retail modules, local validation and activation only",
+  "tests": {
+    "backend_unit": 347,
+    "postgres_integration": 33,
+    "frontend": 282,
+    "total": 662,
+    "backend_unit_files": [
+      "tests/unit/proxy/retail/test_api.py",
+      "tests/unit/proxy/retail/test_control_plane_access.py",
+      "tests/unit/proxy/retail/test_control_plane_flags.py",
+      "tests/unit/proxy/retail/test_control_plane_http.py",
+      "tests/unit/proxy/retail/test_operation_events.py",
+      "tests/unit/proxy/retail/test_organization_store.py",
+      "tests/unit/proxy/retail/test_report_store.py",
+      "tests/unit/proxy/retail/test_key_rotation.py",
+      "tests/unit/proxy/retail/test_request_body_limit.py",
+      "tests/unit/proxy/retail/test_coordination_guard.py",
+      "tests/unit/proxy/common_utils/test_user_api_key_cache.py"
+    ],
+    "postgres_files": [
+      "tests/integration/database/test_retail_organizations.py",
+      "tests/integration/database/test_retail_reports.py",
+      "tests/integration/database/test_retail_key_rotation.py"
+    ]
+  },
+  "openapi_generated": true,
+  "production_ui_build_passed": true,
+  "runtime": {
+    "local_active": true,
+    "worker_count": 2,
+    "coordination_source": "coordination_redis",
+    "redis_ping": "healthy",
+    "response_cache": null,
+    "strict_coordination_guard": true,
+    "financial_fingerprint_unchanged": true,
+    "source_overlays_match": true,
+    "overlay_file_count": 105,
+    "source_sha256": {
+      "litellm/main.py": "26d883a41844f51a6173a30ed180a702d9d432e03683d3e5ce1b190846f0dba1",
+      "litellm/proxy/spend_tracking/spend_tracking_utils.py": "34325be71ee531873c0c5fd78a144723b28c8e5d09f68f97abcde2cb621761ba",
+      "litellm/proxy/common_utils/user_api_key_cache.py": "c992d454ff860830bac9744f90a26ce46c34053754722be2c141f61612bdc240",
+      "litellm/llms/anthropic/common_utils.py": "98e6265eec5d36a6961f8eae0c485bd87ecae9e96b6ca80ad0e77129ed2cc221",
+      "litellm/types/utils.py": "604a0154410a0fdc9db7715fe7a4d76c62a0e5f251e4bab6ddb11e91f3181cb7",
+      "litellm/proxy/management_endpoints/internal_user_endpoints.py": "7ee1ce633bf02e5f0b793f0c4f1a466cffeb0100c25d9736f08aac3c1baa51af",
+      "litellm/proxy/common_utils/http_parsing_utils.py": "5cb69f91c8b8e7316c2ffbe8c3498ed8ac19a3b9ffa4b34c24887076fbaff6f6",
+      "litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py": "b4cbc50762923d2f2beabe32ae7ce008ca8bb0003451b68b35f3d10a28329ea8",
+      "litellm/integrations/otel/runtime.py": "a4194dc62bed5fb6f875bf62de6eea8874c7a38be92a47e6abbcc901500667b3",
+      "litellm/proxy/management_endpoints/daily_activity_routes.py": "a0e5d341df21d04c7631773dea485cac51e5ad06ed65e53ee315680810373f95",
+      "litellm/cost_calculator.py": "cb2d8fade830d080d4a222f758db0b41409a5d63c0ee134648aa713308bfbfd0",
+      "litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py": "0b19422ea9b372f6d97eed993380d2c43750a1f978b4a10cb8ac0bb9376ae50a",
+      "litellm/litellm_core_utils/llm_cost_calc/utils.py": "1e921493e8ee844a1e55b149c254f6ddb02067d67e891fd08fe241ca796410ec",
+      "litellm/litellm_core_utils/litellm_logging.py": "f671ec92edd2d896b935abdbbad12a0d881cf3ea67093b420f742bc7e0a68973",
+      "litellm/litellm_core_utils/request_trace_transport.py": "a9d064c7896418dd44465a6d55b1882c450baa6c385ebb867a8e3f6dbf58cca1",
+      "litellm/llms/custom_httpx/http_handler.py": "8b63d9d39984d9faa8941571229461c242437bf45a06da5e8601283f9363c700",
+      "litellm/llms/anthropic/pass_through/adapters/transformation.py": "5fdd5c475e96c442f113b57173cb8951fcdef478b5b8c04703c4b61a367b57b4",
+      "litellm/router.py": "b7005a81360cd77702b8cb4de461106852c12910a578b333ae6f5248ee520a6a",
+      "litellm/integrations/custom_logger.py": "6f1fa44c1ef7cc38dde69f8a0c39c4e0a99c4aecff44cd232b1d374ac97f076a",
+      "litellm/proxy/proxy_server.py": "c77c43d988804f20a533e55fb9e41687dd2a489162b0fce6bd9dbc665d33adb0",
+      "litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py": "be7d73e005d78c816f063e71f7734330863cc56cc7f9f19179f2fe5de68bf663",
+      "litellm/proxy/spend_tracking/spend_management_endpoints.py": "e5cb57098a84f15c729a1f660846b227db52bd3c6b4cfbb5a53f20234e68126e",
+      "litellm/responses/litellm_completion_transformation/transformation.py": "1f0d5efaa6fb04dc95e043d7108831d657d6da22c5257a2e8141f7b0ffd17282",
+      "litellm/llms/anthropic/chat/handler.py": "ffe175587d4600cdbebcf477c1d4c52e338263dce2676699091ee4495f108ae4",
+      "litellm/litellm_core_utils/streaming_chunk_builder_utils.py": "8a1ca7ecf5c32fbd34067b1d74f4b52937126511d0ef104b6ed0479b48b01dbc",
+      "litellm/litellm_core_utils/streaming_handler.py": "16b5cbec3f09e42fc1185c95f5ee4a7f3cefcaee0f2a2e23e4328ea40bdf30ba",
+      "litellm/proxy/utils.py": "48a537dead2055f3cbfb312b171da2c1c5e2998f62a08afcfed4c56452e01de1",
+      "litellm/proxy/_types.py": "2f6837bc3d9f5b5a780f5fec69afc1385f69053f2304a7308976b193fca97090",
+      "litellm/llms/anthropic/pass_through/messages/transformation.py": "4bae056cf89b9b98856a7170cd3e9be47451d3722242c1290ad2013fc02f036d",
+      "litellm/proxy/management_endpoints/key_management_endpoints.py": "97f6d07d176f037984b3de5fd2ffceaabc1521a32befd1e4186f2ff85eb167d3",
+      "litellm/responses/utils.py": "a3a35ba7a9afe4680771b0093088ddd45a44a9377e7ff5fd029f0e022a396751",
+      "litellm/utils.py": "0901696f1b48b91d7535c2d351f637949e75f99a19c62a94d5f6f711c59740dd",
+      "litellm/llms/openai/common_utils.py": "c11264332d620591efd7bf196761e0001ca03f1a04b475f97abc76d9605b9d9c",
+      "litellm/types/llms/anthropic_messages/anthropic_response.py": "12f860b5ec5c799ee901e58c5ed354e7eedc3e5fc93bfd1ffe8a87cfc041ac29",
+      "litellm/proxy/common_request_processing.py": "ad16d8403a55d575713e774cdee6117b45e3d46c5ed5c384b4fed106daa7261a",
+      "litellm/proxy/retail/admission.py": "0b868e54dec6e1744ee9e3a4e16af6bb185ffbfaac4d01e9901e9cc3b2d16916",
+      "litellm/proxy/retail/api.py": "6c19f38fc806a244ecf6aafcff16b6a611fc4020d6eb712b8aa4e2732fbcbced",
+      "litellm/proxy/retail/billing.py": "a9fc9f7d4ec688891f92d87af97560758a87926002e34922dc87cfb0da28ba93",
+      "litellm/proxy/retail/cache_observations.py": "dfef62b1b65b86b79478c0b11a956c79e4b0eb9fce09f7420c476da5d93bd77c",
+      "litellm/proxy/retail/cache_usage.py": "5ef5e2ec2b00630a634ac3b951775403bfafcc3b2b7d4dfa6f702ce4188454dc",
+      "litellm/proxy/retail/cache_usage_metrics.py": "0903d878a2cc82321aacc87ed71c213fb8ad5d5777993651a9d215512a072b87",
+      "litellm/proxy/retail/catalog.py": "cdc91674b19bb06a13a95009c42d6a6bcbf0c63cebbe8de0c5b152868bc5f5f2",
+      "litellm/proxy/retail/catalog_enrichment.py": "2b023ec8693251cd54cfecbf08d975e9621f9b4525247d80b9d86d924fad947e",
+      "litellm/proxy/retail/catalog_expression.py": "5c082a0f470457c02689fd7b6c666d3d9bf761092242cec433480f8db5bb3570",
+      "litellm/proxy/retail/catalog_image_expression.py": "fb39aecdebffb66a6d6cf9aa170c46feb2f9e3b9abd6ef1f65fcaca26b810161",
+      "litellm/proxy/retail/catalog_pricing_metadata.py": "8b290c229b8af83472fd63d0e82fa128ab80217fb1d6389344d42405f355590d",
+      "litellm/proxy/retail/catalog_sources.py": "bb8076f7750f28119d98325261412d60fbf4eab0053c208bacd5525034baa97a",
+      "litellm/proxy/retail/catalog_source_data.py": "f78d137e49eb1b1153f4f6faa73407a23fe55cd0d1a059a010857cb81f724ab9",
+      "litellm/proxy/retail/catalog_verified_rules.py": "228022c1d074bb345175cea47e5492dea7bbd95076578263548466823fca3d7a",
+      "litellm/proxy/retail/channels.py": "c3e1ec6226e1d93c81b9e2b0d0533c9eaf984e57eb224dbedb15d9b41efb96a1",
+      "litellm/proxy/retail/channel_connection.py": "69b773f19de27f5365554a0c243dd2e2a56069cc2c23c899674d75259504bc80",
+      "litellm/proxy/retail/channel_metrics.py": "db5fc54c481acde28a181d66349a34ec7aea2400d6a8caf0cd538c73ffd98578",
+      "litellm/proxy/retail/channel_store.py": "4836fd712b3cf10468f17dd96dd04cd67a6ea33e0fcae6453ddc834131fea4da",
+      "litellm/proxy/retail/control_plane.py": "f8c3291e031e2d2d8184c4beb3668afe20b929eeacd9ced3a721a2d4a15b8e88",
+      "litellm/proxy/retail/control_plane_access.py": "be84f3d7faf4d28c0f2058e9f280237b9cafd4f2e58a7fb2832c384428908483",
+      "litellm/proxy/retail/control_plane_flags.py": "781d511ccc789b5969a6a8adb6d9e0030bab1c1bc2f1d92f9dbd2c2c4a510a52",
+      "litellm/proxy/retail/control_plane_http.py": "cdfbf501a952df6f464c7b01618f2077a99f0e90ee3a3e9a0a237b2ebd043e4b",
+      "litellm/proxy/retail/control_plane_schema.py": "6850f8f5dec4a952fdabddf2d5f450f051dab91021dcf9ddbc900e0b1fee56c8",
+      "litellm/proxy/retail/coordination_guard.py": "26bc861135696e34333655cd06b559ca6fbc314ed68e58f7528af6523950bfe0",
+      "litellm/proxy/retail/customer_access.py": "8b00e34262339615ae754dfce72beed3a00235e2e8875ed449e3c6d01642bb8f",
+      "litellm/proxy/retail/customer_logs.py": "6c635d0f2810bc64cb2be69f8bd58ea0919f58e16bcacf1354ed8453d7824081",
+      "litellm/proxy/retail/customer_response_middleware.py": "07f4c908e6d6dcd07a67dd362ea88131564bc031badeca5017259873f46f1ab7",
+      "litellm/proxy/retail/customer_response_privacy.py": "045e05b8edbaf38aba6f7583d7875b45e771e0e6ad026afa717b232bbcf90a96",
+      "litellm/proxy/retail/database.py": "f37ab5596ed20709ff2d2d89cc806dfe310b0e48766cbf4753eeeb929a5c8eaa",
+      "litellm/proxy/retail/expression_billing.py": "d7944b4b1d9b17362ef59aab280ffc0be1b66fec988d1d3a8ffc7217828e6348",
+      "litellm/proxy/retail/expression_display.py": "030f97cabe2c25a6234d0e8c1bb0acb5776dbaf31413fe6c147730d4ab17e45a",
+      "litellm/proxy/retail/expression_parser.py": "c45c889f6d46eb7888f1c4249ccb9ddd2903ca08709819ec718575e7b2e33db0",
+      "litellm/proxy/retail/expression_pricing.py": "9e06feaea64f88223d248498ff5593fada2dd34d663ea184aa10350ce87677d8",
+      "litellm/proxy/retail/expression_usage.py": "661998eb3c224983cfb81494923a2908f0cc347af43ffb9a91fe614177077ae1",
+      "litellm/proxy/retail/key_policy.py": "9a8de852583b6ad437b1b82e850c59889a80afcfd2935283f1dd8d37d23b2021",
+      "litellm/proxy/retail/key_rotation.py": "a23e0f0f629883970b65fb4748fe815081f724e887f7cfedd27c681728f61d57",
+      "litellm/proxy/retail/models.py": "d3a6c04ae0459ac21797e4ead4b85ad4f8486230ac0f25963cca3e5154a1b3b6",
+      "litellm/proxy/retail/model_discovery.py": "7807fed8bbd7a6d10c32acecfa112245c46aceeab46458453e79e7747f878307",
+      "litellm/proxy/retail/model_metrics.py": "d29766d28a13870c1ba687ceb67f48c314ec44589090d7fce7ecb1e58d4adecb",
+      "litellm/proxy/retail/model_observations.py": "b0453a38dee029e640e3fae39f1fcb9c1a9fc526c3908e5919683dc7fb59f292",
+      "litellm/proxy/retail/model_price_catalog.py": "2c3ac5ca1c596fd74412dd5747e0c871adf429d37c1bfa1cdae4b77560967258",
+      "litellm/proxy/retail/operation_events.py": "4bccaa3fe4a203a6134901842ef10a2dff447279d8f1784cdb603bdb570bca6d",
+      "litellm/proxy/retail/organizations.py": "bacb4c9257004faa51b9f08cadac3ea6503c8a94d125bd7e8eae2b511a57ac20",
+      "litellm/proxy/retail/organization_store.py": "c62ff84e88963da359361dfac9f2512a2a5389b7a03d45f6a479fafb12e43c30",
+      "litellm/proxy/retail/pools.py": "cf94351e08be54066f3cada1b959a3fd0396f9fced80b8cc570b404737508868",
+      "litellm/proxy/retail/pool_pricing.py": "f7ee37bc1e7a21128525fab7a813025bc581f227abc09c1703112994dab9da6f",
+      "litellm/proxy/retail/pool_routing.py": "4b1d10074f301913491c22edfecc4843323872728dee8dc3f83862331509249c",
+      "litellm/proxy/retail/pool_store.py": "7c7d90b35bd5ecfb403b0ed62e9643aa961eb0d778d2b1628636c3e107d8368c",
+      "litellm/proxy/retail/pricing.py": "2ca4e5f9755deb398183bd7fd18c92eb0c75c4a50eabb173998b67553e0acc10",
+      "litellm/proxy/retail/reports.py": "0df31667f7c58d74b3917a0e42702283c724dc6f76b3ecf21a8f050657e2bf62",
+      "litellm/proxy/retail/report_store.py": "b05380a94433b7ff0a1fd643fa9f3ee567db7aee893285dea6b6eccf1e14fc5b",
+      "litellm/proxy/retail/report_worker.py": "4e3881643e71698659823c9daaedb024f8e2868e8a63ae85067f1e1cfacb65d6",
+      "litellm/proxy/retail/request_body_limit.py": "3cf8a5f974ec8399d277fb9a05bdc1affd788abf8fa0e8c37d1238a3caa889f1",
+      "litellm/proxy/retail/request_tracing.py": "7bd9fa0d25defd16b8a6058db35085b9dc7f03972aedd06b2338e5d225f86376",
+      "litellm/proxy/retail/settlement_store.py": "360b229344278073b3f060c7b324c223c2f4a528687a7fca052570f952f671ee",
+      "litellm/proxy/retail/settlement_stream.py": "ef9ef198f436b0387deca1c37002dabed9dc8f29e1e18bfe240e58ea4e10d37e",
+      "litellm/proxy/retail/settlement_worker.py": "18fc1401412d7e6187f7c006c41c5811261aaf3e1f6da1c19a71c95f0de48ae9",
+      "litellm/proxy/retail/store.py": "16905fc34fbf9dcda923eaf95ecde0185a03796b7d78ee06d53ef55c23f38b67",
+      "litellm/proxy/retail/trace_middleware.py": "48ddf385bf1d96ccdbc091e0dbc51467bb258676e76aa22aba26b5d22f5305c3",
+      "litellm/proxy/retail/trace_store.py": "eb6b13478fedef444124db82fd49ddc9e640b10c470511aa2e5fc0dbb236b581",
+      "litellm/proxy/retail/trace_writer.py": "e0d8b579a93fb83f226e5229f93ce7d07d1f6fd3c235df0a6f139bc5154115f8",
+      "litellm/proxy/retail/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "litellm/proxy/retail/operation_events_schema.sql": "ed908405c2fbe558b307e23fb9237ddf496938c2060db424b2dd592c278cdccd",
+      "litellm/proxy/retail/organization_schema.sql": "a590bcb79d50f449fb457dd5ad51c5eb486a55bd0b57bf466c8d0091da47f6e5",
+      "litellm/proxy/retail/report_schema.sql": "59c9f89358b80c1a3283f614370b18387e02cfd0967b8bff0620978b3ab876cf",
+      "litellm/proxy/retail/schema.sql": "c426fb8d73dcd06c9445358ad924063dc25906b1b4c03847b7b266d529094a04",
+      "litellm/litellm_core_utils/logging_worker.py": "302db8516e9174ed1718a29ce0b1f56737182fd435a2f74623c4072484961850",
+      "litellm/proxy/auth/route_checks.py": "813782aeb28ad4b09db10fca7b13dacf48c8b3a1b313f76956ff7a496c4669e5",
+      "litellm/types/llms/anthropic.py": "4fdf7ba1721bd77059c5e88a9752f2cffe58a17df3e7777eddaf0683ed742a9d",
+      "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py": "ce7d37e4c5d3d364e24fe0fd54dff2ae1955e35e4cd897563d47b7965630e009"
+    }
+  },
+  "privacy": {
+    "anonymous_new_routes": {
+      "/retail/admin/organizations": 401,
+      "/retail/admin/operation-events": 401,
+      "/retail/organizations": 401,
+      "/retail/reports": 401
+    },
+    "fresh_database_ui_session": {
+      "/retail/admin/organizations": 200,
+      "/retail/admin/operation-events": 200,
+      "/retail/reports": 200
+    },
+    "private_missing_range": 404,
+    "safe_validation_without_input": 422
+  },
+  "request_boundaries": {
+    "local_max_body_bytes": 33554432,
+    "declared_oversize_status": 413,
+    "encoded_json_status": 415
+  },
+  "native_two_worker_proof": {
+    "post_rotation": {
+      "old_workers": {
+        "8": 401,
+        "9": 401
+      },
+      "new_workers": {
+        "8": 200,
+        "9": 200
+      }
+    },
+    "cross_worker_rpm": {
+      "configured_limit": 4,
+      "requests": 16,
+      "workers": [
+        "8",
+        "9"
+      ],
+      "statuses": {
+        "200": 4,
+        "429": 12
+      },
+      "response": "local mock_response",
+      "external_provider_calls": 0,
+      "retail_billing_enabled": false
+    },
+    "redis_outage_observed": {
+      "detection_seconds": 0.637,
+      "old_key_workers": {
+        "8": 503,
+        "9": 503
+      },
+      "protected_routes": {
+        "/retail/keys/rotate": 503,
+        "/v1/chat/completions": 503,
+        "/health/readiness/details": 503
+      },
+      "readiness": 503,
+      "liveness": 200,
+      "public_site": 200,
+      "fixture_writer_revocation_during_outage": true
+    },
+    "redis_recovery": {
+      "active_workers": {
+        "8": 200,
+        "9": 200
+      },
+      "revoked_workers": {
+        "9": 401,
+        "8": 401
+      },
+      "readiness": 200
+    }
+  },
+  "native_fixture": {
+    "source_rows_copied": 0,
+    "no_external_model_calls": true,
+    "generation_fence_enabled": true,
+    "cleanup_verified": true
+  },
+  "browser_acceptance": {
+    "organizations": "own page loads without native license dependency",
+    "reports": "queued to ready, CSV downloaded",
+    "current_beijing_day": "partial snapshot shown",
+    "audit": "report creation and completion events visible"
+  },
+  "production_changed": false,
+  "limitations": [
+    "Not a 20000 RPM capacity certification",
+    "No production edge/IP policy was applied",
+    "Audit covers own organization/report writes, not all native cross-database actions",
+    "Reports are account-ledger USD exports; unresolved holds are frozen counts, not a full monetary reserve reconciliation",
+    "Organization audit selector first 100 authorized organizations",
+    "Shared organization wallet and historical attribution, enterprise SSO/SCIM and specialist features remain deferred",
+    "Strict coordination mode requires writer-only native auth and in-memory auth objects",
+    "Already admitted requests and streams are not retroactively cancelled"
+  ]
+}

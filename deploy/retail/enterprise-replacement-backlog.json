@@ -2,29 +2,33 @@
   "schema_version": 1,
   "updated_at": "2026-11-03",
   "source_baseline": "e3f8f7d3",
-  "document_status": "planning_only",
-  "implementation_started": false,
-  "runtime_changed": false,
+  "document_status": "implementation_in_progress",
+  "implementation_started": true,
+  "runtime_changed": true,
   "tasks": [
     {
       "id": "BASE-01",
       "phase": "R0",
       "title": "运行版本、源码来源和权限基线核验",
-      "status": "planned",
+      "status": "validated_locally",
       "depends_on": [],
       "acceptance": [
         "记录目标版本、覆盖层和角色范围",
         "不以本地观察推断生产状态"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "b8c27ba2dd39a5021fcd8cf85ad43e2f3775c19a",
+      "validation_evidence": [
+        "validation/r1-2026-11-03.json",
+        "retail-management.md"
+      ],
+      "deployment_status": "local_active_not_production",
+      "implementation_notes": "版本、两 worker、来源覆盖层及账户权限基线已核验，仅代表本地"
     },
     {
       "id": "BASE-02",
       "phase": "R0",
       "title": "专用 Redis 协调及多 worker 失效验证",
-      "status": "planned",
+      "status": "validated_locally",
       "depends_on": [
         "BASE-01"
       ],
@@ -33,15 +37,19 @@
         "与完整回复缓存独立配置",
         "记录 Redis 断连策略及钱包不变证据"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "b8c27ba2dd39a5021fcd8cf85ad43e2f3775c19a",
+      "validation_evidence": [
+        "validation/r1-2026-11-03.json",
+        "retail-management.md"
+      ],
+      "deployment_status": "local_active_not_production",
+      "implementation_notes": "专用 Redis 已启用；双 worker 共享 RPM、轮换、故障关闭与恢复缓存代际保护均已实测"
     },
     {
       "id": "BASE-03",
       "phase": "R0",
       "title": "IP 和请求响应体边界核验及缺口补齐",
-      "status": "planned",
+      "status": "partially_validated",
       "depends_on": [
         "BASE-01"
       ],
@@ -50,15 +58,19 @@
         "请求与 SSE 大小限制不整段缓冲",
         "大小与编码异常测试通过"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "b8c27ba2dd39a5021fcd8cf85ad43e2f3775c19a",
+      "validation_evidence": [
+        "validation/r1-2026-11-03.json",
+        "retail-management.md"
+      ],
+      "deployment_status": "local_active_not_production",
+      "implementation_notes": "独立请求字节和编码保护已启用；本批未核验或改动生产边缘/IP策略，未新增累计 SSE 上限"
     },
     {
       "id": "BASE-04",
       "phase": "R0",
       "title": "现有零售 Key 轮换和 Chat 接线复核",
-      "status": "planned",
+      "status": "validated_locally",
       "depends_on": [
         "BASE-01",
         "BASE-02"
@@ -68,15 +80,19 @@
         "旧 Key 撤销在多 worker 生效",
         "未接通界面与已实现后端分别记录"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "b8c27ba2dd39a5021fcd8cf85ad43e2f3775c19a",
+      "validation_evidence": [
+        "validation/r1-2026-11-03.json",
+        "retail-management.md"
+      ],
+      "deployment_status": "local_active_not_production",
+      "implementation_notes": "Chat/管理页使用自有轮换；writer 事务、实时角色、目标归属行锁与提交后失效已验证"
     },
     {
       "id": "AUD-01",
       "phase": "R1A",
       "title": "事务一致的管理操作事件和脱敏查询",
-      "status": "planned",
+      "status": "validated_scoped_locally",
       "depends_on": [
         "BASE-01"
       ],
@@ -88,15 +104,19 @@
         "成功变更具备持久审计意图，外部转储失败可恢复",
         "按业务数据库列明事务 outbox 覆盖，原生跨库操作未持久桥接前不得宣称覆盖"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "b8c27ba2dd39a5021fcd8cf85ad43e2f3775c19a",
+      "validation_evidence": [
+        "validation/r1-2026-11-03.json",
+        "retail-management.md"
+      ],
+      "deployment_status": "local_active_not_production",
+      "implementation_notes": "组织和报表的领域写入具备同事务不可修改事件；原生跨库操作及全部拒绝尝试不在覆盖范围"
     },
     {
       "id": "ORG-01",
       "phase": "R1B",
       "title": "自有组织和成员数据模型及接口",
-      "status": "planned",
+      "status": "validated_locally",
       "depends_on": [
         "AUD-01",
         "BASE-02"
@@ -109,15 +129,19 @@
         "不写原生组织角色或改变按账号钱包",
         "新成员仅 Proxy Admin 确认资格和客户归属后批准；不能探测或拉入任意 user_id"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "b8c27ba2dd39a5021fcd8cf85ad43e2f3775c19a",
+      "validation_evidence": [
+        "validation/r1-2026-11-03.json",
+        "retail-management.md"
+      ],
+      "deployment_status": "local_active_not_production",
+      "implementation_notes": "组织、批准关联、版本冲突、幂等与最后管理员约束已验证，不共享钱包"
     },
     {
       "id": "ORG-02",
       "phase": "R1B",
       "title": "有限委派角色与跨进程撤销",
-      "status": "planned",
+      "status": "validated_locally",
       "depends_on": [
         "ORG-01"
       ],
@@ -131,15 +155,19 @@
         "每次管理请求核验持久授权现态；现态未知不复用过期允许结果",
         "组织归组不自动开放成员历史消费和钱包"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "b8c27ba2dd39a5021fcd8cf85ad43e2f3775c19a",
+      "validation_evidence": [
+        "validation/r1-2026-11-03.json",
+        "retail-management.md"
+      ],
+      "deployment_status": "local_active_not_production",
+      "implementation_notes": "有限成员管理、逐次 writer 授权、撤销及与原生调用权限分离已验证"
     },
     {
       "id": "ORG-03",
       "phase": "R1B",
       "title": "组织页面与受控入口切换",
-      "status": "planned",
+      "status": "validated_with_limits_locally",
       "depends_on": [
         "ORG-02"
       ],
@@ -149,15 +177,19 @@
         "旧菜单和新入口功能归属清楚",
         "不存在只改页面调用受限接口的假完成"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "b8c27ba2dd39a5021fcd8cf85ad43e2f3775c19a",
+      "validation_evidence": [
+        "validation/r1-2026-11-03.json",
+        "retail-management.md"
+      ],
+      "deployment_status": "local_active_not_production",
+      "implementation_notes": "新页面与菜单已接入；审计选择器当前仅前 100 个授权组织，超过范围的选择器分页待完善"
     },
     {
       "id": "REP-01",
       "phase": "R1C",
       "title": "个人账本时间窗和币种口径",
-      "status": "planned",
+      "status": "validated_scoped_locally",
       "depends_on": [
         "AUD-01"
       ],
@@ -169,15 +201,19 @@
         "固定物化账本可见性快照；业务时间或自增ID不能单独作提交水位",
         "延迟提交、分页、重试、重启不改变同一任务行集合"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "b8c27ba2dd39a5021fcd8cf85ad43e2f3775c19a",
+      "validation_evidence": [
+        "validation/r1-2026-11-03.json",
+        "retail-management.md"
+      ],
+      "deployment_status": "local_active_not_production",
+      "implementation_notes": "固定账号账本、精确 nanos、当前日 partial 及未决数量已验证；预扣金额完整对账不在首版导出范围"
     },
     {
       "id": "REP-02",
       "phase": "R1C",
       "title": "有界异步完整窗口导出",
-      "status": "planned",
+      "status": "validated_locally",
       "depends_on": [
         "REP-01"
       ],
@@ -189,9 +225,13 @@
         "产物私有，认证下载入口及Range/续传逐次授权，禁止直链绕过撤权",
         "发布前再次核验权限，private/no-store且过期关闭访问"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "b8c27ba2dd39a5021fcd8cf85ad43e2f3775c19a",
+      "validation_evidence": [
+        "validation/r1-2026-11-03.json",
+        "retail-management.md"
+      ],
+      "deployment_status": "local_active_not_production",
+      "implementation_notes": "有界固定快照、租约恢复、线程生成和私有逐次授权下载已验证；对外发布即认证下载入口，worker 不持有登录凭据"
     },
     {
       "id": "REP-03",
@@ -1998,5 +2038,8 @@
     "backend_items": 46,
     "frontend_items": 23,
     "enterprise_feature_families": 21
-  }
+  },
+  "runtime_scope": "local_only",
+  "production_changed": false,
+  "validation_record": "validation/r1-2026-11-03.json"
 }
