@@ -17,7 +17,7 @@ export default function PublicModelCatalog() {
           className="mx-auto flex h-14 max-w-[1600px] items-center gap-4 px-5 sm:px-8"
           aria-label="Public navigation"
         >
-          <Link href={uiHref("models")} aria-label="LiteLLM models" className="mr-auto shrink-0">
+          <Link href={uiHref("welcome/")} aria-label="AI Gateway home" className="mr-auto shrink-0">
             <img
               src={`${getProxyBaseUrl()}/get_image`}
               alt="LiteLLM"

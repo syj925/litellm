@@ -7,6 +7,8 @@ services:
     stop_grace_period: 120s
     command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "${RETAIL_SERVER_WORKERS:-2}"]
     environment:
+      DOCS_URL: "${DOCS_URL:-/docs}"
+      ROOT_REDIRECT_URL: "${ROOT_REDIRECT_URL:-/ui/welcome/}"
       RETAIL_PORTAL_ENABLED: "true"
       RETAIL_BILLING_ENABLED: "true"
       RETAIL_REGISTRATION_ENABLED: "true"

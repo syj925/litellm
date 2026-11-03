@@ -73,7 +73,9 @@ export default function SignupPanel() {
         <CardContent>
           <div className="flex flex-col gap-6">
             <div className="flex justify-center">
-              <img src={`${getProxyBaseUrl()}/get_image`} alt="LiteLLM" className="h-8 max-w-48 object-contain" />
+              <Link href={uiHref("welcome/")} aria-label="AI Gateway home">
+                <img src={`${getProxyBaseUrl()}/get_image`} alt="LiteLLM" className="h-8 max-w-48 object-contain" />
+              </Link>
             </div>
             <div className="text-center">
               <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>

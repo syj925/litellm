@@ -357,6 +357,11 @@ function LoginPageContent() {
                   Browse models without signing in
                 </Link>
               </p>
+              <p className="text-center text-sm">
+                <Link href={uiHref("welcome/")} className="text-muted-foreground underline hover:text-foreground">
+                  Back to home
+                </Link>
+              </p>
             </div>
             {uiConfig?.sso_configured && <SsoEnabledNotice />}
           </TooltipProvider>
