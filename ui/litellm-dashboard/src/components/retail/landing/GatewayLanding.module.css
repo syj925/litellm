@@ -1,7 +1,7 @@
 .root {
   --mist: #eef0e9;
   --ink: #252923;
-  --muted: #5b6358;
+  --site-muted-ink: #5b6358;
   --line: #bcc2b7;
   --soft: #e2e5dc;
   --signal: #e1f20a;
@@ -101,7 +101,7 @@
   font-family: var(--font-gateway-mono), monospace;
 }
 .root .muted {
-  color: var(--muted);
+  color: var(--site-muted-ink);
 }
 .root .skip {
   position: fixed;
@@ -233,7 +233,7 @@
   line-height: 1.2;
   max-width: 680px;
   text-align: right;
-  color: var(--muted);
+  color: var(--site-muted-ink);
 }
 .root .one-trace {
   animation: connect 1.4s cubic-bezier(0.22, 0.61, 0.36, 1) both;
@@ -268,7 +268,7 @@
 }
 .root .section-head p {
   max-width: 480px;
-  color: var(--muted);
+  color: var(--site-muted-ink);
 }
 .root .section-label {
   display: block;
@@ -335,7 +335,7 @@
 }
 .root .catalog-row p {
   font-size: 17px;
-  color: var(--muted);
+  color: var(--site-muted-ink);
   max-width: 540px;
 }
 .root .row-name {
@@ -386,13 +386,13 @@
 }
 .root .catalog-foot p {
   font-size: 14px;
-  color: var(--muted);
+  color: var(--site-muted-ink);
   max-width: 610px;
 }
 .root .filter-status {
   font-size: 13px;
   white-space: nowrap;
-  color: var(--muted);
+  color: var(--site-muted-ink);
   font-family: var(--font-gateway-mono), monospace;
 }
 .root .developers {
@@ -407,7 +407,7 @@
 .root .dev-copy p {
   max-width: 430px;
   margin-top: 30px;
-  color: var(--muted);
+  color: var(--site-muted-ink);
 }
 .root .setup-list {
   list-style: none;
@@ -460,7 +460,7 @@
   border-bottom-color: var(--ink);
 }
 .root .protocol:not([aria-selected="true"]) {
-  color: var(--muted);
+  color: var(--site-muted-ink);
 }
 .root .code-toolbar {
   display: flex;
@@ -522,7 +522,7 @@
   padding-top: 18px;
   font-size: 12px;
   line-height: 1.7;
-  color: var(--muted);
+  color: var(--site-muted-ink);
 }
 .root .endpoint code {
   font:
@@ -539,7 +539,7 @@
   min-height: 22px;
   margin-top: 8px;
   font-size: 13px;
-  color: var(--muted);
+  color: var(--site-muted-ink);
 }
 .root .billing-layout {
   display: grid;
@@ -549,7 +549,7 @@
 }
 .root .billing-description {
   margin: 28px 0;
-  color: var(--muted);
+  color: var(--site-muted-ink);
   max-width: 420px;
 }
 .root .usage-ledger {
@@ -569,12 +569,12 @@
 }
 .root .usage-row p {
   font-size: 16px;
-  color: var(--muted);
+  color: var(--site-muted-ink);
 }
 .root .pricing-note {
   margin-top: 23px;
   font-size: 14px;
-  color: var(--muted);
+  color: var(--site-muted-ink);
 }
 .root .faq-layout {
   display: grid;
@@ -618,7 +618,7 @@
 }
 .root details p {
   font-size: 16px;
-  color: var(--muted);
+  color: var(--site-muted-ink);
   max-width: 610px;
   margin: 0 34px 26px 0;
 }
@@ -1167,7 +1167,7 @@
   min-height: 44px;
   padding: 10px 8px;
   border: 0;
-  color: var(--muted);
+  color: var(--site-muted-ink);
   background: transparent;
   font-size: 13px;
   white-space: nowrap;

@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import CatalogCompare from "./CatalogCompare";
 import type { CatalogModel } from "./types";
 
+vi.mock("next/font/local", () => ({ default: () => ({ variable: "public-font" }) }));
+
 const available: CatalogModel = {
   id: "claude-sonnet-4-5-20250929",
   name: "claude-sonnet-4-5-20250929",

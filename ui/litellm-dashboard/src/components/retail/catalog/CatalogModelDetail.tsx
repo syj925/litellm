@@ -1,4 +1,5 @@
 "use client";
+import { publicSiteThemeClassName } from "../public-site/PublicSiteShell";
 import ExpressionPricingRule from "../ExpressionPricingRule";
 
 import { useState } from "react";
@@ -504,7 +505,7 @@ function CatalogApiPanel({ model, apiBaseUrl, publicView }: ModelSectionProps & 
               <SelectTrigger aria-label="API format" className="min-w-48">
                 <SelectValue>{protocol === "anthropic" ? "Anthropic Messages" : "OpenAI compatible"}</SelectValue>
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className={publicView ? publicSiteThemeClassName : undefined}>
                 {protocols.map((value) => (
                   <SelectItem key={value} value={value}>
                     {value === "anthropic" ? "Anthropic Messages" : "OpenAI compatible"}
@@ -622,7 +623,7 @@ export default function CatalogModelDetail({
           <ModelPerformance model={model.id} publicView={publicView} accessToken={accessToken} />
         </TabsContent>
         <TabsContent value="benchmarks">
-          <ModelBenchmarks models={[model]} />
+          <ModelBenchmarks models={[model]} publicView={publicView} />
         </TabsContent>
         <TabsContent value="pricing">
           <CatalogPricingPanel model={model} publicView={publicView} />

@@ -1,5 +1,6 @@
 "use client";
 
+import { publicSiteThemeClassName } from "../public-site/PublicSiteShell";
 import type { ReactNode } from "react";
 import { Logo } from "@/components/molecules/logo/Logo";
 import CopyButton from "@/components/shared/CopyButton";
@@ -155,7 +156,12 @@ export default function CatalogCompare({ models, open, onOpenChange, basis, publ
   );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden sm:w-[calc(100vw-3rem)] sm:max-w-6xl">
+      <DialogContent
+        className={[
+          "max-h-[calc(100dvh-2rem)] min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden sm:w-[calc(100vw-3rem)] sm:max-w-6xl",
+          publicView ? publicSiteThemeClassName : "",
+        ].join(" ")}
+      >
         <DialogHeader className="pr-8">
           <DialogTitle>Compare models</DialogTitle>
           <DialogDescription>
@@ -168,7 +174,7 @@ export default function CatalogCompare({ models, open, onOpenChange, basis, publ
           <SpecificationCharts models={models} />
           {models.some((model) => model.benchmarks?.length) && (
             <div className="border-b px-4 pb-4">
-              <ModelBenchmarks models={models} />
+              <ModelBenchmarks models={models} publicView={publicView} />
             </div>
           )}
           <Table className="min-w-[44rem] table-fixed">

@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import ModelBenchmarkExplorer from "./ModelBenchmarkExplorer";
 import type { CatalogModel } from "./types";
 
+vi.mock("next/font/local", () => ({ default: () => ({ variable: "public-font" }) }));
+
 vi.mock("./ModelBenchmarks", () => ({
   default: ({ models }: { models: CatalogModel[] }) => (
     <div data-testid="explorer-models">{models.map((model) => model.id).join(",")}</div>

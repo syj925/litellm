@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import ModelBenchmarks, { benchmarkProtocol } from "./ModelBenchmarks";
 import type { BenchmarkRecord, CatalogModel } from "./types";
 
+vi.mock("next/font/local", () => ({ default: () => ({ variable: "public-font" }) }));
+
 vi.mock("@/components/shared/charts", () => ({
   BarChart: ({ data }: { data: { label: string; Score: number }[] }) => (
     <div data-testid="benchmark-chart">{JSON.stringify(data)}</div>

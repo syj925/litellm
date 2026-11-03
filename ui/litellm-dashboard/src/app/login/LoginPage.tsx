@@ -2,7 +2,6 @@
 
 import { useLogin } from "@/app/(dashboard)/hooks/login/useLogin";
 import { useUIConfig } from "@/app/(dashboard)/hooks/uiConfig/useUIConfig";
-import LoadingScreen from "@/components/common_components/LoadingScreen";
 import { exchangeLoginCode, getProxyBaseUrl, switchToWorkerUrl } from "@/components/networking";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/shared/Alert";
 import { PasswordInput } from "@/components/shared/PasswordInput";
@@ -26,6 +25,8 @@ import { useWorker } from "@/hooks/useWorker";
 import { RegistrationLink } from "@/components/retail/SignupPanel";
 import Link from "next/link";
 import { uiHref } from "@/utils/uiHref";
+import PublicSiteShell, { publicSiteThemeClassName } from "@/components/retail/public-site/PublicSiteShell";
+import styles from "@/components/retail/public-site/PublicAuth.module.css";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Please enter your username"),
@@ -184,190 +185,201 @@ function LoginPageContent() {
   const isLoginLoading = loginMutation.isPending;
 
   if (isConfigLoading || isLoading) {
-    return <LoadingScreen />;
+    return (
+      <PublicSiteShell activePage="login">
+        <main className={styles.viewport}>
+          <div className={styles.loading} role="status">
+            <UiLoadingSpinner className="size-4" />
+            Loading account access...
+          </div>
+        </main>
+      </PublicSiteShell>
+    );
   }
 
   // Show disabled message if admin UI is disabled
   if (uiConfig && uiConfig.admin_ui_disabled) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted">
-        <Card className="w-full max-w-lg shadow-md">
-          <CardContent>
-            <div className="flex w-full flex-col gap-4">
-              <div className="text-center">
-                <h2 className="text-3xl font-semibold text-foreground">🚅 LiteLLM</h2>
-              </div>
+      <PublicSiteShell activePage="login">
+        <main className={styles.viewport}>
+          <Card className={styles.card}>
+            <CardContent className={styles.content}>
+              <div className={styles.formStack}>
+                <div className={styles.heading}>
+                  <h1 className={styles.title}>Sign in is unavailable</h1>
+                </div>
 
-              <Alert variant="warning">
-                <TriangleAlert />
-                <AlertTitle>Admin UI Disabled</AlertTitle>
-                <AlertDescription>
-                  <p className="text-sm">
-                    The Admin UI has been disabled by the administrator. To re-enable it, please update the following
-                    environment variable:
-                  </p>
-                  <p className="mt-2 text-sm">
-                    <code className="bg-muted px-1 py-0.5 rounded-sm text-xs">DISABLE_ADMIN_UI=False</code>
-                  </p>
-                </AlertDescription>
-              </Alert>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+                <Alert variant="warning">
+                  <TriangleAlert />
+                  <AlertTitle>Admin UI Disabled</AlertTitle>
+                  <AlertDescription>
+                    <p className="text-sm">
+                      The Admin UI has been disabled by the administrator. To re-enable it, please update the following
+                      environment variable:
+                    </p>
+                    <p className="mt-2 text-sm">
+                      <code className="bg-muted px-1 py-0.5 rounded-sm text-xs">DISABLE_ADMIN_UI=False</code>
+                    </p>
+                  </AlertDescription>
+                </Alert>
+              </div>
+            </CardContent>
+          </Card>
+        </main>
+      </PublicSiteShell>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted">
-      <Card className="w-full max-w-lg shadow-md">
-        <CardContent>
-          <TooltipProvider>
-            <div className="flex w-full flex-col gap-4">
-              <div className="text-center">
-                <h2 className="text-3xl font-semibold text-foreground">🚅 LiteLLM</h2>
-              </div>
+    <PublicSiteShell activePage="login">
+      <main className={styles.viewport}>
+        <Card className={styles.card}>
+          <CardContent className={styles.content}>
+            <TooltipProvider>
+              <div className={styles.formStack}>
+                <div className={styles.heading}>
+                  <h1 className={styles.title}>Login</h1>
+                  <p className={styles.description}>Access your account.</p>
+                </div>
 
-              <div className="text-center">
-                <h3 className="text-2xl font-semibold text-foreground">Login</h3>
-                <p className="text-sm text-muted-foreground">Access your LiteLLM account.</p>
-              </div>
+                {!uiConfig?.hide_default_credentials_hint && (
+                  <Alert variant="info">
+                    <Info />
+                    <AlertTitle>Default Credentials</AlertTitle>
+                    <AlertDescription>
+                      <p className="text-sm">
+                        By default, Username is <code className="bg-muted px-1 py-0.5 rounded-sm text-xs">admin</code>{" "}
+                        and Password is your set LiteLLM Proxy
+                        <code className="bg-muted px-1 py-0.5 rounded-sm text-xs">MASTER_KEY</code>.
+                      </p>
+                      <p className="mt-2 text-sm">
+                        Need to set UI credentials or SSO?{" "}
+                        <a href="https://docs.litellm.ai/docs/proxy/ui" target="_blank" rel="noopener noreferrer">
+                          Check the documentation
+                        </a>
+                        .
+                      </p>
+                    </AlertDescription>
+                  </Alert>
+                )}
 
-              {!uiConfig?.hide_default_credentials_hint && (
-                <Alert variant="info">
-                  <Info />
-                  <AlertTitle>Default Credentials</AlertTitle>
-                  <AlertDescription>
-                    <p className="text-sm">
-                      By default, Username is <code className="bg-muted px-1 py-0.5 rounded-sm text-xs">admin</code> and
-                      Password is your set LiteLLM Proxy
-                      <code className="bg-muted px-1 py-0.5 rounded-sm text-xs">MASTER_KEY</code>.
-                    </p>
-                    <p className="mt-2 text-sm">
-                      Need to set UI credentials or SSO?{" "}
-                      <a href="https://docs.litellm.ai/docs/proxy/ui" target="_blank" rel="noopener noreferrer">
-                        Check the documentation
-                      </a>
-                      .
-                    </p>
-                  </AlertDescription>
-                </Alert>
-              )}
+                {error && (
+                  <Alert variant="error">
+                    <CircleAlert />
+                    <AlertTitle>{error}</AlertTitle>
+                  </Alert>
+                )}
 
-              {error && (
-                <Alert variant="error">
-                  <CircleAlert />
-                  <AlertTitle>{error}</AlertTitle>
-                </Alert>
-              )}
-
-              <form onSubmit={form.handleSubmit(handleSubmit)}>
-                <FieldGroup>
-                  {uiConfig?.is_control_plane && workers.length > 0 && (
-                    <Field>
-                      <FieldLabel htmlFor={workerFieldId}>Worker</FieldLabel>
-                      <Select
-                        items={workers.map((worker) => ({ label: worker.name, value: worker.worker_id }))}
-                        value={selectedWorkerId}
-                        onValueChange={(value: string | null) => setSelectedWorkerId(value)}
-                      >
-                        <SelectTrigger id={workerFieldId} className="h-10 w-full">
-                          <SelectValue placeholder="Choose a worker to connect to" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {workers.map((worker) => (
-                            <SelectItem key={worker.worker_id} value={worker.worker_id}>
-                              {worker.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                  )}
-
-                  <FormField control={form.control} name="username" label="Username">
-                    {({ ref, ...field }) => (
-                      <Input
-                        {...field}
-                        ref={ref}
-                        placeholder="Enter your username"
-                        autoComplete="username"
-                        disabled={isLoginLoading}
-                        className="h-10 rounded-md"
-                      />
+                <form onSubmit={form.handleSubmit(handleSubmit)}>
+                  <FieldGroup>
+                    {uiConfig?.is_control_plane && workers.length > 0 && (
+                      <Field>
+                        <FieldLabel htmlFor={workerFieldId}>Worker</FieldLabel>
+                        <Select
+                          items={workers.map((worker) => ({ label: worker.name, value: worker.worker_id }))}
+                          value={selectedWorkerId}
+                          onValueChange={(value: string | null) => setSelectedWorkerId(value)}
+                        >
+                          <SelectTrigger id={workerFieldId} className="h-10 w-full">
+                            <SelectValue placeholder="Choose a worker to connect to" />
+                          </SelectTrigger>
+                          <SelectContent className={[publicSiteThemeClassName, styles.workerMenu].join(" ")}>
+                            {workers.map((worker) => (
+                              <SelectItem key={worker.worker_id} value={worker.worker_id}>
+                                {worker.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
                     )}
-                  </FormField>
 
-                  <FormField control={form.control} name="password" label="Password">
-                    {({ ref, ...field }) => (
-                      <PasswordInput
-                        {...field}
-                        ref={ref}
-                        placeholder="Enter your password"
-                        autoComplete="current-password"
-                        disabled={isLoginLoading}
-                        groupClassName="h-10"
-                      />
-                    )}
-                  </FormField>
+                    <FormField control={form.control} name="username" label="Username">
+                      {({ ref, ...field }) => (
+                        <Input
+                          {...field}
+                          ref={ref}
+                          placeholder="Enter your username"
+                          autoComplete="username"
+                          disabled={isLoginLoading}
+                          className="h-10 rounded-md"
+                        />
+                      )}
+                    </FormField>
 
-                  <Button type="submit" size="lg" disabled={isLoginLoading} className="w-full">
-                    {isLoginLoading && <UiLoadingSpinner className="size-4" role="img" aria-label="loading" />}
-                    {isLoginLoading ? "Logging in..." : "Login"}
-                  </Button>
+                    <FormField control={form.control} name="password" label="Password">
+                      {({ ref, ...field }) => (
+                        <PasswordInput
+                          {...field}
+                          ref={ref}
+                          placeholder="Enter your password"
+                          autoComplete="current-password"
+                          disabled={isLoginLoading}
+                          groupClassName="h-10"
+                        />
+                      )}
+                    </FormField>
 
-                  {!uiConfig?.sso_configured ? (
-                    <Tooltip>
-                      <TooltipTrigger render={<span className="block w-full" />}>
-                        <Button type="button" variant="outline" size="lg" disabled className="w-full">
-                          Login with SSO
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Please configure SSO to log in with SSO.</TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="lg"
-                      disabled={isLoginLoading || (!!selectedWorkerId && workers.length === 0)}
-                      onClick={() => {
-                        const selectedWorker = workers.find((w) => w.worker_id === selectedWorkerId);
-                        if (selectedWorker) {
-                          // Store worker selection so useWorker hook restores it after redirect
-                          localStorage.setItem("litellm_selected_worker_id", selectedWorkerId!);
-                          switchToWorkerUrl(selectedWorker.url);
-                        }
-                        // SSO on the worker (or this instance if no worker), always
-                        // include return_to so the callback redirects back here
-                        const ssoBase = selectedWorker?.url ?? getProxyBaseUrl();
-                        const returnTo = encodeURIComponent(getLoginUrl(window.location.origin));
-                        router.push(`${ssoBase}/sso/key/generate?return_to=${returnTo}`);
-                      }}
-                      className="w-full"
-                    >
-                      Login with SSO
+                    <Button type="submit" size="lg" disabled={isLoginLoading} className="w-full">
+                      {isLoginLoading && <UiLoadingSpinner className="size-4" role="img" aria-label="loading" />}
+                      {isLoginLoading ? "Logging in..." : "Login"}
                     </Button>
-                  )}
-                </FieldGroup>
-              </form>
-              <RegistrationLink />
-              <p className="mt-3 text-center text-sm">
-                <Link href={uiHref("models")} className="text-muted-foreground underline hover:text-foreground">
-                  Browse models without signing in
-                </Link>
-              </p>
-              <p className="text-center text-sm">
-                <Link href={uiHref("welcome/")} className="text-muted-foreground underline hover:text-foreground">
-                  Back to home
-                </Link>
-              </p>
-            </div>
-            {uiConfig?.sso_configured && <SsoEnabledNotice />}
-          </TooltipProvider>
-        </CardContent>
-      </Card>
-    </div>
+
+                    {!uiConfig?.sso_configured ? (
+                      <Tooltip>
+                        <TooltipTrigger render={<span className="block w-full" />}>
+                          <Button type="button" variant="outline" size="lg" disabled className="w-full">
+                            Login with SSO
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent className={[publicSiteThemeClassName, styles.tooltip].join(" ")}>
+                          Please configure SSO to log in with SSO.
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="lg"
+                        disabled={isLoginLoading || (!!selectedWorkerId && workers.length === 0)}
+                        onClick={() => {
+                          const selectedWorker = workers.find((w) => w.worker_id === selectedWorkerId);
+                          if (selectedWorker) {
+                            // Store worker selection so useWorker hook restores it after redirect
+                            localStorage.setItem("litellm_selected_worker_id", selectedWorkerId!);
+                            switchToWorkerUrl(selectedWorker.url);
+                          }
+                          // SSO on the worker (or this instance if no worker), always
+                          // include return_to so the callback redirects back here
+                          const ssoBase = selectedWorker?.url ?? getProxyBaseUrl();
+                          const returnTo = encodeURIComponent(getLoginUrl(window.location.origin));
+                          router.push(`${ssoBase}/sso/key/generate?return_to=${returnTo}`);
+                        }}
+                        className="w-full"
+                      >
+                        Login with SSO
+                      </Button>
+                    )}
+                  </FieldGroup>
+                </form>
+                <RegistrationLink />
+                <p className="mt-3 text-center text-sm">
+                  <Link href={uiHref("models")} className="text-muted-foreground underline hover:text-foreground">
+                    Browse models without signing in
+                  </Link>
+                </p>
+                <p className="text-center text-sm">
+                  <Link href={uiHref("welcome/")} className="text-muted-foreground underline hover:text-foreground">
+                    Back to home
+                  </Link>
+                </p>
+              </div>
+              {uiConfig?.sso_configured && <SsoEnabledNotice />}
+            </TooltipProvider>
+          </CardContent>
+        </Card>
+      </main>
+    </PublicSiteShell>
   );
 }
 

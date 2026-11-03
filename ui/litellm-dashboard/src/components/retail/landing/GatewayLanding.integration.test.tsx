@@ -72,7 +72,9 @@ describe("public gateway homepage", () => {
     for (const link of screen.getAllByRole("link", { name: "Developers", exact: true })) {
       expect(link).toHaveAttribute("href", "/team-x/ui/developers/");
     }
-    expect(screen.getByRole("link", { name: "Pricing", exact: true })).toHaveAttribute("href", "/team-x/ui/pricing/");
+    for (const link of screen.getAllByRole("link", { name: "Pricing", exact: true })) {
+      expect(link).toHaveAttribute("href", "/team-x/ui/pricing/");
+    }
     expect(screen.getByRole("tabpanel")).toHaveTextContent("https://gateway.example/team-x/v1/chat/completions");
   });
 
@@ -119,10 +121,7 @@ describe("public gateway homepage", () => {
     expect(menu).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByLabelText("Mobile navigation")).not.toHaveAttribute("hidden");
     const mobileNavigation = screen.getByLabelText("Mobile navigation");
-    expect(within(mobileNavigation).getByText("Models", { exact: true })).toHaveAttribute(
-      "href",
-      "/team-x/ui/models/",
-    );
+    expect(within(mobileNavigation).getByText("Models", { exact: true })).toHaveAttribute("href", "/team-x/ui/models/");
     expect(within(mobileNavigation).getByText("Developers", { exact: true })).toHaveAttribute(
       "href",
       "/team-x/ui/developers/",

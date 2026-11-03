@@ -6,6 +6,8 @@ import { renderWithProviders } from "../../../../tests/test-utils";
 import CatalogModelDetail from "./CatalogModelDetail";
 import { getModelIdentity } from "./modelIdentity";
 import type { CatalogDetailTab, CatalogModel } from "./types";
+
+vi.mock("next/font/local", () => ({ default: () => ({ variable: "public-font" }) }));
 import type { ExpressionPriceDisplay } from "../priceDisplay";
 
 const model: CatalogModel = {

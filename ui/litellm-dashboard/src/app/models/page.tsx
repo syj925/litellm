@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import PublicModelCatalog from "@/components/retail/catalog/PublicModelCatalog";
 
 export const metadata: Metadata = {
-  title: "Models | LiteLLM",
+  title: "Models | AI Gateway",
   description: "Explore published AI models, compare capabilities and reference prices, and view integration examples.",
 };
 

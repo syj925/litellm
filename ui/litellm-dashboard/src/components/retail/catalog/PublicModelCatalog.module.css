@@ -1,0 +1,113 @@
+.page {
+  max-width: 2100px;
+  min-width: 0;
+  margin-inline: auto;
+  padding: 44px clamp(22px, 3.25vw, 72px) 64px;
+  min-height: calc(100svh - 220px);
+}
+.browser {
+  min-width: 0;
+}
+.browser .heading {
+  margin-bottom: 40px;
+  gap: 28px;
+  align-items: end;
+}
+.title {
+  margin: 0;
+  font-size: clamp(42px, 4.5vw, 70px);
+  font-weight: 550;
+  letter-spacing: -0.04em;
+  line-height: 1.04;
+}
+.description {
+  max-width: 700px;
+  margin-top: 18px;
+  font-size: 17px;
+  line-height: 1.65;
+  color: var(--site-muted-ink);
+}
+.browser [data-slot="button"],
+.browser [data-slot="input"],
+.browser [data-slot="select-trigger"] {
+  border-radius: 2px;
+  box-shadow: none;
+}
+.browser [data-slot="input"],
+.browser [data-slot="select-trigger"] {
+  min-height: 44px;
+  background: var(--card);
+  font-size: 15px;
+}
+.browser [data-slot="button"] {
+  min-height: 40px;
+}
+.browser [data-slot="button"][aria-pressed="true"],
+.browser [data-slot="button"][data-state="on"] {
+  background: var(--site-signal);
+  color: var(--site-ink);
+}
+.browser aside {
+  padding-top: 4px;
+}
+.browser article {
+  border-radius: 2px;
+  background: var(--card);
+  box-shadow: none;
+  padding: 26px 28px;
+}
+.browser article:hover {
+  border-color: var(--site-ink);
+}
+.browser article button {
+  letter-spacing: -0.015em;
+}
+.browser [data-slot="table-container"] {
+  border-radius: 2px;
+  background: var(--card);
+}
+.browser [data-slot="table-head"] {
+  height: 52px;
+  color: var(--site-ink);
+  font-size: 14px;
+  font-weight: 550;
+}
+.browser [data-slot="table-cell"] {
+  padding-block: 22px;
+}
+.browser [data-slot="tabs-list"] {
+  height: auto;
+  min-height: 52px;
+  padding-block: 4px;
+  overflow-y: hidden;
+  border-radius: 2px;
+}
+.browser [data-slot="tabs-trigger"] {
+  height: 44px;
+  min-height: 44px;
+  border-radius: 2px;
+}
+.browser [data-slot="tabs-trigger"][data-state="active"],
+.browser [role="tab"][aria-selected="true"] {
+  background: var(--site-signal);
+  color: var(--site-ink);
+}
+.browser [data-slot="badge"] {
+  border-radius: 3px;
+}
+@media (max-width: 760px) {
+  .page {
+    padding-top: 28px;
+    padding-bottom: 44px;
+  }
+  .browser .heading {
+    margin-bottom: 30px;
+    align-items: start;
+  }
+  .description {
+    font-size: 16px;
+  }
+  .browser article {
+    padding: 20px;
+  }
+}

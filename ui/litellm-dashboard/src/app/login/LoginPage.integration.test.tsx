@@ -17,6 +17,12 @@ vi.mock("@/app/(dashboard)/hooks/uiConfig/useUIConfig", () => ({
   useUIConfig: vi.fn(),
 }));
 
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({ authLoading: false }),
+}));
+
+vi.mock("next/font/local", () => ({ default: () => ({ variable: "public-site-font" }) }));
+
 vi.mock("@/utils/cookieUtils", () => ({
   clearTokenCookies: vi.fn(),
   getCookieFromDocument: vi.fn(() => null),

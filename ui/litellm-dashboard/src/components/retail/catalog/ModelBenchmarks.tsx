@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { catalogModelTitle } from "./modelIdentity";
 import { metadataDate } from "./MetadataSources";
 import type { BenchmarkRecord, CatalogModel } from "./types";
+import { publicSiteThemeClassName } from "../public-site/PublicSiteShell";
 
 interface Observation {
   model: CatalogModel;
@@ -55,7 +56,13 @@ function observations(models: CatalogModel[]): Observation[] {
   );
 }
 
-export default function ModelBenchmarks({ models }: { models: CatalogModel[] }) {
+export default function ModelBenchmarks({
+  models,
+  publicView = false,
+}: {
+  models: CatalogModel[];
+  publicView?: boolean;
+}) {
   const [selectedProtocol, setSelectedProtocol] = useState("");
   const entries = observations(models);
   const protocols = [...new Set(entries.map(({ benchmark }) => benchmarkProtocol(benchmark)))];
@@ -107,7 +114,7 @@ export default function ModelBenchmarks({ models }: { models: CatalogModel[] }) 
           <SelectTrigger aria-label="Select benchmark" className="w-full min-w-0 sm:max-w-lg">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className={publicView ? publicSiteThemeClassName : undefined}>
             {groups.map((group) => (
               <SelectItem key={group.key} value={group.key}>
                 {label(group.entries[0].benchmark)}

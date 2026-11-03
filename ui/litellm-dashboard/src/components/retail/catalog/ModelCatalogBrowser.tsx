@@ -20,6 +20,8 @@ import CatalogCompare from "./CatalogCompare";
 import ModelBenchmarkExplorer from "./ModelBenchmarkExplorer";
 import { catalogParsers, filterCatalog, type CatalogFilters as Filters } from "./catalogState";
 import type { CatalogResponse } from "./types";
+import styles from "./PublicModelCatalog.module.css";
+import { publicSiteThemeClassName } from "../public-site/PublicSiteShell";
 
 const sortOptions = [
   { value: "name", label: "Name A–Z" },
@@ -127,7 +129,7 @@ export default function ModelCatalogBrowser({
     );
   if (filters.model && current)
     return (
-      <div className={publicView ? "min-w-0 p-5 lg:p-6" : "min-w-0 p-5 lg:p-7"}>
+      <div className={publicView ? styles.browser : "min-w-0 p-5 lg:p-7"}>
         <CatalogModelDetail
           model={current}
           activeTab={filters.model_tab}
@@ -152,16 +154,25 @@ export default function ModelCatalogBrowser({
       </div>
     );
   return (
-    <div className={publicView ? "min-w-0 p-5 lg:p-6" : "min-w-0 p-5 lg:p-7"}>
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+    <div className={publicView ? styles.browser : "min-w-0 p-5 lg:p-7"}>
+      <div
+        className={["mb-4 flex flex-wrap items-start justify-between gap-4", publicView ? styles.heading : ""].join(
+          " ",
+        )}
+      >
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className={publicView ? styles.title : "text-2xl font-semibold tracking-tight"}>
             {publicView ? publicTitles[publicMode] : "My models"}
           </h1>
           {pricingView && (
-            <p className="mt-1.5 max-w-3xl text-sm leading-6 text-muted-foreground">
+            <p className={styles.description}>
               Published reference rates in USD per million tokens. Open a model for cache pricing, tool fees and
               applicable usage conditions. Sign in to see your account rates.
+            </p>
+          )}
+          {publicView && !pricingView && (
+            <p className={styles.description}>
+              Explore models, compare capabilities, and choose an API format for your application.
             </p>
           )}
           {!publicView && (
@@ -180,7 +191,7 @@ export default function ModelCatalogBrowser({
             <Columns3 />
             Compare{compared.length > 0 ? ` (${compared.length})` : ""}
           </Button>
-          <ModelBenchmarkExplorer models={visible} />
+          <ModelBenchmarkExplorer models={visible} publicView={publicView} />
           <Button
             variant="outline"
             size="icon"
@@ -202,7 +213,13 @@ export default function ModelCatalogBrowser({
               </button>
             )}
           </div>
-          <CatalogFilters prefix="sidebar" models={models} filters={filters} onChange={updateFilters} />
+          <CatalogFilters
+            publicView={publicView}
+            prefix="sidebar"
+            models={models}
+            filters={filters}
+            onChange={updateFilters}
+          />
         </aside>
         <section className="min-w-0" aria-label="Model catalog">
           <div className="flex flex-wrap items-center gap-2">
@@ -221,6 +238,7 @@ export default function ModelCatalogBrowser({
             </div>
             <div className="w-44">
               <CatalogSelect
+                publicView={publicView}
                 label="Sort models"
                 value={filters.sort}
                 options={[...sortOptions]}
@@ -264,6 +282,7 @@ export default function ModelCatalogBrowser({
               {!publicView && (
                 <div className="w-40">
                   <CatalogSelect
+                    publicView={publicView}
                     label="Pricing display"
                     value={filters.price}
                     options={[
@@ -353,11 +372,19 @@ export default function ModelCatalogBrowser({
         </div>
       )}
       <Dialog open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
+        <DialogContent
+          className={["max-h-[85vh] overflow-y-auto sm:max-w-md", publicView ? publicSiteThemeClassName : ""].join(" ")}
+        >
           <DialogHeader>
             <DialogTitle>Filter models</DialogTitle>
           </DialogHeader>
-          <CatalogFilters prefix="mobile" models={models} filters={filters} onChange={updateFilters} />
+          <CatalogFilters
+            publicView={publicView}
+            prefix="mobile"
+            models={models}
+            filters={filters}
+            onChange={updateFilters}
+          />
           <Button onClick={() => setMobileFiltersOpen(false)}>Show {visible.length} models</Button>
         </DialogContent>
       </Dialog>

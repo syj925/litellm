@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders, testQueryClient } from "../../../../tests/test-utils";
@@ -6,6 +6,8 @@ import { setServerRootPath } from "@/lib/serverRootPath";
 import { retailRequest } from "../api";
 import PublicModelCatalog from "./PublicModelCatalog";
 import type { CatalogModel } from "./types";
+
+vi.mock("next/font/local", () => ({ default: () => ({ variable: "public-font" }) }));
 
 vi.mock("../api", () => ({ retailRequest: vi.fn() }));
 vi.mock("@/components/networking", () => ({ getProxyBaseUrl: () => "https://gateway.example/team-x" }));
@@ -74,15 +76,24 @@ describe("public pricing route", () => {
     expect(screen.getByRole("table")).toBeVisible();
     expect(screen.getByRole("button", { name: "Table view" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("From $2.50")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Models", exact: true })).toHaveAttribute(
-      "href",
-      expect.stringMatching(/^\/team-x\/ui\/models\/?$/),
-    );
-    expect(screen.getByRole("link", { name: "Developers", exact: true })).toHaveAttribute(
-      "href",
-      expect.stringMatching(/^\/team-x\/ui\/developers\/?$/),
-    );
-    expect(screen.getByRole("link", { name: "Pricing", exact: true })).toHaveAttribute("aria-current", "page");
+    expect(
+      within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("link", {
+        name: "Models",
+        exact: true,
+      }),
+    ).toHaveAttribute("href", expect.stringMatching(/^\/team-x\/ui\/models\/?$/));
+    expect(
+      within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("link", {
+        name: "Developers",
+        exact: true,
+      }),
+    ).toHaveAttribute("href", expect.stringMatching(/^\/team-x\/ui\/developers\/?$/));
+    expect(
+      within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("link", {
+        name: "Pricing",
+        exact: true,
+      }),
+    ).toHaveAttribute("aria-current", "page");
   });
 
   it("honors an explicit list view while keeping public rates independent of the requested price basis", async () => {

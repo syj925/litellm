@@ -1,3 +1,4 @@
+import { publicSiteThemeClassName } from "../public-site/PublicSiteShell";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { capabilityOptions, type CatalogFilters as Filters } from "./catalogState";
@@ -5,11 +6,13 @@ import { getModelIdentity } from "./modelIdentity";
 import type { CatalogModel } from "./types";
 
 export function CatalogSelect({
+  publicView = false,
   label,
   value,
   options,
   onChange,
 }: {
+  publicView?: boolean;
   label: string;
   value: string;
   options: { value: string; label: string }[];
@@ -26,7 +29,7 @@ export function CatalogSelect({
       <SelectTrigger aria-label={label} className="h-9 w-full text-xs">
         <SelectValue />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent className={publicView ? publicSiteThemeClassName : undefined}>
         {options.map((option) => (
           <SelectItem key={option.value} value={option.value}>
             {option.label}
@@ -71,11 +74,13 @@ export default function CatalogFilters({
   filters,
   onChange,
   prefix,
+  publicView = false,
 }: {
   models: CatalogModel[];
   filters: Filters;
   onChange: (value: Partial<Filters>) => void;
   prefix: string;
+  publicView?: boolean;
 }) {
   const authors = [...new Set(models.map((model) => getModelIdentity(model.id, model.provider).author))].sort();
   const modalities = [...new Set(models.flatMap((model) => model.input_modalities))].sort();
@@ -135,6 +140,7 @@ export default function CatalogFilters({
       <div className="space-y-2">
         <p className="font-medium">Context length</p>
         <CatalogSelect
+          publicView={publicView}
           label="Minimum context length"
           value={String(filters.context)}
           onChange={(value) => onChange({ context: Number(value) })}
@@ -150,6 +156,7 @@ export default function CatalogFilters({
       <div className="space-y-2">
         <p className="font-medium">Input price</p>
         <CatalogSelect
+          publicView={publicView}
           label="Maximum input price"
           value={String(filters.max_price)}
           onChange={(value) => onChange({ max_price: Number(value) })}
