@@ -1,4 +1,5 @@
 import { getGlobalLitellmHeaderName, getProxyBaseUrl } from "@/components/networking";
+import { ApiError, createApiClient, type HttpMethod, type RequestOptions } from "@/lib/http/client";
 import { cacheDurationLabel, cacheTierEntries } from "./cachePricing";
 
 export interface PricingPlan {
@@ -107,6 +108,9 @@ export interface RetailConfig {
   registration_enabled: boolean;
   currency: string;
   key_rotation_enabled?: boolean;
+  operation_audit_enabled?: boolean;
+  organization_management_enabled?: boolean;
+  report_export_enabled?: boolean;
 }
 
 export class RetailRequestError extends Error {
@@ -136,25 +140,32 @@ function responseMessage(body: unknown): string | null {
   return null;
 }
 
+const retailClient = createApiClient({
+  getBaseUrl: () => `${getProxyBaseUrl()}/retail`,
+  getAuthHeaderName: () => getGlobalLitellmHeaderName(),
+});
+
 export async function retailRequest<T>(path: string, token: string | null, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
   if (options.body) headers.set("Content-Type", "application/json");
-  if (token) headers.set(getGlobalLitellmHeaderName(), `Bearer ${token}`);
-  const response = await fetch(`${getProxyBaseUrl()}/retail${path}`, {
-    ...options,
-    headers,
+  const request: RequestOptions = {
+    accessToken: token,
+    rawBody: options.body ?? undefined,
+    headers: Object.fromEntries(headers.entries()),
+    signal: options.signal ?? undefined,
     credentials: "same-origin",
     cache: "no-store",
-  });
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
+    redirect: options.redirect,
+  };
+  try {
+    return await retailClient.request<T>((options.method ?? "GET") as HttpMethod, path, request);
+  } catch (error) {
+    if (!(error instanceof ApiError)) throw error;
     throw new RetailRequestError(
-      responseMessage(body) ?? `The request could not be completed (${response.status}).`,
-      response.status,
+      responseMessage(error.body) ?? `The request could not be completed (${error.status}).`, error.status,
     );
   }
-  return body as T;
 }
 
 export function formatMoney(value: string): string {

@@ -18,6 +18,24 @@ import {
 } from "./api";
 
 describe("wallet amounts", () => {
+  it("sends a management write with its authentication, idempotency key and abort signal without caching", async () => {
+    const controller = new AbortController();
+    const body = JSON.stringify({ name: "Fixture organization", admin_user_id: "member" });
+    const request = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response('{"id":"org-fixture"}'));
+    try {
+      const result = await retailRequest("/admin/organizations", "fixture", {
+        method: "POST", body, signal: controller.signal, headers: { "Idempotency-Key": "fixture-operation" },
+      });
+      expect(result).toEqual({ id: "org-fixture" });
+      expect(request).toHaveBeenCalledWith("/retail/admin/organizations", expect.objectContaining({
+        method: "POST", body, signal: controller.signal, credentials: "same-origin", cache: "no-store",
+        headers: expect.objectContaining({ Authorization: "Bearer fixture", "idempotency-key": "fixture-operation" }),
+      }));
+    } finally {
+      request.mockRestore();
+    }
+  });
+
   it("shows the billing compiler validation message without echoing rejected request data", async () => {
     const request = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(

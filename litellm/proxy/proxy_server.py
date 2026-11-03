@@ -20723,6 +20723,7 @@ async def get_routes():
 
 if os.getenv("RETAIL_PORTAL_ENABLED", "false").lower() == "true":
     from litellm.proxy.retail.api import router as retail_router
+    from litellm.proxy.retail.control_plane import router as retail_control_plane_router
     from litellm.proxy.retail.key_rotation import router as retail_key_rotation_router
     from litellm.proxy.retail.model_discovery import router as model_discovery_router
     from litellm.proxy.retail.pools import router as resource_pools_router
@@ -20730,6 +20731,7 @@ if os.getenv("RETAIL_PORTAL_ENABLED", "false").lower() == "true":
 
     app.add_middleware(RequestTraceMiddleware)
     app.include_router(retail_router)
+    app.include_router(retail_control_plane_router)
     app.include_router(retail_key_rotation_router)
     app.include_router(resource_pools_router)
     app.include_router(model_discovery_router)
@@ -20812,6 +20814,16 @@ app.add_middleware(
     get_settings=lambda: get_admission_control_settings(general_settings),
     state=admission_control_state,
 )
+if os.getenv("RETAIL_PORTAL_ENABLED", "false").lower() == "true":
+    from litellm.proxy.retail.request_body_limit import RequestBodyLimitMiddleware, request_body_limit_setting
+
+    _retail_request_limit: Final = request_body_limit_setting()
+    if _retail_request_limit:
+        app.add_middleware(RequestBodyLimitMiddleware, max_request_bytes=_retail_request_limit)
+    if os.getenv("RETAIL_REQUIRE_COORDINATION_REDIS", "false").lower() == "true":
+        from litellm.proxy.retail.coordination_guard import CoordinationGuardMiddleware
+
+        app.add_middleware(CoordinationGuardMiddleware)
 # Added last on purpose - last-added is outermost, and the client-visible URL
 # prefix must be resolved into scope["root_path"] before any inner middleware
 # or the router inspects the path. Only added when SERVER_ROOT_PATHS is

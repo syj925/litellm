@@ -1,12 +1,14 @@
 # 零售网关文档索引
 
-## 自主替代规划
+## 自有功能与替代进度
 
-[授权功能自主替代方案](enterprise-replacement-plan.md) 定义分批范围、组织和权限设计、审计、报表口径、迁移、回滚与验收条件。当前为规划，尚未实现或启用新功能
+[自有组织、审计与账本报表](retail-management.md) 说明首批实际功能、入口、角色边界、报表口径、运行配置与限制
+
+[授权功能自主替代方案](enterprise-replacement-plan.md) 保留分批范围、权限设计、迁移、回滚与验收条件；首批实现状态以实施清单和验收记录为准
 
 [授权功能清单](enterprise-feature-inventory.md) 保留当前源码基线的 46 个后端条目、23 个前端条目及商业模块依赖的处理归属
 
-[实施任务清单](enterprise-replacement-backlog.json) 保存稳定任务 ID、依赖、初始状态及验收条件。提交文档不等于完成功能，后续按实际实现和证据更新状态
+[实施任务清单](enterprise-replacement-backlog.json) 保存稳定任务 ID、依赖、实现、验收证据及部署状态。未实施的后续批次继续保留待办，不因首批上线而标为完成
 
 ## 接入与权限
 
@@ -25,6 +27,8 @@
 
 - [请求追踪](request-tracing.md)
 - [请求容量与结算](concurrency-and-settlement.md)
+- [请求体保护](request-body-limits.md)
+- [协调故障保护](coordination-guard.md)
 - [渠道分析](channel-analytics.md)
 - [模型分析](model-analytics.md)
 

@@ -6,6 +6,7 @@ import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
 from pydantic import ValidationError
+from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 from starlette.requests import Request
 
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
@@ -27,12 +28,26 @@ from litellm.proxy.retail.api import (
     _source_hash,
     _StoredModelPrice,
     _validate_discount_selection,
+    _execute,
     retail_admin,
     retail_store,
     retail_user,
     router,
 )
 from litellm.proxy.retail.store import WalletStore
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", (PoolClosed, PoolTimeout, TooManyRequests))
+async def test_exhausted_management_storage_returns_retryable_error_without_internal_connection_details(
+    error_type: type[Exception],
+) -> None:
+    async def unavailable() -> dict[str, str]:
+        raise error_type("private database connection details")
+
+    with pytest.raises(HTTPException) as rejected:
+        await _execute(unavailable())
+    assert (rejected.value.status_code, rejected.value.detail) == (503, "Retail storage is temporarily unavailable")
 
 
 def test_custom_cache_duration_prices_keep_per_million_units_and_zero_rates() -> None:
@@ -71,7 +86,7 @@ async def test_runtime_pressure_and_database_counters_are_only_visible_to_full_a
         if role == LitellmUserRoles.PROXY_ADMIN:
             assert response.status_code == 200
             assert set(response.json()) == {
-                "scope", "process_id", "admission", "database", "diagnostics", "logging", "settlement",
+                "scope", "process_id", "admission", "database", "diagnostics", "logging", "settlement", "coordination",
             }
             assert response.json()["scope"] == "process"
             assert response.json()["database"]["finance"]["pool_size"] == 0

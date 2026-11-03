@@ -68,6 +68,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/cva.config";
 import { rolesWithCapability } from "../utils/capabilities";
 import {
@@ -84,6 +85,7 @@ import SidebarUsageCard from "./SidebarUsageCard";
 import { routeSegmentForPathname, uiHref } from "@/utils/uiHref";
 import { canAccessDashboardRoute, isProxyDashboardRole } from "@/utils/dashboardAccess";
 import { detailPageMetadata } from "./page_metadata";
+import { retailRequest, type RetailConfig } from "./retail/api";
 
 const ICON = { strokeWidth: 1.75 } as const;
 
@@ -134,10 +136,16 @@ export interface MenuVisibilityContext {
   allowAgentsForTeamAdmins?: boolean;
   disableVectorStoresForInternalUsers?: boolean;
   allowVectorStoresForTeamAdmins?: boolean;
+  retailOrganizationsEnabled?: boolean;
+  retailReportsEnabled?: boolean;
+  retailAuditEnabled?: boolean;
 }
 
 const adminPageVisibility = (item: MenuItem, context: MenuVisibilityContext, isAdmin: boolean): boolean | null => {
   if (item.key !== "organizations" && item.key !== "users") return null;
+  if (item.key === "organizations" && context.retailOrganizationsEnabled !== undefined) {
+    return context.retailOrganizationsEnabled;
+  }
   const hasRoleAccess = !item.roles || item.roles.includes(context.userRole) || context.isOrgAdmin;
   if (!hasRoleAccess) return false;
   if (!isAdmin && context.enabledPagesInternalUsers != null) {
@@ -171,6 +179,8 @@ const pageIsDisabledForInternalUsers = (
 };
 
 const menuItemIsVisible = (item: MenuItem, context: MenuVisibilityContext, isAdmin: boolean): boolean => {
+  if (item.key === "reports" && context.retailReportsEnabled !== true) return false;
+  if (item.key === "operation-audit" && context.retailAuditEnabled !== true) return false;
   if (item.children && item.children.length === 0) return false;
   if (!item.children && !canAccessDashboardRoute(item.route ?? item.page, context)) return false;
   if (item.key === "llm-playground" && context.isViewOnly) return false;
@@ -354,6 +364,7 @@ const menuGroups: MenuGroup[] = [
     items: [
       { key: "wallet", page: "wallet", label: "Wallet", icon: <Wallet {...ICON} /> },
       { key: "billing", page: "billing", label: "Billing", icon: <FileText {...ICON} /> },
+      { key: "reports", page: "reports", label: "Billing Reports", icon: <BarChart3 {...ICON} /> },
       {
         key: "wallet-admin",
         page: "wallet-admin",
@@ -401,6 +412,13 @@ const menuGroups: MenuGroup[] = [
         roles: all_admin_roles,
       },
       { key: "budgets", page: "budgets", label: "Budgets", icon: <Wallet {...ICON} />, roles: all_admin_roles },
+      {
+        key: "operation-audit",
+        page: "operation-audit",
+        label: "Operation Audit",
+        icon: <ScrollText {...ICON} />,
+        roles: ["Admin", "proxy_admin"],
+      },
     ],
   },
   {
@@ -585,6 +603,17 @@ const Sidebar_: React.FC<SidebarProps> = ({
   const [erroredDarkLogo, setErroredDarkLogo] = useState<string | null>(null);
   const { data: healthData } = useHealthReadinessDetails(isProxyDashboardRole(userRole) ? accessToken : null);
   const logout = useLogout(accessToken);
+  const managementConfigOptions = {
+    queryKey: ["retail", "management-config", userId],
+    queryFn: () => retailRequest<RetailConfig>("/config", accessToken),
+    enabled: Boolean(accessToken && userId),
+    staleTime: 30_000,
+    retry: false,
+  };
+  const managementConfig = useQuery(managementConfigOptions);
+  const retailOrganizationsEnabled = managementConfig.data?.organization_management_enabled === true;
+  const retailReportsEnabled = managementConfig.data?.report_export_enabled === true;
+  const retailAuditEnabled = managementConfig.data?.operation_audit_enabled === true;
 
   const baseUrl = getProxyBaseUrl();
   const version = healthData?.litellm_version;
@@ -622,6 +651,9 @@ const Sidebar_: React.FC<SidebarProps> = ({
       allowAgentsForTeamAdmins,
       disableVectorStoresForInternalUsers,
       allowVectorStoresForTeamAdmins,
+      retailOrganizationsEnabled,
+      retailReportsEnabled,
+      retailAuditEnabled,
     };
     return visibleMenuGroups(menuGroups, context);
   }, [
@@ -635,6 +667,9 @@ const Sidebar_: React.FC<SidebarProps> = ({
     isTeamAdmin,
     isViewOnly,
     userRole,
+    retailOrganizationsEnabled,
+    retailReportsEnabled,
+    retailAuditEnabled,
   ]);
 
   const toggleGroup = (key: string) => {

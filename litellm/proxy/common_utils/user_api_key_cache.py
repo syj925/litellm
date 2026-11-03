@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Final, TypeVar, cast, overload
 
 from pydantic import BaseModel
@@ -83,6 +83,19 @@ class UserApiKeyCache(DualCache):
             default_in_memory_ttl=default_in_memory_ttl,
             default_redis_ttl=default_redis_ttl,
         )
+        self._write_guard: Callable[[], bool] | None = None
+
+    def set_write_guard(self, guard: Callable[[], bool] | None) -> None:
+        self._write_guard = guard
+
+    def _write_permitted(self) -> bool:
+        guard: Final = self._write_guard
+        if guard is None:
+            return True
+        try:
+            return guard()
+        except Exception:  # noqa: BLE001  # a failed guard must skip cache publication without failing inference
+            return False
 
     def in_memory_cache_for(self, key: str) -> InMemoryCache:
         return self.key_object_cache.in_memory_cache if is_user_key_cache_key(key) else self.in_memory_cache
@@ -208,6 +221,8 @@ class UserApiKeyCache(DualCache):
         return decoded
 
     def set_cache(self, key: str | None, value: object, local_only: bool = False, **kwargs: object):
+        if not self._write_permitted():
+            return None
         model_type: Final = cast(type[BaseModel] | None, kwargs.pop("model_type", None))
         payload: Final[object] = CacheCodec.serialize(value, model_type=model_type)
         if key is not None and is_user_key_cache_key(key):
@@ -217,6 +232,8 @@ class UserApiKeyCache(DualCache):
     async def async_set_cache(self, key: str | None, value: object, local_only: bool = False, **kwargs: object):
         """Inside a request the Redis SET rides the request's pipeline (memory is written at once); anywhere
         else, or with options the pipeline does not carry, it goes to Redis directly as before."""
+        if not self._write_permitted():
+            return None
         model_type: Final = cast(type[BaseModel] | None, kwargs.pop("model_type", None))
         payload: Final[object] = CacheCodec.serialize(value, model_type=model_type)
         ttl: Final = kwargs.get("ttl")
@@ -233,6 +250,22 @@ class UserApiKeyCache(DualCache):
         if pipelined and await super().async_set_cache_pre_call(key, payload, ttl) is not None:
             return None
         return await super().async_set_cache(key=key, value=payload, local_only=local_only, **kwargs)
+
+    async def async_set_cache_pre_call(self, key: str, value: object, ttl: float | None) -> BatchResult[None] | None:
+        if not self._write_permitted():
+            return None
+        return await super().async_set_cache_pre_call(key, value, ttl)
+
+    async def async_set_cache_sadd(
+        self,
+        key: str,
+        value: Sequence[object],
+        local_only: bool = False,
+        **kwargs: object,  # kwargs-ok: preserve the existing DualCache setter option boundary
+    ) -> None:
+        if not self._write_permitted():
+            return
+        await super().async_set_cache_sadd(key, list(value), local_only=local_only, **kwargs)
 
     def delete_cache(self, key: str) -> None:
         if is_user_key_cache_key(key):
@@ -280,14 +313,16 @@ class UserApiKeyCache(DualCache):
         Batch writes with the same Codec boundary as ``async_set_cache`` without
         ``model_type``: ``BaseModel`` values become JSON-safe dicts; dicts/scalars unchanged.
         """
+        if not self._write_permitted():
+            return
         normalized: Final = tuple((key, CacheCodec.serialize(value, model_type=None)) for key, value in cache_list)
         key_object_entries: Final = tuple(entry for entry in normalized if is_user_key_cache_key(entry[0]))
         other_entries: Final = tuple(entry for entry in normalized if not is_user_key_cache_key(entry[0]))
-        if key_object_entries:
+        if key_object_entries and self._write_permitted():
             await self.key_object_cache.async_set_cache_pipeline(
                 cache_list=key_object_entries, local_only=local_only, **kwargs
             )
-        if other_entries:
+        if other_entries and self._write_permitted():
             await super().async_set_cache_pipeline(cache_list=other_entries, local_only=local_only, **kwargs)
 
 

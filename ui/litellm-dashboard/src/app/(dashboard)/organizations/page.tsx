@@ -1,9 +1,7 @@
 "use client";
 
-import OrganizationsPanel from "./_components/OrganizationsPanel";
-import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
+import RetailOrganizationsPanel from "@/components/retail/organizations/RetailOrganizationsPanel";
 
 export default function OrganizationsPage() {
-  const { accessToken, userRole, premiumUser } = useAuthorized();
-  return <OrganizationsPanel userRole={userRole ?? ""} accessToken={accessToken} premiumUser={premiumUser ?? false} />;
+  return <RetailOrganizationsPanel />;
 }

@@ -5,10 +5,20 @@ import ChatConversationPage from "./page";
 import { renderWithProviders } from "@/../tests/test-utils";
 import type { OnUrlUpdateFunction } from "nuqs/adapters/testing";
 
-const { mockMakeOpenAIResponsesRequest, shellState } = vi.hoisted(() => ({
+const { mockMakeOpenAIResponsesRequest, shellState, authState } = vi.hoisted(() => ({
   mockMakeOpenAIResponsesRequest: vi.fn(),
   shellState: { storageUnavailable: false },
+  authState: { userRole: "Admin", isViewOnly: false },
 }));
+
+vi.mock("@/app/(dashboard)/hooks/useAuthorized", () => ({
+  default: () => authState,
+}));
+
+beforeEach(() => {
+  authState.userRole = "Admin";
+  authState.isViewOnly = false;
+});
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -162,4 +172,15 @@ describe("/ui/chat storage banner", () => {
     expect(dismiss).toHaveClass("hover:text-warning/80");
     expect(dismiss).not.toHaveClass("hover:text-foreground");
   });
+});
+
+it.each(["Admin", "Internal User"])("keeps the %s viewer session from sending model requests", async (userRole) => {
+  authState.userRole = userRole;
+  authState.isViewOnly = true;
+  mockMakeOpenAIResponsesRequest.mockReset();
+  renderWithProviders(<ChatConversationPage />);
+  expect(await screen.findByRole("heading", { name: "Chat is read-only" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Send" })).not.toBeInTheDocument();
+  expect(screen.queryByPlaceholderText("How can I help you today?")).not.toBeInTheDocument();
+  expect(mockMakeOpenAIResponsesRequest).not.toHaveBeenCalled();
 });

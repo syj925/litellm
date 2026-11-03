@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { Loader2, RefreshCw, KeyRound, Copy, Check } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CopyToClipboard } from "react-copy-to-clipboard";
@@ -24,6 +25,9 @@ import { toast } from "@/lib/toast";
 import { keyListCall, regenerateKeyCall } from "../networking";
 import { KeyResponse } from "../key_team_helpers/key_list";
 import { formatExpiresUtc, isKeyExpired, calculateExpiryPreviewFromDuration } from "@/utils/keyExpiryUtils";
+import { Alert, AlertDescription, AlertTitle } from "@/components/shared/Alert";
+import { RetailRequestError, retailRequest, type RetailConfig } from "@/components/retail/api";
+import RotateKeyModal from "@/components/retail/RotateKeyModal";
 
 const KEYS_QUERY_KEY = "chat-user-keys";
 
@@ -67,8 +71,29 @@ interface FormState {
   grace_period: string;
 }
 
+function useKeyRotationConfig(accessToken: string, userId: string, premiumUser: boolean) {
+  const { isViewOnly } = useAuthorized();
+  const configOptions = {
+    queryKey: ["retail", "key-rotation-config", userId],
+    queryFn: ({ signal }: { signal: AbortSignal }) => retailRequest<RetailConfig>("/config", accessToken, { signal }),
+    enabled: Boolean(accessToken),
+    retry: false,
+    staleTime: 60_000,
+  };
+  const retailConfig = useQuery(configOptions);
+  const nativeConfigAbsent = retailConfig.error instanceof RetailRequestError && retailConfig.error.status === 404;
+  const rotationReady = !retailConfig.isPending && (!retailConfig.error || nativeConfigAbsent);
+  const retailRotationEnabled = retailConfig.data?.key_rotation_enabled === true;
+  const methodAvailable = retailRotationEnabled || premiumUser;
+  const canRotate = !isViewOnly && rotationReady && methodAvailable;
+  const configError = !nativeConfigAbsent && retailConfig.error;
+  return { canRotate, retailRotationEnabled, configError };
+}
+
 const KeysPanel: React.FC<Props> = ({ accessToken, userId, premiumUser }) => {
   const queryClient = useQueryClient();
+  const [retailRotateTarget, setRetailRotateTarget] = useState<KeyResponse | null>(null);
+  const { canRotate, retailRotationEnabled, configError } = useKeyRotationConfig(accessToken, userId, premiumUser);
   const [rotateTarget, setRotateTarget] = useState<KeyResponse | null>(null);
   const [regeneratedKey, setRegeneratedKey] = useState<string | null>(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -83,18 +108,25 @@ const KeysPanel: React.FC<Props> = ({ accessToken, userId, premiumUser }) => {
   });
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
-  const { data, isLoading } = useQuery({
-    queryKey: [KEYS_QUERY_KEY, accessToken, userId],
+  const keyListOptions = {
+    queryKey: [KEYS_QUERY_KEY, userId],
     queryFn: async () => {
       const resp = await keyListCall(accessToken, null, null, null, userId, null, 1, 100, null, null, null, null);
       return (resp?.keys ?? []) as KeyResponse[];
     },
     enabled: !!accessToken,
-  });
+    retry: false,
+  };
+  const { data, isLoading, error } = useQuery(keyListOptions);
 
-  const keys = data ?? [];
+  const keys = error ? [] : data ?? [];
 
   const openRotateModal = (key: KeyResponse) => {
+    if (!canRotate) return;
+    if (retailRotationEnabled) {
+      setRetailRotateTarget(key);
+      return;
+    }
     setRotateTarget(key);
     setRegeneratedKey(null);
     setCopied(false);
@@ -128,7 +160,9 @@ const KeysPanel: React.FC<Props> = ({ accessToken, userId, premiumUser }) => {
   };
 
   const handleRegenerate = async () => {
-    if (!rotateTarget || !validate()) return;
+    const unavailable = !rotateTarget || !canRotate || retailRotationEnabled;
+    if (unavailable || !rotateTarget) return;
+    if (!validate()) return;
     setIsRegenerating(true);
     try {
       const payload: Record<string, unknown> = {};
@@ -168,16 +202,38 @@ const KeysPanel: React.FC<Props> = ({ accessToken, userId, premiumUser }) => {
     if (formErrors[field]) setFormErrors((prev) => ({ ...prev, [field]: undefined }));
   };
 
+  const showRetailRotation = retailRotateTarget && canRotate && !error;
+  const nativeRotationAvailable = canRotate && !retailRotationEnabled;
+  const showNativeRotation = Boolean(rotateTarget) && nativeRotationAvailable && !error;
   return (
     <div className="w-full">
       <div className="mb-4">
         <h2 className="text-base font-semibold text-foreground mb-0.5">Your API Keys</h2>
         <p className="text-sm text-muted-foreground m-0">
           View your virtual keys and spend
-          {premiumUser &&
+          {canRotate &&
+            !retailRotationEnabled &&
             ". Rotate keys to generate new credentials while optionally keeping the old key valid during a grace period"}
+          {canRotate &&
+            retailRotationEnabled &&
+            ". Rotate a key to replace its secret immediately while preserving its access and billing settings"}
         </p>
       </div>
+
+      {error && (
+        <Alert variant="error">
+          <AlertTitle>Unable to load API keys</AlertTitle>
+          <AlertDescription>Refresh the page or sign in again to verify access to your current keys.</AlertDescription>
+        </Alert>
+      )}
+      {configError && (
+        <Alert variant="warning">
+          <AlertTitle>Key rotation is unavailable</AlertTitle>
+          <AlertDescription>
+            Rotation settings could not be verified. Refresh the page before trying again.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {isLoading ? (
         <div className="rounded-lg border overflow-hidden">
@@ -190,7 +246,7 @@ const KeysPanel: React.FC<Props> = ({ accessToken, userId, premiumUser }) => {
                 </TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide">Expires</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide">Created</TableHead>
-                {premiumUser && (
+                {canRotate && (
                   <TableHead className="text-xs font-semibold uppercase tracking-wide text-right w-[80px]" />
                 )}
               </TableRow>
@@ -210,7 +266,7 @@ const KeysPanel: React.FC<Props> = ({ accessToken, userId, premiumUser }) => {
                   <TableCell>
                     <Skeleton className="h-4 w-24" />
                   </TableCell>
-                  {premiumUser && (
+                  {canRotate && (
                     <TableCell className="text-right">
                       <Skeleton className="h-4 w-16 ml-auto" />
                     </TableCell>
@@ -223,7 +279,7 @@ const KeysPanel: React.FC<Props> = ({ accessToken, userId, premiumUser }) => {
       ) : keys.length === 0 ? (
         <div className="text-center text-muted-foreground text-sm py-12 border border-dashed rounded-lg">
           <KeyRound className="h-6 w-6 mb-3 mx-auto text-muted-foreground/50" />
-          No keys found
+          No keys to display
         </div>
       ) : (
         <div className="rounded-lg border overflow-hidden">
@@ -236,7 +292,7 @@ const KeysPanel: React.FC<Props> = ({ accessToken, userId, premiumUser }) => {
                 </TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide">Expires</TableHead>
                 <TableHead className="text-xs font-semibold uppercase tracking-wide">Created</TableHead>
-                {premiumUser && (
+                {canRotate && (
                   <TableHead className="text-xs font-semibold uppercase tracking-wide text-right w-[80px]" />
                 )}
               </TableRow>
@@ -268,7 +324,7 @@ const KeysPanel: React.FC<Props> = ({ accessToken, userId, premiumUser }) => {
                     <TableCell className="text-muted-foreground text-[13px]">
                       {relativeTime(record.created_at)}
                     </TableCell>
-                    {premiumUser && (
+                    {canRotate && (
                       <TableCell className="text-right">
                         <Button variant="outline" size="xs" onClick={() => openRotateModal(record)} title="Rotate key">
                           <RefreshCw className="h-3 w-3" />
@@ -284,7 +340,18 @@ const KeysPanel: React.FC<Props> = ({ accessToken, userId, premiumUser }) => {
         </div>
       )}
 
-      <Dialog open={!!rotateTarget} onOpenChange={(v) => !v && closeModal()}>
+      {showRetailRotation && retailRotateTarget && (
+        <RotateKeyModal
+          accessToken={accessToken}
+          tokenId={retailRotateTarget.token_id || retailRotateTarget.token}
+          keyAlias={retailRotateTarget.key_alias || ""}
+          onClose={() => setRetailRotateTarget(null)}
+          onRotated={() => {
+            void queryClient.invalidateQueries({ queryKey: [KEYS_QUERY_KEY] });
+          }}
+        />
+      )}
+      <Dialog open={showNativeRotation} onOpenChange={(v) => !v && closeModal()}>
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
             <DialogTitle>Rotate Key</DialogTitle>

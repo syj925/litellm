@@ -9,6 +9,7 @@ from typing import Annotated, Final, Literal, TypeAlias
 from uuid import uuid4
 
 import psycopg
+from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Request
 from pydantic import (
     AliasChoices,
@@ -448,7 +449,7 @@ async def retail_store() -> WalletStore:
         store: Final = get_store()
         await store.initialize()
         return store
-    except (psycopg.Error, RuntimeError) as exc:
+    except (psycopg.Error, RuntimeError, PoolClosed, PoolTimeout, TooManyRequests) as exc:
         raise HTTPException(status_code=503, detail="Retail storage is temporarily unavailable") from exc
 
 
@@ -488,7 +489,7 @@ async def _execute(operation: Awaitable[Mapping[str, JsonValue]]) -> dict[str, J
                 raise HTTPException(status_code=429, detail="Too many requests are already reserved") from exc
             case _:
                 raise HTTPException(status_code=400, detail="Invalid retail operation") from exc
-    except psycopg.Error as exc:
+    except (psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests) as exc:
         raise HTTPException(status_code=503, detail="Retail storage is temporarily unavailable") from exc
 
 
@@ -579,11 +580,16 @@ def _model_price_view(card: _StoredModelPrice) -> dict[str, JsonValue]:
 
 @router.get("/config")
 async def config() -> dict[str, JsonValue]:
+    from .control_plane_flags import operation_audit_enabled, organizations_enabled, report_export_enabled
+
     return {
         "registration_enabled": registration_enabled(),
         "currency": "USD",
         "login_url": "/ui/login/",
         "key_rotation_enabled": True,
+        "operation_audit_enabled": operation_audit_enabled(),
+        "organization_management_enabled": organizations_enabled(),
+        "report_export_enabled": report_export_enabled(),
     }
 
 
@@ -952,6 +958,7 @@ async def admin_runtime(admin: Admin, store: Store) -> Mapping[str, JsonValue]:
     from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
 
     from .admission import get_request_admission
+    from .coordination_guard import coordination_guard_status
     from .settlement_worker import settlement_is_overloaded
     from .trace_writer import get_trace_writer
 
@@ -970,6 +977,7 @@ async def admin_runtime(admin: Admin, store: Store) -> Mapping[str, JsonValue]:
             "overloaded": getattr(GLOBAL_LOGGING_WORKER, "is_overloaded", False) is True,
         },
         "settlement": {"overloaded": settlement_is_overloaded()},
+        "coordination": coordination_guard_status().model_dump(mode="json"),
     }
 
 

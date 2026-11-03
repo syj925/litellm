@@ -1,14 +1,17 @@
+import asyncio
 import hashlib
 import json
-from typing import Any
+from contextvars import ContextVar
+from typing import Any, Final
 
 import pytest
 
 from litellm.caching.dual_cache import DualCache
 from litellm.caching.in_memory_cache import InMemoryCache
+from litellm.caching.redis_batch import active_request_redis_batch, request_redis_batch_scope
 from litellm.caching.redis_cache import RedisCache
 from litellm.constants import DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL
-from litellm.proxy._types import UserAPIKeyAuth
+from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.common_utils.user_api_key_cache import (
     UserApiKeyCache,
     end_user_cache_key,
@@ -16,6 +19,8 @@ from litellm.proxy.common_utils.user_api_key_cache import (
     is_user_key_cache_key,
 )
 from litellm.proxy.proxy_server import UserAPIKeyCacheTTLEnum
+from tests.unit.caching.test_redis_batch import FakeClient
+from tests.unit.caching.test_redis_batch import FakeRedisCache as BatchFakeRedisCache
 
 HASHED_TOKEN = hashlib.sha256(b"sk-lit7563-hot-key").hexdigest()
 
@@ -485,3 +490,151 @@ class TestManagementObjectTTL:
         )
 
         assert mem.last_ttl == 300
+
+
+class CacheWriteEpoch:
+    def __init__(self) -> None:
+        self.current = object()
+        self.request: ContextVar[object | None] = ContextVar("cache-write-generation", default=None)
+
+    def allowed(self) -> bool:
+        return self.request.get() is self.current
+
+    def renew(self) -> None:
+        self.current = object()
+
+
+@pytest.mark.asyncio
+async def test_write_guard_prevents_delayed_old_request_from_refilling_key_and_role_after_recovery() -> None:
+    epoch: Final = CacheWriteEpoch()
+    cache: Final = UserApiKeyCache()
+    cache.set_write_guard(epoch.allowed)
+    read_complete: Final = asyncio.Event()
+    resume: Final = asyncio.Event()
+    original: Final = epoch.request.set(epoch.current)
+
+    async def delayed_database_read() -> None:
+        stale: Final = UserAPIKeyAuth(user_id="account", user_role=LitellmUserRoles.PROXY_ADMIN)
+        read_complete.set()
+        await resume.wait()
+        await cache.async_set_cache(HASHED_TOKEN, stale, model_type=UserAPIKeyAuth)
+        await cache.async_set_cache("user_id:account", {"role": "proxy_admin"})
+
+    try:
+        pending: Final = asyncio.create_task(delayed_database_read())
+        await read_complete.wait()
+        epoch.renew()
+        cache.flush_cache()
+        resume.set()
+        await pending
+    finally:
+        epoch.request.reset(original)
+    assert cache.get_cache(HASHED_TOKEN) is None
+    assert cache.get_cache("user_id:account") is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ("sync", "async", "pipeline"))
+@pytest.mark.parametrize("key", (HASHED_TOKEN, "user_id:account"))
+async def test_current_generation_auth_writes_work_and_stale_generation_cannot_overwrite_them(
+    method: str, key: str
+) -> None:
+    epoch: Final = CacheWriteEpoch()
+    cache: Final = UserApiKeyCache()
+    cache.set_write_guard(epoch.allowed)
+    current: Final = UserAPIKeyAuth(user_id="account", user_role=LitellmUserRoles.INTERNAL_USER)
+    active: Final = epoch.request.set(epoch.current)
+
+    async def write(value: UserAPIKeyAuth) -> None:
+        if method == "sync":
+            cache.set_cache(key, value, model_type=UserAPIKeyAuth)
+        elif method == "async":
+            await cache.async_set_cache(key, value, model_type=UserAPIKeyAuth)
+        else:
+            await cache.async_set_cache_pipeline(((key, value),))
+
+    try:
+        await write(current)
+        epoch.renew()
+        await write(UserAPIKeyAuth(user_id="account", user_role=LitellmUserRoles.PROXY_ADMIN))
+    finally:
+        epoch.request.reset(active)
+    saved: Final = cache.get_cache(key, model_type=UserAPIKeyAuth)
+    assert saved is not None and saved.user_role == LitellmUserRoles.INTERNAL_USER
+
+
+@pytest.mark.asyncio
+async def test_stale_pipeline_skips_both_key_and_role_partitions_and_redis() -> None:
+    redis: Final = FakeRedisCache()
+    cache: Final = UserApiKeyCache(redis_cache=redis)
+    cache.set_write_guard(lambda: False)
+    await cache.async_set_cache_pipeline(
+        ((HASHED_TOKEN, UserAPIKeyAuth(user_id="account")), ("user_id:account", {"role": "proxy_admin"}))
+    )
+    assert cache.get_cache(HASHED_TOKEN) is None and cache.get_cache("user_id:account") is None
+    assert redis.get_cache(HASHED_TOKEN) is None and redis.get_cache("user_id:account") is None
+
+
+@pytest.mark.asyncio
+async def test_guarded_pre_call_set_does_not_queue_redis_work_or_populate_memory() -> None:
+    client: Final = FakeClient(lambda _: True)
+    redis: Final = BatchFakeRedisCache(client)
+    cache: Final = UserApiKeyCache(redis_cache=redis)
+    cache.set_write_guard(lambda: False)
+    with request_redis_batch_scope():
+        batch: Final = active_request_redis_batch(redis)
+        assert batch is not None
+        result: Final = await cache.async_set_cache_pre_call("user_id:account", {"role": "proxy_admin"}, 60)
+        assert result is None and batch.pending == 0
+        assert cache.in_memory_cache.get_cache("user_id:account") is None
+    assert client.pipelines == []
+
+
+@pytest.mark.asyncio
+async def test_current_generation_pre_call_set_preserves_memory_and_redis_batch_behavior() -> None:
+    client: Final = FakeClient(lambda _: True)
+    redis: Final = BatchFakeRedisCache(client)
+    cache: Final = UserApiKeyCache(redis_cache=redis)
+    cache.set_write_guard(lambda: True)
+    with request_redis_batch_scope():
+        result: Final = await cache.async_set_cache_pre_call("user_id:account", {"role": "member"}, 60)
+        assert result is not None
+        assert cache.in_memory_cache.get_cache("user_id:account") == {"role": "member"}
+        await result
+    assert len(client.pipelines) == 1 and client.pipelines[0].commands[0][0] == "SET"
+
+
+@pytest.mark.asyncio
+async def test_guarded_set_membership_write_is_skipped_and_default_behavior_can_be_restored() -> None:
+    cache: Final = UserApiKeyCache()
+    cache.set_write_guard(lambda: False)
+    await cache.async_set_cache_sadd("roles:account", ("proxy_admin",), local_only=True)
+    assert cache.get_cache("roles:account") is None
+    cache.set_write_guard(None)
+    await cache.async_set_cache_sadd("roles:account", ("member",), local_only=True)
+    assert cache.get_cache("roles:account") == {"member"}
+
+
+@pytest.mark.asyncio
+async def test_write_guard_does_not_suppress_deletion_or_numeric_counter_increments() -> None:
+    cache: Final = UserApiKeyCache()
+    cache.set_cache(HASHED_TOKEN, UserAPIKeyAuth(user_id="account"), model_type=UserAPIKeyAuth)
+    cache.set_cache("spend:account", 4)
+    cache.set_write_guard(lambda: False)
+    assert cache.increment_cache("spend:account", 3) == 7
+    assert await cache.async_increment_cache("spend:account", 2) == 9
+    cache.delete_cache(HASHED_TOKEN)
+    assert cache.get_cache(HASHED_TOKEN) is None and cache.get_cache("spend:account") == 9
+
+
+def test_write_guard_failure_skips_auth_publication_and_removing_guard_restores_legacy_writes() -> None:
+    def failed_guard() -> bool:
+        raise RuntimeError("fixture epoch unavailable")
+
+    cache: Final = UserApiKeyCache()
+    cache.set_write_guard(failed_guard)
+    cache.set_cache("user_id:account", {"role": "proxy_admin"})
+    assert cache.get_cache("user_id:account") is None
+    cache.set_write_guard(None)
+    cache.set_cache("user_id:account", {"role": "member"})
+    assert cache.get_cache("user_id:account") == {"role": "member"}

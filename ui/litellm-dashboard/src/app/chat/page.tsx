@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState, useLayoutEffect } from "react";
+import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { Plus, ChevronDown, Check, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -51,6 +52,8 @@ function getProviderFromModelName(modelName: string): string {
 }
 
 export default function ChatConversationPage() {
+  const { isViewOnly } = useAuthorized();
+  const canChat = !isViewOnly;
   const [, setConversationIdInUrl] = useQueryState("id", { history: "push" });
   const router = useRouter();
   const {
@@ -94,7 +97,7 @@ export default function ChatConversationPage() {
 
   // Load models
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || !canChat) return;
     fetchAvailableModels(accessToken)
       .then((data) => {
         const names = (data || []).map((m: { model_group?: string }) => m.model_group ?? "").filter(Boolean);
@@ -115,7 +118,7 @@ export default function ChatConversationPage() {
       })
       .catch(() => toast.error("Could not load models"))
       .finally(() => setIsLoadingModels(false));
-  }, [accessToken]);
+  }, [accessToken, canChat]);
 
   // Reset the responses session when switching between conversations so that
   // previous_response_id from conversation A is never sent for conversation B.
@@ -133,6 +136,7 @@ export default function ChatConversationPage() {
 
   const handleSend = useCallback(
     async (text: string, historyOverride?: Array<{ role: "user" | "assistant"; content: string }>) => {
+      if (!canChat) return;
       const trimmed = text.trim();
       if (!trimmed || !selectedModel || isStreaming) return;
       const model = selectedModel;
@@ -255,6 +259,7 @@ export default function ChatConversationPage() {
       selectedModel,
       selectedMCPServers,
       accessToken,
+      canChat,
       createConversation,
       appendMessage,
       updateLastAssistantMessage,
@@ -343,6 +348,17 @@ export default function ChatConversationPage() {
       if (el) el.scrollTop = el.scrollHeight;
     }
   }, [activeConversation?.messages]);
+
+  if (!canChat) {
+    return (
+      <div role="status" className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
+        <h1 className="text-2xl font-semibold">Chat is read-only</h1>
+        <p className="max-w-lg text-muted-foreground">
+          Your account has read-only access. Ask your gateway administrator for permission to send model requests.
+        </p>
+      </div>
+    );
+  }
 
   const showBlankState = !activeConversation || activeConversation.messages.length === 0;
   const displayName = userEmail?.split("@")[0] ?? userId ?? "";

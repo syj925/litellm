@@ -19,6 +19,8 @@ export const pageDescriptions: Record<string, string> = {
   "resource-pools": "Configure resource pools, routing access and pool pricing",
   wallet: "View your available balance and wallet transactions",
   billing: "View your request charges and billing history",
+  reports: "Export a fixed time window of your account ledger with exact billing totals",
+  "operation-audit": "Review redacted organization and report management events",
   "wallet-admin": "Manage customer wallets and account billing settings",
   "model-pricing": "Manage site-wide model base prices and cache duration rates separately from customer discounts",
   agents: "Create and manage AI agents",

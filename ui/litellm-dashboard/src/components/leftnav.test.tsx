@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderWithProviders } from "../../tests/test-utils";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { renderWithProviders, testQueryClient } from "../../tests/test-utils";
 import Sidebar, { menuGroups, getBreadcrumb, visibleMenuGroups } from "./leftnav";
 
 vi.mock("../utils/roles", async (importOriginal) => {
@@ -134,6 +134,16 @@ const teamMemberAuthorization = {
 };
 
 describe("Sidebar (leftnav)", () => {
+  beforeEach(() => {
+    for (const userId of ["test-user-id", "org-admin-user-id"]) {
+      testQueryClient.setQueryData(["retail", "management-config", userId], {
+        organization_management_enabled: true,
+        operation_audit_enabled: true,
+        report_export_enabled: true,
+      });
+    }
+  });
+
   it.each([
     ["Admin", true],
     ["proxy_admin", true],

@@ -19,6 +19,9 @@ describe("dashboard role boundaries", () => {
     "logs",
     "wallet",
     "billing",
+    "reports",
+    "organizations",
+    "operation-audit",
     "api-reference",
     "change-password",
   ])("allows a customer's personal %s page", (page) => expect(canAccessDashboardRoute(page, customer)).toBe(true));
@@ -42,7 +45,6 @@ describe("dashboard role boundaries", () => {
     "lens",
     "teams",
     "users",
-    "organizations",
     "budgets",
     "access-groups",
     "transform-request",

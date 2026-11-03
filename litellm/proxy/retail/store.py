@@ -385,6 +385,8 @@ class WalletStore:
         )
         self._initialization = asyncio.Lock()
         self._initialized = False
+        self._control_plane_initialization = asyncio.Lock()
+        self._control_plane_initialized = False
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[psycopg.AsyncConnection]:
@@ -441,6 +443,23 @@ class WalletStore:
                 await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('retail:schema', 0))")
                 await connection.execute(schema, prepare=False)
             self._initialized = True
+
+    async def initialize_control_plane(self) -> None:
+        from .control_plane_flags import operation_audit_enabled, organizations_enabled
+        from .operation_events import initialize_schema as initialize_audit
+        from .organization_store import initialize_schema as initialize_organizations
+
+        if self._control_plane_initialized or not operation_audit_enabled():
+            return
+        async with self._control_plane_initialization:
+            if self._control_plane_initialized:
+                return
+            async with self.diagnostic_transaction() as connection:
+                await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('retail:control-plane-schema',0))")
+                await initialize_audit(connection)
+                if organizations_enabled():
+                    await initialize_organizations(connection)
+            self._control_plane_initialized = True
 
     async def get_wallet(self, user_id: str, create: bool = False) -> dict[str, JsonValue]:
         async with self.transaction() as connection:
