@@ -1,0 +1,2002 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-11-03",
+  "source_baseline": "e3f8f7d3",
+  "document_status": "planning_only",
+  "implementation_started": false,
+  "runtime_changed": false,
+  "tasks": [
+    {
+      "id": "BASE-01",
+      "phase": "R0",
+      "title": "运行版本、源码来源和权限基线核验",
+      "status": "planned",
+      "depends_on": [],
+      "acceptance": [
+        "记录目标版本、覆盖层和角色范围",
+        "不以本地观察推断生产状态"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "BASE-02",
+      "phase": "R0",
+      "title": "专用 Redis 协调及多 worker 失效验证",
+      "status": "planned",
+      "depends_on": [
+        "BASE-01"
+      ],
+      "acceptance": [
+        "至少两个 worker 验证共享限流与撤销",
+        "与完整回复缓存独立配置",
+        "记录 Redis 断连策略及钱包不变证据"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "BASE-03",
+      "phase": "R0",
+      "title": "IP 和请求响应体边界核验及缺口补齐",
+      "status": "planned",
+      "depends_on": [
+        "BASE-01"
+      ],
+      "acceptance": [
+        "区分已部署边缘控制与待配置能力",
+        "请求与 SSE 大小限制不整段缓冲",
+        "大小与编码异常测试通过"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "BASE-04",
+      "phase": "R0",
+      "title": "现有零售 Key 轮换和 Chat 接线复核",
+      "status": "planned",
+      "depends_on": [
+        "BASE-01",
+        "BASE-02"
+      ],
+      "acceptance": [
+        "使用自有轮换接口",
+        "旧 Key 撤销在多 worker 生效",
+        "未接通界面与已实现后端分别记录"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "AUD-01",
+      "phase": "R1A",
+      "title": "事务一致的管理操作事件和脱敏查询",
+      "status": "planned",
+      "depends_on": [
+        "BASE-01"
+      ],
+      "acceptance": [
+        "AC01",
+        "AC02",
+        "AC05",
+        "AC11",
+        "成功变更具备持久审计意图，外部转储失败可恢复",
+        "按业务数据库列明事务 outbox 覆盖，原生跨库操作未持久桥接前不得宣称覆盖"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "ORG-01",
+      "phase": "R1B",
+      "title": "自有组织和成员数据模型及接口",
+      "status": "planned",
+      "depends_on": [
+        "AUD-01",
+        "BASE-02"
+      ],
+      "acceptance": [
+        "AC01",
+        "AC02",
+        "AC04",
+        "AC10",
+        "不写原生组织角色或改变按账号钱包",
+        "新成员仅 Proxy Admin 确认资格和客户归属后批准；不能探测或拉入任意 user_id"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "ORG-02",
+      "phase": "R1B",
+      "title": "有限委派角色与跨进程撤销",
+      "status": "planned",
+      "depends_on": [
+        "ORG-01"
+      ],
+      "acceptance": [
+        "AC01",
+        "AC02",
+        "AC03",
+        "AC09",
+        "多组织上下文校验",
+        "组织权限与账号/Key授权交集保持",
+        "每次管理请求核验持久授权现态；现态未知不复用过期允许结果",
+        "组织归组不自动开放成员历史消费和钱包"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "ORG-03",
+      "phase": "R1B",
+      "title": "组织页面与受控入口切换",
+      "status": "planned",
+      "depends_on": [
+        "ORG-02"
+      ],
+      "acceptance": [
+        "AC10",
+        "AC11",
+        "旧菜单和新入口功能归属清楚",
+        "不存在只改页面调用受限接口的假完成"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "REP-01",
+      "phase": "R1C",
+      "title": "个人账本时间窗和币种口径",
+      "status": "planned",
+      "depends_on": [
+        "AUD-01"
+      ],
+      "acceptance": [
+        "AC06",
+        "AC07",
+        "消费/预扣/释放/充值分列",
+        "不以 native Spend 代替零售账本",
+        "固定物化账本可见性快照；业务时间或自增ID不能单独作提交水位",
+        "延迟提交、分页、重试、重启不改变同一任务行集合"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "REP-02",
+      "phase": "R1C",
+      "title": "有界异步完整窗口导出",
+      "status": "planned",
+      "depends_on": [
+        "REP-01"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC12",
+        "不占用终态事实关键连接池",
+        "产物私有，认证下载入口及Range/续传逐次授权，禁止直链绕过撤权",
+        "发布前再次核验权限，private/no-store且过期关闭访问"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "REP-03",
+      "phase": "R2",
+      "title": "历史组织归属快照与组织财务汇总",
+      "status": "deferred",
+      "depends_on": [
+        "ORG-02",
+        "REP-02"
+      ],
+      "acceptance": [
+        "AC06",
+        "AC07",
+        "无证据旧流水保持未归属",
+        "快照写入不新增逐请求远程查询"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "CTRL-01",
+      "phase": "R2",
+      "title": "自有业务标签、管理来源字段和字段校验",
+      "status": "deferred",
+      "depends_on": [
+        "AUD-01",
+        "ORG-02"
+      ],
+      "acceptance": [
+        "稳定标签命名与高基数限制",
+        "服务端校验、脱敏和版本记录"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "CTRL-02",
+      "phase": "R2",
+      "title": "逐模型/标签预算与优先级额度",
+      "status": "deferred",
+      "depends_on": [
+        "BASE-02",
+        "ORG-02",
+        "REP-01"
+      ],
+      "acceptance": [
+        "原子预留/结算/释放和重复终态测试",
+        "不得逐请求聚合历史流水",
+        "Redis 故障与超额策略明确",
+        "AC12"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "CTRL-03",
+      "phase": "R2",
+      "title": "对象级策略、Prompt 与路由权限模块",
+      "status": "deferred",
+      "depends_on": [
+        "ORG-02",
+        "AUD-01"
+      ],
+      "acceptance": [
+        "按字段拆解继承和覆盖规则",
+        "策略不能扩大主体/Key权限",
+        "撤销、缓存、未知字段和执行阶段拒绝测试",
+        "AC12"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "CTRL-04",
+      "phase": "R2",
+      "title": "独立日志目标与异步通知及品牌模板",
+      "status": "deferred",
+      "depends_on": [
+        "AUD-01"
+      ],
+      "acceptance": [
+        "有界队列、重试去重及保留策略",
+        "SMTP/云日志失败不阻塞转发",
+        "通知和日志内容脱敏"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "ID-SSO",
+      "phase": "R3",
+      "title": "独立企业 SSO 和安全诊断",
+      "status": "deferred",
+      "depends_on": [
+        "ORG-02",
+        "AUD-01"
+      ],
+      "acceptance": [
+        "state/nonce/PKCE等协议约束按选定流程验证",
+        "用户绑定、停用、撤销和会话范围明确",
+        "诊断不显示 token 或敏感 claims"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "ID-API",
+      "phase": "R3",
+      "title": "独立 API JWT/OAuth2 校验和映射",
+      "status": "deferred",
+      "depends_on": [
+        "ORG-02",
+        "BASE-02",
+        "AUD-01"
+      ],
+      "acceptance": [
+        "issuer/audience/时效/验签与撤销验证",
+        "JWKS或内省缓存有界且失效明确",
+        "无逐请求无界外部身份查询",
+        "AC12"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "ID-SCIM",
+      "phase": "R3",
+      "title": "SCIM 用户及组同步",
+      "status": "deferred",
+      "depends_on": [
+        "ID-SSO",
+        "ORG-02"
+      ],
+      "acceptance": [
+        "外部ID幂等映射",
+        "禁用与组变更撤销一致",
+        "跨租户冲突与失败恢复测试"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "ID-SECRET",
+      "phase": "R3",
+      "title": "外部密钥托管和缓存刷新",
+      "status": "deferred",
+      "depends_on": [
+        "BASE-01",
+        "AUD-01"
+      ],
+      "acceptance": [
+        "按供应方SDK独立实现",
+        "缓存和刷新有界",
+        "不逐请求读取外部Vault",
+        "凭据不进入日志和审计"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "SPEC-BYOK",
+      "phase": "R4",
+      "title": "私有团队部署与自有项目分组",
+      "status": "deferred",
+      "depends_on": [
+        "ORG-02",
+        "CTRL-03"
+      ],
+      "acceptance": [
+        "模型/凭据/缓存命名空间隔离",
+        "不映射原生受限角色",
+        "项目范围与组织范围单独定义"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "SPEC-ASYNC",
+      "phase": "R4",
+      "title": "托管对象、异步 Batch/background 与微调生命周期",
+      "status": "deferred",
+      "depends_on": [
+        "REP-02",
+        "CTRL-02"
+      ],
+      "acceptance": [
+        "任务/文件/模型归属和对象ACL",
+        "持久终态、最终用量、取消退款、幂等恢复",
+        "异步对象接口与权限及路由限额全部验收后开放"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "SPEC-AGENT",
+      "phase": "R4",
+      "title": "管理 MCP、LiteAdmin 和身份交换",
+      "status": "deferred",
+      "depends_on": [
+        "ID-API",
+        "AUD-01"
+      ],
+      "acceptance": [
+        "管理工具逐调用授权与只读/写操作区分",
+        "授权不借用全站主 Key",
+        "身份交换受众与重放检查"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    },
+    {
+      "id": "SPEC-ROUTE",
+      "phase": "R4",
+      "title": "高级自动路由与多网关控制面",
+      "status": "deferred",
+      "depends_on": [
+        "BASE-02",
+        "CTRL-03"
+      ],
+      "acceptance": [
+        "控制面与推理路径解耦",
+        "分类额外延迟/费用和递归调用有上限",
+        "配对容量与故障测试"
+      ],
+      "implementation_commit": null,
+      "validation_evidence": [],
+      "deployment_status": "not_deployed"
+    }
+  ],
+  "backend_inventory": [
+    {
+      "id": "B01",
+      "family": "组织管理 Organizations",
+      "disposition": "independent_replacement",
+      "tasks": [
+        "ORG-01",
+        "ORG-02",
+        "ORG-03"
+      ],
+      "reason": "首批自有组织，不实现原生协议等价或共享钱包",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_endpoints/organization_endpoints.py",
+          "line": 98
+        },
+        {
+          "path": "litellm/proxy/management_endpoints/organization_endpoints.py",
+          "line": 113
+        }
+      ]
+    },
+    {
+      "id": "B02",
+      "family": "SCIM v2 用户和组同步",
+      "disposition": "deferred",
+      "tasks": [
+        "ID-SCIM"
+      ],
+      "reason": "企业需求触发目录同步",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_endpoints/scim/scim_v2.py",
+          "line": 271
+        }
+      ]
+    },
+    {
+      "id": "B03",
+      "family": "控制台SSO免费人数额度",
+      "disposition": "deferred",
+      "tasks": [
+        "ID-SSO"
+      ],
+      "reason": "保留现有免费额度边界，自研企业身份流程另行设计",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_endpoints/ui_sso.py",
+          "line": 986
+        },
+        {
+          "path": "litellm/proxy/management_endpoints/ui_sso.py",
+          "line": 1047
+        },
+        {
+          "path": "litellm/proxy/management_endpoints/ui_sso.py",
+          "line": 2212
+        }
+      ]
+    },
+    {
+      "id": "B04",
+      "family": "自定义UI SSO登录处理器",
+      "disposition": "deferred",
+      "tasks": [
+        "ID-SSO"
+      ],
+      "reason": "保留现有免费额度边界，自研企业身份流程另行设计",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_endpoints/ui_sso.py",
+          "line": 1071
+        }
+      ]
+    },
+    {
+      "id": "B05",
+      "family": "SSO调试入口",
+      "disposition": "deferred",
+      "tasks": [
+        "ID-SSO"
+      ],
+      "reason": "保留现有免费额度边界，自研企业身份流程另行设计",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_endpoints/ui_sso.py",
+          "line": 4731
+        }
+      ]
+    },
+    {
+      "id": "B06",
+      "family": "API JWT鉴权及映射",
+      "disposition": "deferred",
+      "tasks": [
+        "ID-API"
+      ],
+      "reason": "每请求身份路径需独立安全和性能验收",
+      "refs": [
+        {
+          "path": "litellm/proxy/auth/user_api_key_auth.py",
+          "line": 1706
+        },
+        {
+          "path": "litellm/proxy/auth/user_api_key_auth.py",
+          "line": 1712
+        }
+      ]
+    },
+    {
+      "id": "B07",
+      "family": "API OAuth2 token验证",
+      "disposition": "deferred",
+      "tasks": [
+        "ID-API"
+      ],
+      "reason": "每请求身份路径需独立安全和性能验收",
+      "refs": [
+        {
+          "path": "litellm/proxy/auth/user_api_key_auth.py",
+          "line": 1689
+        },
+        {
+          "path": "litellm/proxy/auth/oauth2_check.py",
+          "line": 129
+        }
+      ]
+    },
+    {
+      "id": "B08",
+      "family": "MCP IdP token exchange和JWT bridge",
+      "disposition": "deferred",
+      "tasks": [
+        "SPEC-AGENT"
+      ],
+      "reason": "不属于基础 API 零售闭环",
+      "refs": [
+        {
+          "path": "litellm/proxy/_experimental/mcp_server/idp_token_exchange.py",
+          "line": 50
+        },
+        {
+          "path": "litellm/proxy/_experimental/mcp_server/idp_token_exchange.py",
+          "line": 63
+        },
+        {
+          "path": "litellm/proxy/_experimental/mcp_server/bridge_token_flow.py",
+          "line": 495
+        }
+      ]
+    },
+    {
+      "id": "B09",
+      "family": "托管管理MCP Hosted admin MCP",
+      "disposition": "deferred",
+      "tasks": [
+        "SPEC-AGENT"
+      ],
+      "reason": "不属于基础 API 零售闭环",
+      "refs": [
+        {
+          "path": "litellm/proxy/admin_mcp.py",
+          "line": 96
+        },
+        {
+          "path": "litellm/proxy/admin_mcp.py",
+          "line": 111
+        },
+        {
+          "path": "litellm/proxy/admin_mcp.py",
+          "line": 127
+        }
+      ]
+    },
+    {
+      "id": "B10",
+      "family": "委派Team Admin",
+      "disposition": "independent_replacement",
+      "tasks": [
+        "ORG-02"
+      ],
+      "reason": "使用自有委派角色，不能授予原生 Team Admin",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_endpoints/team_endpoints.py",
+          "line": 2723
+        },
+        {
+          "path": "litellm/proxy/management_endpoints/team_endpoints.py",
+          "line": 3817
+        }
+      ]
+    },
+    {
+      "id": "B11",
+      "family": "团队私有模型/BYOK部署管理",
+      "disposition": "deferred",
+      "tasks": [
+        "SPEC-BYOK"
+      ],
+      "reason": "私有部署及项目权限按专项范围实现",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_endpoints/model_management_endpoints.py",
+          "line": 2074
+        },
+        {
+          "path": "litellm/proxy/management_endpoints/model_management_endpoints.py",
+          "line": 2148
+        }
+      ]
+    },
+    {
+      "id": "B12",
+      "family": "Key/Team按模型预算",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-02"
+      ],
+      "reason": "强一致预算与优先级不能用管理分组替代",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_endpoints/key_management_endpoints.py",
+          "line": 7973
+        },
+        {
+          "path": "litellm/proxy/management_endpoints/key_management_endpoints.py",
+          "line": 7988
+        },
+        {
+          "path": "litellm/proxy/management_endpoints/common_utils.py",
+          "line": 82
+        }
+      ]
+    },
+    {
+      "id": "B13",
+      "family": "Tag预算",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-02"
+      ],
+      "reason": "强一致预算与优先级不能用管理分组替代",
+      "refs": [
+        {
+          "path": "litellm/router_strategy/budget_limiter.py",
+          "line": 948
+        }
+      ]
+    },
+    {
+      "id": "B14",
+      "family": "按优先级预留RPM/TPM",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-02"
+      ],
+      "reason": "强一致预算与优先级不能用管理分组替代",
+      "refs": [
+        {
+          "path": "litellm/proxy/hooks/dynamic_rate_limiter.py",
+          "line": 119
+        },
+        {
+          "path": "litellm/proxy/hooks/dynamic_rate_limiter_v3.py",
+          "line": 134
+        }
+      ]
+    },
+    {
+      "id": "B15",
+      "family": "Key/Team/Org/Project高级元数据配置",
+      "disposition": "coverage_index",
+      "tasks": [
+        "CTRL-01",
+        "CTRL-03",
+        "CTRL-04",
+        "ID-SECRET"
+      ],
+      "reason": "跨多个字段和阶段的总括项，逐字段跟踪，不计为单一已完成特性",
+      "refs": [
+        {
+          "path": "litellm/proxy/_types.py",
+          "line": 5182
+        },
+        {
+          "path": "litellm/proxy/management_endpoints/common_utils.py",
+          "line": 525
+        },
+        {
+          "path": "litellm/proxy/management_endpoints/common_utils.py",
+          "line": 726
+        },
+        {
+          "path": "litellm/proxy/management_endpoints/key_management_endpoints.py",
+          "line": 2428
+        }
+      ]
+    },
+    {
+      "id": "B16",
+      "family": "Key标签",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-01"
+      ],
+      "reason": "自有业务标签、字段校验和管理来源信息按需求补齐",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_endpoints/key_management_endpoints.py",
+          "line": 1476
+        },
+        {
+          "path": "litellm/proxy/_types.py",
+          "line": 5186
+        }
+      ]
+    },
+    {
+      "id": "B17",
+      "family": "Virtual Key再生成/轮换",
+      "disposition": "verify_existing",
+      "tasks": [
+        "BASE-04"
+      ],
+      "reason": "已有自有零售轮换，不解除原生 regenerate 许可检查",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_endpoints/key_management_endpoints.py",
+          "line": 5977
+        }
+      ]
+    },
+    {
+      "id": "B18",
+      "family": "通配模型的Model Access Group",
+      "disposition": "verify_existing",
+      "tasks": [
+        "BASE-01"
+      ],
+      "reason": "当前资源池/模型精确授权和个人账本满足部分业务，不承诺 wildcard/group/spend 权限协议等价",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_endpoints/key_management_endpoints.py",
+          "line": 4601
+        },
+        {
+          "path": "litellm/proxy/management_endpoints/key_management_endpoints.py",
+          "line": 4612
+        }
+      ]
+    },
+    {
+      "id": "B19",
+      "family": "Key get_spend_routes权限",
+      "disposition": "verify_existing",
+      "tasks": [
+        "BASE-01"
+      ],
+      "reason": "当前资源池/模型精确授权和个人账本满足部分业务，不承诺 wildcard/group/spend 权限协议等价",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_endpoints/key_management_endpoints.py",
+          "line": 4877
+        }
+      ]
+    },
+    {
+      "id": "B20",
+      "family": "高级Spend报表",
+      "disposition": "independent_replacement",
+      "tasks": [
+        "REP-01",
+        "REP-02",
+        "REP-03"
+      ],
+      "reason": "按零售账本实现经营报表，组织历史维度另需归属证据",
+      "refs": [
+        {
+          "path": "litellm/proxy/spend_tracking/spend_management_endpoints.py",
+          "line": 1417
+        },
+        {
+          "path": "litellm/proxy/spend_tracking/spend_management_endpoints.py",
+          "line": 1503
+        },
+        {
+          "path": "litellm/proxy/spend_tracking/spend_management_endpoints.py",
+          "line": 1810
+        },
+        {
+          "path": "litellm/proxy/spend_tracking/spend_management_endpoints.py",
+          "line": 1938
+        }
+      ]
+    },
+    {
+      "id": "B21",
+      "family": "管理审计日志写入",
+      "disposition": "independent_replacement",
+      "tasks": [
+        "AUD-01"
+      ],
+      "reason": "管理操作事件独立于推理日志和财务账本",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_helpers/audit_logs.py",
+          "line": 27
+        },
+        {
+          "path": "litellm/proxy/management_helpers/audit_logs.py",
+          "line": 216
+        }
+      ]
+    },
+    {
+      "id": "B22",
+      "family": "自定义Team元数据校验",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-01"
+      ],
+      "reason": "自有业务标签、字段校验和管理来源信息按需求补齐",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_helpers/team_metadata_validation.py",
+          "line": 105
+        }
+      ]
+    },
+    {
+      "id": "B23",
+      "family": "代理全局IP白名单",
+      "disposition": "verify_existing",
+      "tasks": [
+        "BASE-03"
+      ],
+      "reason": "先核验并复用边缘和已有响应边界，发现缺口再独立补齐，不表示已部署",
+      "refs": [
+        {
+          "path": "litellm/proxy/proxy_server.py",
+          "line": 7090
+        }
+      ]
+    },
+    {
+      "id": "B24",
+      "family": "Enforced Params强制请求参数",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-03"
+      ],
+      "reason": "服务端策略执行与失效需要独立实现",
+      "refs": [
+        {
+          "path": "litellm/proxy/proxy_server.py",
+          "line": 7145
+        },
+        {
+          "path": "litellm/proxy/litellm_pre_call_utils.py",
+          "line": 3072
+        }
+      ]
+    },
+    {
+      "id": "B25",
+      "family": "自定义Public/Admin-only路由清单",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-03"
+      ],
+      "reason": "服务端策略执行与失效需要独立实现",
+      "refs": [
+        {
+          "path": "litellm/proxy/auth/auth_utils.py",
+          "line": 756
+        },
+        {
+          "path": "litellm/proxy/auth/route_checks.py",
+          "line": 415
+        }
+      ]
+    },
+    {
+      "id": "B26",
+      "family": "全局allowed_routes",
+      "disposition": "no_replacement",
+      "tasks": [
+        "BASE-01"
+      ],
+      "reason": "当前仅提示但仍执行，验证现有行为，不误列硬禁用",
+      "refs": [
+        {
+          "path": "litellm/proxy/auth/auth_utils.py",
+          "line": 716
+        }
+      ]
+    },
+    {
+      "id": "B27",
+      "family": "请求/响应/转录文件大小限制",
+      "disposition": "verify_existing",
+      "tasks": [
+        "BASE-03"
+      ],
+      "reason": "先核验并复用边缘和已有响应边界，发现缺口再独立补齐，不表示已部署",
+      "refs": [
+        {
+          "path": "litellm/proxy/auth/auth_utils.py",
+          "line": 971
+        },
+        {
+          "path": "litellm/proxy/auth/auth_utils.py",
+          "line": 1032
+        },
+        {
+          "path": "litellm/proxy/common_utils/http_parsing_utils.py",
+          "line": 491
+        },
+        {
+          "path": "litellm/proxy/proxy_server.py",
+          "line": 20808
+        }
+      ]
+    },
+    {
+      "id": "B28",
+      "family": "特定Enterprise护栏插件",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-03"
+      ],
+      "reason": "按真实防护需求和独立集成实现，不复制商业插件",
+      "refs": [
+        {
+          "path": "litellm/proxy/common_utils/callback_utils.py",
+          "line": 201
+        },
+        {
+          "path": "litellm/proxy/common_utils/callback_utils.py",
+          "line": 218
+        },
+        {
+          "path": "litellm/proxy/common_utils/callback_utils.py",
+          "line": 233
+        },
+        {
+          "path": "litellm/proxy/common_utils/callback_utils.py",
+          "line": 268
+        },
+        {
+          "path": "litellm/proxy/common_utils/callback_utils.py",
+          "line": 284
+        },
+        {
+          "path": "litellm/proxy/common_utils/callback_utils.py",
+          "line": 297
+        },
+        {
+          "path": "litellm/proxy/common_utils/callback_utils.py",
+          "line": 312
+        },
+        {
+          "path": "litellm/proxy/guardrails/guardrail_initializers.py",
+          "line": 198
+        }
+      ]
+    },
+    {
+      "id": "B29",
+      "family": "按Tag选择护栏执行模式",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-03"
+      ],
+      "reason": "服务端策略执行与失效需要独立实现",
+      "refs": [
+        {
+          "path": "litellm/integrations/custom_guardrail.py",
+          "line": 1199
+        },
+        {
+          "path": "litellm/integrations/custom_guardrail.py",
+          "line": 1228
+        }
+      ]
+    },
+    {
+      "id": "B30",
+      "family": "请求内动态护栏extra_body",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-03"
+      ],
+      "reason": "服务端策略执行与失效需要独立实现",
+      "refs": [
+        {
+          "path": "litellm/integrations/custom_guardrail.py",
+          "line": 1294
+        },
+        {
+          "path": "litellm/integrations/custom_guardrail.py",
+          "line": 1314
+        }
+      ]
+    },
+    {
+      "id": "B31",
+      "family": "Key/Team/Project绑定护栏和Policies",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-03"
+      ],
+      "reason": "服务端策略执行与失效需要独立实现",
+      "refs": [
+        {
+          "path": "litellm/proxy/litellm_pre_call_utils.py",
+          "line": 3125
+        },
+        {
+          "path": "litellm/proxy/litellm_pre_call_utils.py",
+          "line": 3131
+        },
+        {
+          "path": "litellm/proxy/litellm_pre_call_utils.py",
+          "line": 3182
+        }
+      ]
+    },
+    {
+      "id": "B32",
+      "family": "动态禁用日志回调",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-04"
+      ],
+      "reason": "异步日志及通知按目的地和字段核验，不整体重建所有日志",
+      "refs": [
+        {
+          "path": "litellm/proxy/litellm_pre_call_utils.py",
+          "line": 1128
+        },
+        {
+          "path": "litellm/litellm_core_utils/litellm_logging.py",
+          "line": 243
+        },
+        {
+          "path": "litellm/litellm_core_utils/litellm_logging.py",
+          "line": 2361
+        }
+      ]
+    },
+    {
+      "id": "B33",
+      "family": "Azure Blob/GCS Bucket/GCS PubSub日志",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-04"
+      ],
+      "reason": "异步日志及通知按目的地和字段核验，不整体重建所有日志",
+      "refs": [
+        {
+          "path": "litellm/integrations/azure_storage/azure_storage.py",
+          "line": 336
+        },
+        {
+          "path": "litellm/integrations/gcs_bucket/gcs_bucket.py",
+          "line": 48
+        },
+        {
+          "path": "litellm/integrations/gcs_bucket/gcs_bucket.py",
+          "line": 58
+        },
+        {
+          "path": "litellm/integrations/gcs_pubsub/pub_sub.py",
+          "line": 49
+        },
+        {
+          "path": "litellm/integrations/gcs_pubsub/pub_sub.py",
+          "line": 112
+        }
+      ]
+    },
+    {
+      "id": "B34",
+      "family": "部分Secret Manager后端",
+      "disposition": "deferred",
+      "tasks": [
+        "ID-SECRET"
+      ],
+      "reason": "按实际企业供应方需求接入",
+      "refs": [
+        {
+          "path": "litellm/secret_managers/hashicorp_secret_manager.py",
+          "line": 121
+        },
+        {
+          "path": "litellm/secret_managers/cyberark_secret_manager.py",
+          "line": 61
+        },
+        {
+          "path": "litellm/secret_managers/google_secret_manager.py",
+          "line": 28
+        },
+        {
+          "path": "litellm/secret_managers/aws_secret_manager.py",
+          "line": 63
+        }
+      ]
+    },
+    {
+      "id": "B35",
+      "family": "自定义告警邮件品牌及V2邮件/PagerDuty",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-04"
+      ],
+      "reason": "异步日志及通知按目的地和字段核验，不整体重建所有日志",
+      "refs": [
+        {
+          "path": "litellm/integrations/SlackAlerting/slack_alerting.py",
+          "line": 1236
+        },
+        {
+          "path": "litellm/litellm_core_utils/litellm_logging.py",
+          "line": 272
+        },
+        {
+          "path": "litellm/litellm_core_utils/custom_logger_registry.py",
+          "line": 125
+        },
+        {
+          "path": "litellm/proxy/hooks/user_management_event_hooks.py",
+          "line": 130
+        }
+      ]
+    },
+    {
+      "id": "B36",
+      "family": "Swagger文档品牌/过滤",
+      "disposition": "verify_existing",
+      "tasks": [
+        "BASE-01"
+      ],
+      "reason": "已有自有官网与 Developers；原生 Swagger 品牌/过滤不承诺等价",
+      "refs": [
+        {
+          "path": "litellm/proxy/proxy_server.py",
+          "line": 1129
+        },
+        {
+          "path": "litellm/proxy/proxy_server.py",
+          "line": 1137
+        },
+        {
+          "path": "litellm/proxy/proxy_server.py",
+          "line": 2073
+        },
+        {
+          "path": "litellm/proxy/public_endpoints/public_endpoints.py",
+          "line": 372
+        }
+      ]
+    },
+    {
+      "id": "B37",
+      "family": "多网关Worker Registry控制面",
+      "disposition": "deferred",
+      "tasks": [
+        "SPEC-ROUTE"
+      ],
+      "reason": "基础路由和多 worker 可用，高级分类器/注册控制面后置",
+      "refs": [
+        {
+          "path": "litellm/proxy/proxy_server.py",
+          "line": 7354
+        }
+      ]
+    },
+    {
+      "id": "B38",
+      "family": "Projects UI可用性扩展",
+      "disposition": "deferred",
+      "tasks": [
+        "SPEC-BYOK"
+      ],
+      "reason": "私有部署及项目权限按专项范围实现",
+      "refs": [
+        {
+          "path": "litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py",
+          "line": 449
+        },
+        {
+          "path": "litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py",
+          "line": 465
+        },
+        {
+          "path": "litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py",
+          "line": 1945
+        }
+      ]
+    },
+    {
+      "id": "B39",
+      "family": "Auto Router高级分类器/定制额度",
+      "disposition": "deferred",
+      "tasks": [
+        "SPEC-ROUTE"
+      ],
+      "reason": "基础路由和多 worker 可用，高级分类器/注册控制面后置",
+      "refs": [
+        {
+          "path": "litellm/proxy/auth/litellm_license.py",
+          "line": 174
+        },
+        {
+          "path": "litellm/router_utils/auto_router_model_naming.py",
+          "line": 256
+        },
+        {
+          "path": "litellm/router_utils/auto_router_model_naming.py",
+          "line": 268
+        },
+        {
+          "path": "litellm/router_utils/auto_router_model_naming.py",
+          "line": 276
+        },
+        {
+          "path": "litellm/router_utils/auto_router_model_naming.py",
+          "line": 292
+        },
+        {
+          "path": "litellm/proxy/management_endpoints/model_management_endpoints.py",
+          "line": 609
+        },
+        {
+          "path": "litellm/proxy/proxy_server.py",
+          "line": 7169
+        }
+      ]
+    },
+    {
+      "id": "B40",
+      "family": "普通团队成员自主管理Auto Router",
+      "disposition": "deferred",
+      "tasks": [
+        "SPEC-ROUTE"
+      ],
+      "reason": "基础路由和多 worker 可用，高级分类器/注册控制面后置",
+      "refs": [
+        {
+          "path": "litellm/proxy/management_helpers/auto_router_permissions.py",
+          "line": 115
+        }
+      ]
+    },
+    {
+      "id": "B41",
+      "family": "签名许可用户/团队席位上限",
+      "disposition": "no_replacement",
+      "tasks": [],
+      "reason": "席位许可、商业扩展边界与厂商遥测不作为自有业务功能复刻",
+      "refs": [
+        {
+          "path": "litellm/proxy/auth/litellm_license.py",
+          "line": 135
+        },
+        {
+          "path": "litellm/proxy/auth/litellm_license.py",
+          "line": 147
+        },
+        {
+          "path": "litellm/proxy/management_endpoints/internal_user_endpoints.py",
+          "line": 577
+        },
+        {
+          "path": "litellm/proxy/management_helpers/bulk_user_creation.py",
+          "line": 795
+        },
+        {
+          "path": "litellm/proxy/management_endpoints/team_endpoints.py",
+          "line": 1517
+        }
+      ]
+    },
+    {
+      "id": "B42",
+      "family": "模型创建/修改者与时间元数据返回",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-01"
+      ],
+      "reason": "自有业务标签、字段校验和管理来源信息按需求补齐",
+      "refs": [
+        {
+          "path": "litellm/proxy/proxy_server.py",
+          "line": 7519
+        }
+      ]
+    },
+    {
+      "id": "B43",
+      "family": "Managed Files/Batch/后台Responses费用与对象生命周期",
+      "disposition": "deferred",
+      "tasks": [
+        "SPEC-ASYNC"
+      ],
+      "reason": "异步作业与托管对象需独立账本和最终费用生命周期",
+      "refs": [
+        {
+          "path": "litellm/proxy/proxy_server.py",
+          "line": 11241
+        },
+        {
+          "path": "litellm/proxy/proxy_server.py",
+          "line": 11272
+        },
+        {
+          "path": "litellm/proxy/response_api_endpoints/endpoints.py",
+          "line": 397
+        }
+      ]
+    },
+    {
+      "id": "B44",
+      "family": "Enterprise扩展Router/Config/Auth/Hooks",
+      "disposition": "no_replacement",
+      "tasks": [],
+      "reason": "席位许可、商业扩展边界与厂商遥测不作为自有业务功能复刻",
+      "refs": [
+        {
+          "path": "litellm/proxy/proxy_server.py",
+          "line": 1050
+        },
+        {
+          "path": "litellm/proxy/proxy_server.py",
+          "line": 7075
+        },
+        {
+          "path": "litellm/proxy/auth/route_checks.py",
+          "line": 86
+        },
+        {
+          "path": "litellm/proxy/auth/user_api_key_auth.py",
+          "line": 176
+        },
+        {
+          "path": "litellm/proxy/hooks/__init__.py",
+          "line": 69
+        }
+      ]
+    },
+    {
+      "id": "B45",
+      "family": "Enterprise计费遥测",
+      "disposition": "no_replacement",
+      "tasks": [],
+      "reason": "席位许可、商业扩展边界与厂商遥测不作为自有业务功能复刻",
+      "refs": [
+        {
+          "path": "litellm/proxy/enterprise_billing/billing_metrics.py",
+          "line": 284
+        }
+      ]
+    },
+    {
+      "id": "B46",
+      "family": "Fine-tuning Job管理",
+      "disposition": "deferred",
+      "tasks": [
+        "SPEC-ASYNC"
+      ],
+      "reason": "异步作业与托管对象需独立账本和最终费用生命周期",
+      "refs": [
+        {
+          "path": "litellm/proxy/fine_tuning_endpoints/endpoints.py",
+          "line": 113
+        },
+        {
+          "path": "litellm/proxy/fine_tuning_endpoints/endpoints.py",
+          "line": 264
+        },
+        {
+          "path": "litellm/proxy/fine_tuning_endpoints/endpoints.py",
+          "line": 418
+        },
+        {
+          "path": "litellm/proxy/fine_tuning_endpoints/endpoints.py",
+          "line": 539
+        }
+      ]
+    }
+  ],
+  "frontend_inventory": [
+    {
+      "id": "organizations",
+      "label": "Organizations 组织管理",
+      "page_or_surface": "Organizations",
+      "disposition": "independent_replacement",
+      "tasks": [
+        "ORG-03"
+      ],
+      "reason": "切到自有组织接口与作用域",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/app/(dashboard)/organizations/_components/OrganizationsPanel.tsx",
+          "line": 98
+        },
+        {
+          "path": "ui/litellm-dashboard/src/app/(dashboard)/hooks/organizations/useOrganizations.ts",
+          "line": 25
+        }
+      ],
+      "backend_evidence_ids": [
+        "B01"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "audit_logs",
+      "label": "Audit Logs 审计日志",
+      "page_or_surface": "Logs > Audit Logs",
+      "disposition": "independent_replacement",
+      "tasks": [
+        "AUD-01"
+      ],
+      "reason": "接自有审计投影与查询",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/logs/audit/AuditLogsPanel.tsx",
+          "line": 57
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/logs/audit/AuditLogsPanel.tsx",
+          "line": 101
+        }
+      ],
+      "backend_evidence_ids": [
+        "B21"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "model_max_budget",
+      "label": "用户/团队/Key 的逐模型预算",
+      "page_or_surface": "Virtual Keys; Teams; Internal Users; Bulk Edit Users",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-02"
+      ],
+      "reason": "先定义预算口径与跨 worker 一致性",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/key_team_helpers/ModelMaxBudgetEditor.tsx",
+          "line": 75
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/key_team_helpers/ModelMaxBudgetEditor.tsx",
+          "line": 126
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/organisms/create_key_button.tsx",
+          "line": 1157
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/Teams.tsx",
+          "line": 820
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/team/TeamInfo.tsx",
+          "line": 1755
+        },
+        {
+          "path": "ui/litellm-dashboard/src/app/(dashboard)/users/_components/user_edit_view.tsx",
+          "line": 374
+        },
+        {
+          "path": "ui/litellm-dashboard/src/app/(dashboard)/users/_components/BulkEditUsers.tsx",
+          "line": 376
+        }
+      ],
+      "backend_evidence_ids": [
+        "B12"
+      ],
+      "verification_state": "source_confirmed_runtime_pending",
+      "verification_note": "共享前端用于用户/团队/Key；后端本基线明确证实 Key/Team 路径，用户变体实施时单列核验"
+    },
+    {
+      "id": "team_byok_model",
+      "label": "Team-BYOK 模型与凭据仅供某团队使用",
+      "page_or_surface": "Models + Endpoints > Add Model",
+      "disposition": "deferred",
+      "tasks": [
+        "SPEC-BYOK"
+      ],
+      "reason": "私有部署专项",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/add_model/AddModelForm.tsx",
+          "line": 410
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/add_model/AddModelForm.tsx",
+          "line": 425
+        }
+      ],
+      "backend_evidence_ids": [
+        "B11"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "key_policies",
+      "label": "按 Key 绑定 Policies",
+      "page_or_surface": "Virtual Keys > Create/Edit",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-03"
+      ],
+      "reason": "逐字段和执行路径核验；不能只移除 disabled",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/organisms/create_key_button.tsx",
+          "line": 1470
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/templates/key_edit_view.tsx",
+          "line": 826
+        }
+      ],
+      "backend_evidence_ids": [
+        "B15",
+        "B31"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "key_prompts",
+      "label": "按 Key 绑定 Prompts",
+      "page_or_surface": "Virtual Keys > Create/Edit",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-03"
+      ],
+      "reason": "逐字段和执行路径核验；不能只移除 disabled",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/organisms/create_key_button.tsx",
+          "line": 1511
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/templates/key_edit_view.tsx",
+          "line": 859
+        }
+      ],
+      "backend_evidence_ids": [
+        "B15"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "key_passthrough_routes",
+      "label": "按 Key 限定透传路由",
+      "page_or_surface": "Virtual Keys > Create/Edit",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-03"
+      ],
+      "reason": "逐字段和执行路径核验；不能只移除 disabled",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/organisms/create_key_button.tsx",
+          "line": 1577
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/templates/key_edit_view.tsx",
+          "line": 911
+        }
+      ],
+      "backend_evidence_ids": [
+        "B15"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "team_passthrough_routes",
+      "label": "按团队限定透传路由",
+      "page_or_surface": "Teams > Create/Edit",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-03"
+      ],
+      "reason": "逐字段和执行路径核验；不能只移除 disabled",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/Teams.tsx",
+          "line": 1092
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/team/TeamInfo.tsx",
+          "line": 2039
+        }
+      ],
+      "backend_evidence_ids": [
+        "B15"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "passthrough_auth",
+      "label": "透传端点要求 Virtual Key 鉴权",
+      "page_or_surface": "Models + Endpoints > Pass Through",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-03"
+      ],
+      "reason": "逐字段和执行路径核验；不能只移除 disabled",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/common_components/PassThroughSecuritySection.tsx",
+          "line": 23
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/add_pass_through.tsx",
+          "line": 126
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/pass_through_info.tsx",
+          "line": 192
+        }
+      ],
+      "backend_evidence_ids": [],
+      "verification_state": "frontend_confirmed_backend_or_runtime_variant_pending",
+      "verification_note": "前端仍有门槛，后端存在已经开源的透传鉴权路径；实际版本和字段需先核验，不默认重写"
+    },
+    {
+      "id": "team_secret_manager",
+      "label": "团队级 Secret Manager 配置",
+      "page_or_surface": "Teams > Create/Edit",
+      "disposition": "deferred",
+      "tasks": [
+        "ID-SECRET"
+      ],
+      "reason": "供应方需求明确后实现",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/Teams.tsx",
+          "line": 958
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/team/TeamInfo.tsx",
+          "line": 2165
+        }
+      ],
+      "backend_evidence_ids": [
+        "B15",
+        "B34"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "team_bypass_global_guardrails",
+      "label": "团队绕过全局护栏",
+      "page_or_surface": "Teams > Create",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-03"
+      ],
+      "reason": "逐字段和执行路径核验；不能只移除 disabled",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/Teams.tsx",
+          "line": 1001
+        }
+      ],
+      "backend_evidence_ids": [
+        "B15",
+        "B31"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "key_team_logging",
+      "label": "Key/Team 独立日志配置和禁用回调",
+      "page_or_surface": "Virtual Keys; Teams",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-04"
+      ],
+      "reason": "实际后端字段和发送器需逐项核验",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/common_components/PremiumLoggingSettings.tsx",
+          "line": 20
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/organisms/create_key_button.tsx",
+          "line": 1752
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/Teams.tsx",
+          "line": 1247
+        }
+      ],
+      "backend_evidence_ids": [
+        "B15",
+        "B32"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "region_outage_alert",
+      "label": "区域故障告警",
+      "page_or_surface": "Settings > Logging & Alerts",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-04"
+      ],
+      "reason": "实际后端字段和发送器需逐项核验",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/settings.tsx",
+          "line": 630
+        }
+      ],
+      "backend_evidence_ids": [],
+      "verification_state": "frontend_confirmed_backend_or_runtime_variant_pending"
+    },
+    {
+      "id": "email_branding",
+      "label": "邮件 Logo 和支持联系人定制",
+      "page_or_surface": "Settings > Logging & Alerts > Email",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-04"
+      ],
+      "reason": "实际后端字段和发送器需逐项核验",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/email_settings.tsx",
+          "line": 31
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/email_settings.tsx",
+          "line": 113
+        }
+      ],
+      "backend_evidence_ids": [
+        "B35"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "premium_alert_fields",
+      "label": "后端标记为 premium_field 的告警参数",
+      "page_or_surface": "Settings > Logging & Alerts > Alerting Settings",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-04"
+      ],
+      "reason": "实际后端字段和发送器需逐项核验",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/alerting/dynamic_form.tsx",
+          "line": 96
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/alerting/alerting_settings.tsx",
+          "line": 113
+        }
+      ],
+      "backend_evidence_ids": [],
+      "verification_state": "frontend_confirmed_backend_or_runtime_variant_pending"
+    },
+    {
+      "id": "allowed_ips",
+      "label": "允许访问的 IP 列表管理",
+      "page_or_surface": "Settings > Admin Settings > Security",
+      "disposition": "verify_existing",
+      "tasks": [
+        "BASE-03"
+      ],
+      "reason": "边缘能力待核验，不表示本地已配置",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/app/(dashboard)/admin-panel/_components/AdminPanel.tsx",
+          "line": 109
+        }
+      ],
+      "backend_evidence_ids": [
+        "B23"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "ui_access_control",
+      "label": "管理 UI 访问控制配置",
+      "page_or_surface": "Settings > Admin Settings > Security",
+      "disposition": "deferred",
+      "tasks": [
+        "ORG-02",
+        "CTRL-03"
+      ],
+      "reason": "先核对后端行为，新的 UI 访问规则仍需服务端执行",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/app/(dashboard)/admin-panel/_components/AdminPanel.tsx",
+          "line": 258
+        }
+      ],
+      "backend_evidence_ids": [],
+      "verification_state": "frontend_confirmed_backend_or_runtime_variant_pending"
+    },
+    {
+      "id": "liteadmin",
+      "label": "LiteAdmin 自然语言管理助手",
+      "page_or_surface": "Account menu / docked assistant",
+      "disposition": "deferred",
+      "tasks": [
+        "SPEC-AGENT"
+      ],
+      "reason": "管理型代理专项",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/liteadmin/LiteAdmin.tsx",
+          "line": 33
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/SidebarAccountMenu/SidebarAccountMenu.tsx",
+          "line": 252
+        }
+      ],
+      "backend_evidence_ids": [
+        "B09",
+        "B44"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "old_usage_tag_filter",
+      "label": "旧版 Usage 的标签筛选",
+      "page_or_surface": "Experimental > Old Usage",
+      "disposition": "no_replacement",
+      "tasks": [
+        "CTRL-01",
+        "REP-01"
+      ],
+      "reason": "不重建旧页面，必要的标签汇总进入新报表",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/app/(dashboard)/old-usage/_components/usage.tsx",
+          "line": 145
+        }
+      ],
+      "backend_evidence_ids": [],
+      "verification_state": "frontend_confirmed_backend_or_runtime_variant_pending"
+    },
+    {
+      "id": "native_regenerate_key",
+      "label": "原生 Key 再生成",
+      "page_or_surface": "Virtual Keys > Detail",
+      "disposition": "verify_existing",
+      "tasks": [
+        "BASE-04"
+      ],
+      "reason": "使用现有自有轮换；Chat 页面可能需单独接线",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/templates/key_info_view.tsx",
+          "line": 117
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/templates/key_info_view.tsx",
+          "line": 610
+        }
+      ],
+      "backend_evidence_ids": [
+        "B17"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "chat_key_rotation",
+      "label": "Chat 页面 Key 轮换入口",
+      "page_or_surface": "/chat/api-keys",
+      "disposition": "verify_existing",
+      "tasks": [
+        "BASE-04"
+      ],
+      "reason": "使用现有自有轮换；Chat 页面可能需单独接线",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/chat/KeysPanel.tsx",
+          "line": 271
+        }
+      ],
+      "backend_evidence_ids": [
+        "B17"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "key_guardrail_binding",
+      "label": "按 Key 绑定护栏",
+      "page_or_surface": "Virtual Keys > Create/Edit",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-03"
+      ],
+      "reason": "逐字段和执行路径核验；不能只移除 disabled",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/organisms/create_key_button.tsx",
+          "line": 233
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/organisms/create_key_button.tsx",
+          "line": 1394
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/templates/key_edit_view.tsx",
+          "line": 111
+        },
+        {
+          "path": "ui/litellm-dashboard/src/utils/roles.ts",
+          "line": 16
+        }
+      ],
+      "backend_evidence_ids": [
+        "B31"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    },
+    {
+      "id": "key_bypass_guardrails",
+      "label": "Key 绕过全局护栏",
+      "page_or_surface": "Virtual Keys > Create/Edit",
+      "disposition": "deferred",
+      "tasks": [
+        "CTRL-03"
+      ],
+      "reason": "逐字段和执行路径核验；不能只移除 disabled",
+      "sources": [
+        {
+          "path": "ui/litellm-dashboard/src/components/organisms/create_key_button.tsx",
+          "line": 1404
+        },
+        {
+          "path": "ui/litellm-dashboard/src/components/organisms/create_key_button.tsx",
+          "line": 1424
+        }
+      ],
+      "backend_evidence_ids": [
+        "B15",
+        "B31"
+      ],
+      "verification_state": "source_confirmed_runtime_pending"
+    }
+  ],
+  "completion_rule": "Implementation, targeted validation, agreed acceptance evidence and deployment state must be recorded separately; documentation is not feature completion.",
+  "inventory_document": "enterprise-feature-inventory.md",
+  "coverage": {
+    "backend_items": 46,
+    "frontend_items": 23,
+    "enterprise_feature_families": 21
+  }
+}
