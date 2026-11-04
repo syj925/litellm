@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   all_admin_roles,
+  canListUsers,
   effectiveSessionRole,
+  internalUserRoles,
   hasProxyWideSpendView,
   isAdminRole,
   spendScopeUserId,
@@ -22,6 +24,18 @@ const orgWithMembers = (members: { user_id: string; user_role: string }[]): Orga
   ({ organization_id: "org-1", members }) as unknown as Organization;
 
 describe("roles", () => {
+  it("maps native customers to the existing app-user session without management or internal-user rights", () => {
+    const role = effectiveSessionRole("customer");
+    expect(role).toBe("App User");
+    expect(isAdminRole(role)).toBe(false);
+    expect(isProxyAdminRole(role)).toBe(false);
+    expect(isProxyAdminTierRole(role)).toBe(false);
+    expect(isOrgAdminSessionRole(role)).toBe(false);
+    expect(canListUsers(role)).toBe(false);
+    expect(internalUserRoles).not.toContain(role);
+    expect(rolesWithWriteAccess).not.toContain(role);
+    expect(rolesAllowedToViewWriteScopedPages).not.toContain(role);
+  });
   describe("isAdminRole", () => {
     it("should return true for all admin roles", () => {
       expect(isAdminRole("Admin")).toBe(true);

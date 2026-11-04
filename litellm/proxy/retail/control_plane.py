@@ -11,6 +11,7 @@ from .audit_delivery import router as audit_delivery_router
 from .audit_delivery_worker import close_audit_delivery_worker, start_audit_delivery_worker
 from .control_plane_flags import operation_audit_enabled
 from .coordination_guard import close_coordination_guard, start_coordination_guard
+from .delegated_finance import router as delegated_finance_router
 from .model_budgets import router as model_budgets_router
 from .object_metadata import router as object_metadata_router
 from .organization_finance import router as organization_finance_router
@@ -62,3 +63,4 @@ router.include_router(model_budgets_router)
 router.include_router(audit_delivery_router)
 router.include_router(organization_finance_router)
 router.include_router(organization_reports_router)
+router.include_router(delegated_finance_router)

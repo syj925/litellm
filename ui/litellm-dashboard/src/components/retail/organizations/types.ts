@@ -13,6 +13,7 @@ export interface RetailOrganization {
 }
 
 export interface RetailOrganizationMember {
+  has_finance_grant?: boolean;
   user_id: string;
   role: "admin" | "member";
   enabled: boolean;

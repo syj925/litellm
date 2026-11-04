@@ -122,6 +122,34 @@ async def test_reset_required_target_cannot_be_associated() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("role", ("internal_user", "proxy_admin", "internal_user_viewer", "proxy_admin_viewer"))
+async def test_writable_grant_target_check_preserves_readonly_association_behavior(role: str) -> None:
+    reader: Final = Identity(NativeUserState(user_id="user", user_role=role), None)
+    assert await verify_target_user("user", reader=reader) is None
+    if role.endswith("_viewer"):
+        with pytest.raises(HTTPException) as denied:
+            await verify_target_user("user", reader=reader, writable=True)
+        assert denied.value.status_code == 404
+    else:
+        assert await verify_target_user("user", reader=reader, writable=True) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", (LitellmUserRoles.ORG_ADMIN, LitellmUserRoles.TEAM))
+async def test_optional_role_scope_rejects_unsupported_grants_without_restricting_existing_targets(
+    role: LitellmUserRoles,
+) -> None:
+    reader: Final = Identity(NativeUserState(user_id="user", user_role=role.value), None)
+    assert await verify_target_user("user", reader=reader, writable=True) is None
+    with pytest.raises(HTTPException) as denied:
+        await verify_target_user(
+            "user", reader=reader, writable=True,
+            allowed_roles=frozenset((LitellmUserRoles.INTERNAL_USER.value,)),
+        )
+    assert denied.value.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_fresh_allowed_routes_revoke_an_existing_session_route() -> None:
     reader: Final = Identity(
         NativeUserState(user_id="user", user_role="internal_user"),

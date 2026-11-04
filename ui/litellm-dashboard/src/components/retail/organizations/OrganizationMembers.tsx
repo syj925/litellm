@@ -3,6 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Users } from "lucide-react";
 import { useId, useRef, useState, type FormEvent } from "react";
+import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
+import { canUseAdminControlPlane } from "@/utils/dashboardAccess";
 import { Alert, AlertDescription, AlertTitle } from "@/components/shared/Alert";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { StateMessage } from "@/components/shared/StateMessage";
@@ -31,6 +33,8 @@ import {
   type IdempotencyAttempt,
 } from "../management/ManagementShared";
 import type { OrganizationMemberResult, RetailOrganization, RetailOrganizationMember } from "./types";
+import FinanceGrantDialog from "../organization-finance/delegated/FinanceGrantDialog";
+import { useDelegationConfiguration } from "../organization-finance/delegated/DelegatedShared";
 
 type MembersResponse = PageResult<RetailOrganizationMember> & { organization: RetailOrganization };
 
@@ -175,8 +179,12 @@ export default function OrganizationMembers({
   onOrganizationChange: (organization: RetailOrganization) => void;
 }) {
   const client = useQueryClient();
+  const { userRole, isViewOnly } = useAuthorized();
+  const delegation = useDelegationConfiguration(canUseAdminControlPlane({ userRole, isViewOnly }));
+  const canManageFinance = canUseAdminControlPlane({ userRole, isViewOnly }) && delegation.enabled;
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<{ member: RetailOrganizationMember | null } | null>(null);
+  const [financeMember, setFinanceMember] = useState<RetailOrganizationMember | null>(null);
   const members = useQuery({
     queryKey: ["retail", "organization-members", actorId, organization.id, page],
     queryFn: ({ signal }) =>
@@ -193,6 +201,10 @@ export default function OrganizationMembers({
   const current = members.data?.organization ?? organization;
   const mayEditMember = (member: RetailOrganizationMember) =>
     current.can_manage_members && (current.can_associate_members || member.role === "member");
+  const mayManageFinance = (member: RetailOrganizationMember) =>
+    canManageFinance && (member.role === "admin" || member.has_finance_grant);
+  const editorOpen = Boolean(editing) || Boolean(financeMember);
+  const showFinance = !members.error && canManageFinance;
   const saved = (updated: RetailOrganization) => {
     setEditing(null);
     onOrganizationChange(updated);
@@ -202,7 +214,7 @@ export default function OrganizationMembers({
   };
   return (
     <>
-      <Dialog open onOpenChange={(open) => !open && !editing && onClose()}>
+      <Dialog open onOpenChange={(open) => !open && !editorOpen && onClose()}>
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{members.error ? "Organization members" : `${current.name} members`}</DialogTitle>
@@ -260,6 +272,17 @@ export default function OrganizationMembers({
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
+                            {mayManageFinance(member) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="mr-2"
+                                aria-label={`Finance access for ${member.user_id}`}
+                                onClick={() => setFinanceMember(member)}
+                              >
+                                Finance access
+                              </Button>
+                            )}
                             {mayEditMember(member) && (
                               <Button
                                 variant="outline"
@@ -302,6 +325,17 @@ export default function OrganizationMembers({
           member={editing.member}
           onClose={() => setEditing(null)}
           onSaved={saved}
+        />
+      )}
+      {financeMember && showFinance && (
+        <FinanceGrantDialog
+          organization={current}
+          member={members.data?.items.find((member) => member.user_id === financeMember.user_id) ?? financeMember}
+          onClose={() => setFinanceMember(null)}
+          onSaved={() => {
+            void client.invalidateQueries({ queryKey: ["retail", "organization-members"] });
+            void client.invalidateQueries({ queryKey: ["retail", "operation-events"] });
+          }}
         />
       )}
     </>

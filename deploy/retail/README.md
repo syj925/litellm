@@ -12,6 +12,8 @@
 
 [固定组织消费 CSV](organization-reports.md) 说明冻结投影、持久任务、合并容量、逐次认证下载与回滚
 
+[显式委派组织财务](delegated-finance.md) 说明按组织 admin 成员批准的 View/export、历史范围、安全投影、授权代际失效及独立门户
+
 [操作审计异步外投递](audit-delivery.md) 说明服务器预设目标、签名、队列上限、重试、丢弃、配置变化与脱敏范围
 
 [首批本地验收记录](validation/r1-2026-11-03.md) 保存已验证功能、662 项定向测试、真实双 worker 故障结果及尚未覆盖的边界

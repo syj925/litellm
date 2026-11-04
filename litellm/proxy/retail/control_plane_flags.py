@@ -33,3 +33,11 @@ def audit_delivery_enabled() -> bool:
 
 def organization_finance_enabled() -> bool:
     return organizations_enabled() and os.environ.get("RETAIL_ORG_FINANCE_ENABLED", "false").lower() == "true"
+
+
+def organization_finance_delegation_enabled() -> bool:
+    return (
+        organization_finance_enabled()
+        and organization_delegation_enabled()
+        and os.environ.get("RETAIL_ORG_FINANCE_DELEGATION_ENABLED", "false").lower() == "true"
+    )

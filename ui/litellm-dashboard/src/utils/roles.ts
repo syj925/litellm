@@ -94,6 +94,7 @@ export const formatUserRole = (userRole: string): string => {
     case "internal_user_viewer":
     case "internal_viewer": // TODO:remove if deprecated
       return "Internal Viewer";
+    case "customer":
     case "app_user":
       return "App User";
     default:

@@ -115,6 +115,7 @@ export interface RetailConfig {
   model_budgets_enabled?: boolean;
   audit_delivery_enabled?: boolean;
   org_finance_enabled?: boolean;
+  org_finance_delegation_enabled?: boolean;
 }
 
 export class RetailRequestError extends Error {

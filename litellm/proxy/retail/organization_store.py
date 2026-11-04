@@ -91,6 +91,10 @@ class _OrganizationMembership(MembershipRow):
     organization_id: str
 
 
+class _MemberFinanceGrant(MembershipRow):
+    has_finance_grant: bool
+
+
 class _Count(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -99,7 +103,8 @@ class _Count(BaseModel):
 
 async def initialize_schema(connection: psycopg.AsyncConnection) -> None:
     await connection.execute(
-        Path(__file__).with_name("organization_schema.sql").read_text(encoding="utf-8"), prepare=False
+        "\n".join(Path(__file__).with_name(name).read_text(encoding="utf-8")
+                  for name in ("organization_schema.sql", "finance_grants_schema.sql")), prepare=False
     )
 
 
@@ -319,12 +324,17 @@ class OrganizationStore:
                 (organization_id,),
                 _Count,
             )
+            projection: Final = (
+                ",EXISTS(SELECT 1 FROM retail_organization_finance_grants g "
+                "WHERE g.organization_id=m.organization_id AND g.user_id=m.user_id) AS has_finance_grant"
+            ) if actor.is_admin else ""
+            row_type: Final[type[MembershipRow]] = _MemberFinanceGrant if actor.is_admin else MembershipRow
             rows: Final = await _many(
                 connection,
-                """SELECT user_id,role,enabled,version,created_at,updated_at FROM retail_organization_memberships
-                WHERE organization_id=%s ORDER BY created_at,user_id LIMIT %s OFFSET %s""",
+                "SELECT user_id,role,enabled,version,created_at,updated_at"+projection+
+                " FROM retail_organization_memberships m WHERE organization_id=%s ORDER BY created_at,user_id LIMIT %s OFFSET %s",
                 (organization_id, limit, offset),
-                MembershipRow,
+                row_type,
             )
             return {
                 "items": [row.model_dump(mode="json") for row in rows],

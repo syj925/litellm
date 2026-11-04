@@ -128,9 +128,17 @@ def _active_user(user: NativeUserState | None) -> bool:
     return bool(user and user.user_role in _ALLOWED_ROLES and user.password_reset_required is not True)
 
 
-async def verify_target_user(user_id: str, *, reader: NativeIdentityReader | None = None) -> None:
+async def verify_target_user(
+    user_id: str, *, reader: NativeIdentityReader | None = None, writable: bool = False,
+    allowed_roles: frozenset[str] | None = None,
+) -> None:
     source: Final = reader if reader is not None else native_identity_reader()
-    if not _active_user(await _read_user(source, user_id)):
+    user: Final = await _read_user(source, user_id)
+    if (
+        not _active_user(user)
+        or (writable and user is not None and user.user_role in _READ_ONLY_ROLES)
+        or (allowed_roles is not None and user is not None and user.user_role not in allowed_roles)
+    ):
         raise HTTPException(404, "The requested account is unavailable")
 
 

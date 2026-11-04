@@ -32,6 +32,13 @@ from litellm.proxy.pass_through_endpoints.llm_passthrough_endpoints import route
         ("GET", "/retail/organizations/org-a/operation-events"),
         ("POST", "/retail/organizations/org-a/members"),
         ("PATCH", "/retail/organizations/org-a/members/member-b"),
+        ("GET", "/retail/organization-finance/organizations"),
+        ("GET", "/retail/organizations/org-a/finance/access"),
+        ("GET", "/retail/organizations/org-a/finance/consumption"),
+        ("POST", "/retail/organizations/org-a/finance/reports"),
+        ("GET", "/retail/organizations/org-a/finance/reports"),
+        ("GET", "/retail/organizations/org-a/finance/reports/report-a"),
+        ("GET", "/retail/organizations/org-a/finance/reports/report-a/download"),
     ),
 )
 def test_retail_organization_dashboard_requests_reach_fresh_backend_acl_without_readonly_writes(
@@ -62,6 +69,9 @@ def test_retail_organization_dashboard_requests_reach_fresh_backend_acl_without_
         "/retail/admin/organizations/org-a/consumption",
         "/retail/admin/users/member/billing-organization",
         "/retail/admin/users/member/billing-organization/organizations",
+        "/retail/admin/organizations/org-a/finance-grants/member",
+        "/retail/organizations/org-a/finance/reports/report-a/raw",
+        "/retail/organization-finance/organizations/org-a",
     ),
 )
 def test_retail_organization_read_carveout_does_not_grant_other_paths_or_admin_finances(
@@ -82,6 +92,10 @@ def test_retail_organization_read_carveout_does_not_grant_other_paths_or_admin_f
         ("POST", "/retail/organizations/org-a/operation-events"),
         ("PUT", "/retail/organizations/org-a/members"),
         ("GET", "/retail/organizations/org-a/members/member-b"),
+        ("PATCH", "/retail/organizations/org-a/finance/access"),
+        ("POST", "/retail/organizations/org-a/finance/consumption"),
+        ("DELETE", "/retail/organizations/org-a/finance/reports/report-a"),
+        ("POST", "/retail/organizations/org-a/finance/reports/report-a/download"),
     ),
 )
 def test_retail_organization_carveout_does_not_grant_other_methods(method: str, route: str) -> None:
@@ -95,11 +109,15 @@ def test_retail_organization_carveout_does_not_grant_other_methods(method: str, 
 
 @pytest.mark.parametrize("allowed_routes", ((), ("*",), ("management_routes",)))
 @pytest.mark.parametrize("method", ("GET", "POST", "PATCH"))
+@pytest.mark.parametrize(
+    "route",
+    ("/retail/organizations/org-a/members", "/retail/organization-finance/organizations",
+     "/retail/organizations/org-a/finance/consumption", "/retail/organizations/org-a/finance/reports"),
+)
 def test_retail_organization_routes_are_not_a_customer_inference_key_grant(
-    allowed_routes: tuple[str, ...], method: str, monkeypatch: pytest.MonkeyPatch,
+    allowed_routes: tuple[str, ...], method: str, route: str, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
-    route: Final = "/retail/organizations/org-a/members"
     request: Final = Request({"type": "http", "method": method, "path": route, "headers": []})
     key: Final = UserAPIKeyAuth(
         user_id="member", user_role=LitellmUserRoles.INTERNAL_USER, allowed_routes=list(allowed_routes),

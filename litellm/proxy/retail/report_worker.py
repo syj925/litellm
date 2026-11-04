@@ -4,7 +4,12 @@ from uuid import uuid4
 
 from litellm._logging import verbose_proxy_logger
 
-from .control_plane_flags import organization_finance_enabled, report_export_enabled
+from .control_plane_flags import (
+    organization_finance_delegation_enabled,
+    organization_finance_enabled,
+    report_export_enabled,
+)
+from .delegated_report_store import DelegatedReportStore
 from .organization_report_store import OrganizationReportStore
 from .report_store import ReportError, ReportStore, get_report_store
 from .store import WalletStore
@@ -14,7 +19,8 @@ class ReportWorker:
     def __init__(self, store: ReportStore) -> None:
         self.store = store
         self.organization_store = OrganizationReportStore(store)
-        self._organizations_first = False
+        self.delegated_store = DelegatedReportStore(store)
+        self._next_queue = 0
         self.owner = str(uuid4())
         self._closing = False
         self._wake = asyncio.Event()
@@ -31,10 +37,14 @@ class ReportWorker:
             return 0
         await self.store.expire()
         await self.organization_store.expire()
-        selected: Final[tuple[ReportStore | OrganizationReportStore, ...]] = (
-            (self.organization_store, self.store) if self._organizations_first else (self.store, self.organization_store)
-        ) if organization_finance_enabled() else (self.store,)
-        self._organizations_first = not self._organizations_first
+        await self.delegated_store.expire()
+        sources: Final[tuple[ReportStore | OrganizationReportStore | DelegatedReportStore, ...]] = (
+            self.store,
+            *((self.organization_store,) if organization_finance_enabled() else ()),
+            *((self.delegated_store,) if organization_finance_delegation_enabled() else ()),
+        )
+        selected: Final = sources[self._next_queue:] + sources[:self._next_queue]
+        self._next_queue = (self._next_queue + 1) % len(sources)
         for storage in selected:
             claim: Final = await storage.claim(self.owner)
             if claim is None:
@@ -71,7 +81,7 @@ class ReportWorker:
             except TimeoutError:
                 self._task.cancel()
                 await asyncio.gather(self._task, return_exceptions=True)
-        for storage in (self.store, self.organization_store):
+        for storage in (self.store, self.organization_store, self.delegated_store):
             try:
                 await storage.release_claims(self.owner)
             except Exception as exc:  # noqa: BLE001  # expired leases recover independently of optional shutdown

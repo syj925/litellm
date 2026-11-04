@@ -32,6 +32,7 @@ import OrganizationEditor from "./OrganizationEditor";
 import OrganizationMembers from "./OrganizationMembers";
 import type { RetailOrganization } from "./types";
 import { organizationFinanceEnabled, useOrganizationFinanceConfiguration } from "../organization-finance/FinanceShared";
+import { DirectoryFinanceNotice, useDirectoryFinance } from "../organization-finance/delegated/DelegatedShared";
 
 const organizationParsers = { q: managementTextParser, page: managementPageParser };
 
@@ -45,12 +46,14 @@ function OrganizationRow({
   organization,
   admin,
   financeEnabled,
+  delegatedFinance,
   onMembers,
   onEdit,
 }: {
   organization: RetailOrganization;
   admin: boolean;
   financeEnabled: boolean;
+  delegatedFinance: boolean;
   onMembers: (organization: RetailOrganization) => void;
   onEdit: (organization: RetailOrganization) => void;
 }) {
@@ -72,6 +75,14 @@ function OrganizationRow({
       <TableCell className="text-xs text-muted-foreground">{managementTimestamp(organization.updated_at)}</TableCell>
       <TableCell className="pr-5">
         <div className="flex flex-wrap justify-end gap-2">
+          {!admin && delegatedFinance && (
+            <Link
+              className="inline-flex h-8 items-center rounded-md border px-3 text-sm hover:bg-muted"
+              href={`${uiHref("organization-finance")}?organization=${encodeURIComponent(organization.id)}`}
+            >
+              Finance
+            </Link>
+          )}
           {admin && financeEnabled && (
             <Link
               className="inline-flex h-8 items-center rounded-md border px-3 text-sm hover:bg-muted"
@@ -140,6 +151,11 @@ function OrganizationsWorkspace() {
     retry: false,
   };
   const organizations = useQuery(organizationOptions);
+  const delegated = useDirectoryFinance(organizations.data?.items, organizations.error, admin);
+  const refresh = () => {
+    void organizations.refetch();
+    delegated.refresh();
+  };
   const mayCreate = admin && organizations.data && !organizations.error;
   const showEditor = !organizations.error ? editing : null;
   const showMembers = !organizations.error ? members : null;
@@ -158,7 +174,7 @@ function OrganizationsWorkspace() {
           </PageHeaderDescription>
         </PageHeader>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => void organizations.refetch()} disabled={organizations.isFetching}>
+          <Button variant="outline" onClick={refresh} disabled={organizations.isFetching}>
             <RefreshCw />
             Refresh
           </Button>
@@ -170,6 +186,7 @@ function OrganizationsWorkspace() {
           )}
         </div>
       </div>
+      <DirectoryFinanceNotice error={delegated.error} />
       <div className="rounded-lg border bg-muted/20 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
         Organization roles manage membership inside their own organization. Personal wallets, API keys, and
         resource-pool permissions keep their existing account scope.
@@ -225,6 +242,7 @@ function OrganizationsWorkspace() {
                       organization={organization}
                       admin={admin}
                       financeEnabled={financeEnabled}
+                      delegatedFinance={organization.member_role === "admin" && delegated.ids.has(organization.id)}
                       onMembers={setMembers}
                       onEdit={(organization) => setEditing({ organization })}
                     />

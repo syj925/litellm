@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canAccessDashboardRoute, canUseAdminControlPlane, type DashboardAccessContext } from "./dashboardAccess";
+import { effectiveSessionRole } from "./roles";
 
 const customer: DashboardAccessContext = {
   userRole: "Internal User",
@@ -9,6 +10,23 @@ const customer: DashboardAccessContext = {
 };
 
 describe("dashboard role boundaries", () => {
+  it("keeps a native customer on ordinary portal routes after session role normalization", () => {
+    const context = { ...customer, userRole: effectiveSessionRole("customer") };
+    expect(canAccessDashboardRoute("organization-finance", context)).toBe(true);
+    expect(canAccessDashboardRoute("wallet", context)).toBe(true);
+    expect(canUseAdminControlPlane(context)).toBe(false);
+    for (const page of [
+      "wallet-admin",
+      "model-pricing",
+      "models-and-endpoints",
+      "organization-consumption",
+      "users",
+      "teams",
+      "admin-panel",
+    ]) {
+      expect(canAccessDashboardRoute(page, context)).toBe(false);
+    }
+  });
   it.each([
     "",
     "home",
@@ -113,4 +131,21 @@ describe("dashboard role boundaries", () => {
     expect(canAccessDashboardRoute("home", { ...customer, userRole: "" })).toBe(false);
     expect(canAccessDashboardRoute("channels", { ...customer, userRole: "Unknown Role" })).toBe(false);
   });
+  it.each(["Internal User", "Org Admin", "Admin"])(
+    "allows the delegated finance shell to writable %s without opening admin consumption",
+    (userRole) => {
+      expect(canAccessDashboardRoute("organization-finance", { ...customer, userRole })).toBe(true);
+      if (userRole !== "Admin")
+        expect(canAccessDashboardRoute("organization-consumption", { ...customer, userRole })).toBe(false);
+    },
+  );
+  it.each(["proxy_admin_viewer", "internal_user_viewer"])(
+    "blocks the delegated finance shell for readonly %s",
+    (userRole) => {
+      expect(canAccessDashboardRoute("organization-finance", { ...customer, userRole })).toBe(false);
+      expect(
+        canAccessDashboardRoute("organization-finance", { ...customer, userRole: "Admin", isViewOnly: true }),
+      ).toBe(false);
+    },
+  );
 });

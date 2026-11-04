@@ -77,6 +77,13 @@ _RETAIL_ORGANIZATION_METHOD_ROUTES: Final = (
     ("GET", "/retail/organizations/{organization_id}/operation-events"),
     ("POST", "/retail/organizations/{organization_id}/members"),
     ("PATCH", "/retail/organizations/{organization_id}/members/{user_id}"),
+    ("GET", "/retail/organization-finance/organizations"),
+    ("GET", "/retail/organizations/{organization_id}/finance/access"),
+    ("GET", "/retail/organizations/{organization_id}/finance/consumption"),
+    ("POST", "/retail/organizations/{organization_id}/finance/reports"),
+    ("GET", "/retail/organizations/{organization_id}/finance/reports"),
+    ("GET", "/retail/organizations/{organization_id}/finance/reports/{report_id}"),
+    ("GET", "/retail/organizations/{organization_id}/finance/reports/{report_id}/download"),
 )
 
 
@@ -439,6 +446,8 @@ class RouteChecks:
 
     @staticmethod
     def _is_retail_organization_route(route: str, request: Request) -> bool:
+        if not route.startswith("/retail/"):
+            return False
         method: Final = RouteChecks.get_request_method(request)
         return any(
             method == allowed_method and RouteChecks._route_matches_pattern(route, pattern)

@@ -30,6 +30,7 @@ const customerPages = new Set([
   "billing",
   "reports",
   "organizations",
+  "organization-finance",
   "operation-audit",
   "model-catalog",
   "api-reference",
@@ -80,7 +81,8 @@ export function canAccessDashboardRoute(route: string, context: DashboardAccessC
   const page = route || "home";
   if (page === "moyai") return canUseAdminControlPlane(context);
   const viewOnly = context.isViewOnly || roleKey(context.userRole).endsWith("viewer");
-  if (viewOnly && (page === "playground" || retailAdminPages.has(page))) return false;
+  const blockedViewerPage = page === "playground" || page === "organization-finance" || retailAdminPages.has(page);
+  if (viewOnly && blockedViewerPage) return false;
   if (isProxyDashboardRole(context.userRole)) return true;
   const orgAdmin = context.isOrgAdmin || roleKey(context.userRole) === "org_admin";
   if (!customerRoles.has(roleKey(context.userRole)) && !orgAdmin) return false;

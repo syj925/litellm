@@ -57,10 +57,11 @@ BEGIN
     IF NEW.action NOT IN ('organization.created','organization.updated','organization.member_associated',
         'organization.member_updated','report.created','report.completed','report.failed','object_metadata.updated',
         'model_budget.created','model_budget.updated','model_budget.scheduled','billing_organization.updated',
-        'organization_report.created','organization_report.completed','organization_report.failed')
+        'organization_report.created','organization_report.completed','organization_report.failed',
+        'finance_grant.updated','delegated_report.created','delegated_report.completed','delegated_report.failed')
       OR NEW.resource_type NOT IN
         ('organization','organization_member','report','object_metadata','model_budget','billing_organization',
-         'organization_report')
+         'organization_report','finance_grant','delegated_report')
       OR NEW.id !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN
         RETURN NEW;
     END IF;

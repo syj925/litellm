@@ -253,7 +253,10 @@
         "AC06",
         "AC07",
         "无证据旧流水保持未归属",
-        "快照写入不新增逐请求远程查询"
+        "快照写入不新增逐请求远程查询",
+        "组织 admin 财务 View/export 由全站可写管理员逐成员显式批准，普通成员不自动获得",
+        "委派 live/CSV 使用安全投影，旧 grant epoch 任务不因重新授权恢复",
+        "委派任务独立队列与既有两类报表合计连接、槽位及全局配额；共享钱包仍未实现"
       ],
       "implementation_commit": "687321150dc480c8df9d4abdd5a6a4a5e7e45f74",
       "validation_evidence": [
@@ -262,10 +265,11 @@
         "organization-consumption.md",
         "validation/r7-2026-11-04.json",
         "validation/r7-2026-11-04.md",
-        "organization-reports.md"
+        "organization-reports.md",
+        "delegated-finance.md"
       ],
       "deployment_status": "local_active_not_production",
-      "implementation_notes": "显式账号组织选择、不可变接纳归属、管理员实时概览和固定CSV持久任务已在本地验证；固定投影跨晚结算/重试/重启不重算，逐次认证与Range下载；个人钱包仍权威，无历史推断回填；委派财务、共享钱包仍未实现",
+      "implementation_notes": "显式账号组织选择、不可变接纳归属、管理员实时概览和固定CSV持久任务已在本地验证；新增逐成员显式View/可选export的委派财务独立门户与安全投影，旧授权任务及操作键不因重新授权复活，三类报表合计资源和额度；R8最终验收由独立记录给出；个人钱包仍权威，无历史推断回填；共享钱包仍未实现",
       "latest_validation_commit": "b5abd8f5fac3257532d6eab96025fd8142af3f29"
     },
     {

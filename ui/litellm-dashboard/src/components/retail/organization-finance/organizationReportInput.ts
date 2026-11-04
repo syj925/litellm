@@ -17,7 +17,7 @@ export const organizationReportLabels: Record<OrganizationReportState, string> =
   expired: "Expired",
 };
 
-export function organizationReportPending(job: OrganizationReportJob): boolean {
+export function organizationReportPending(job: Pick<OrganizationReportJob, "state">): boolean {
   return job.state === "queued" || job.state === "processing";
 }
 

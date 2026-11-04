@@ -367,6 +367,10 @@ class ReportStore:
                         Path(__file__).with_name("organization_report_schema.sql").read_text(encoding="utf-8"),
                         prepare=False,
                     )
+                    await connection.execute(
+                        Path(__file__).with_name("delegated_report_schema.sql").read_text(encoding="utf-8"),
+                        prepare=False,
+                    )
                 self._initialized = True
 
     async def close(self) -> None:
@@ -561,8 +565,10 @@ class ReportStore:
             """SELECT
             (SELECT count(*) FROM retail_report_jobs WHERE creator_id=%s AND created_at>now()-interval '1 day') +
             (SELECT count(*) FROM retail_organization_report_jobs
+              WHERE creator_id=%s AND created_at>now()-interval '1 day') +
+            (SELECT count(*) FROM retail_delegated_report_jobs
               WHERE creator_id=%s AND created_at>now()-interval '1 day') AS total""",
-            (creator_id, creator_id),
+            (creator_id, creator_id, creator_id),
             _CountRow,
         )
         pending: Final = await _one(
@@ -571,6 +577,8 @@ class ReportStore:
             (SELECT count(*) FROM retail_report_jobs
               WHERE state IN ('queued','processing') AND expires_at>now()) +
             (SELECT count(*) FROM retail_organization_report_jobs
+              WHERE state IN ('queued','processing') AND expires_at>now()) +
+            (SELECT count(*) FROM retail_delegated_report_jobs
               WHERE state IN ('queued','processing') AND expires_at>now()) AS total""",
             (),
             _CountRow,
@@ -672,6 +680,8 @@ class ReportStore:
             (SELECT count(*) FROM retail_report_jobs
               WHERE state='processing' AND lease_until>now() AND expires_at>now()) +
             (SELECT count(*) FROM retail_organization_report_jobs
+              WHERE state='processing' AND lease_until>now() AND expires_at>now()) +
+            (SELECT count(*) FROM retail_delegated_report_jobs
               WHERE state='processing' AND lease_until>now() AND expires_at>now()) AS total""",
             (),
             _CountRow,

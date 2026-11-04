@@ -15044,6 +15044,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/organizations/{organization_id}/finance-grants/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Finance Grant */
+        get: operations["get_finance_grant_retail_admin_organizations__organization_id__finance_grants__user_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Finance Grant */
+        patch: operations["update_finance_grant_retail_admin_organizations__organization_id__finance_grants__user_id__patch"];
+        trace?: never;
+    };
     "/retail/admin/organizations/{organization_id}/reports": {
         parameters: {
             query?: never;
@@ -15736,6 +15754,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/organization-finance/organizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finance Organizations */
+        get: operations["finance_organizations_retail_organization_finance_organizations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/organizations": {
         parameters: {
             query?: never;
@@ -15762,6 +15797,92 @@ export interface paths {
         };
         /** Own Organization */
         get: operations["own_organization_retail_organizations__organization_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/organizations/{organization_id}/finance/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finance Access */
+        get: operations["finance_access_retail_organizations__organization_id__finance_access_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/organizations/{organization_id}/finance/consumption": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finance Consumption */
+        get: operations["finance_consumption_retail_organizations__organization_id__finance_consumption_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/organizations/{organization_id}/finance/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Finance Reports */
+        get: operations["list_finance_reports_retail_organizations__organization_id__finance_reports_get"];
+        put?: never;
+        /** Create Finance Report */
+        post: operations["create_finance_report_retail_organizations__organization_id__finance_reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/organizations/{organization_id}/finance/reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Finance Report */
+        get: operations["get_finance_report_retail_organizations__organization_id__finance_reports__report_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/organizations/{organization_id}/finance/reports/{report_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Finance Report */
+        get: operations["download_finance_report_retail_organizations__organization_id__finance_reports__report_id__download_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -33945,6 +34066,161 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** DelegatedConsumption */
+        DelegatedConsumption: {
+            /**
+             * Access Revision
+             * Format: uuid
+             */
+            access_revision: string;
+            /**
+             * Axis
+             * @default admission
+             * @constant
+             */
+            axis: "admission";
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** Items */
+            items: components["schemas"]["DelegatedConsumptionItem"][];
+            /** Limit */
+            limit: number;
+            /**
+             * Live
+             * @default true
+             * @constant
+             */
+            live: true;
+            /**
+             * Max Requests
+             * @default 10000
+             * @constant
+             */
+            max_requests: 10000;
+            /** Offset */
+            offset: number;
+            /** Organization Id */
+            organization_id: string;
+            /** Organization Name */
+            organization_name: string;
+            /** Partial */
+            partial: boolean;
+            /**
+             * Snapshot At
+             * Format: date-time
+             */
+            snapshot_at: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            summary: components["schemas"]["OrganizationConsumptionSummary"];
+            /** Total */
+            total: number;
+        };
+        /** DelegatedConsumptionItem */
+        DelegatedConsumptionItem: {
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /** Model */
+            model: string;
+            /** Sequence */
+            sequence: number;
+            /** Settled Usd */
+            settled_usd: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "settled" | "released" | "pending" | "unknown" | "conflict";
+        };
+        /** DelegatedReportJob */
+        DelegatedReportJob: {
+            /**
+             * Access Revision
+             * Format: uuid
+             */
+            access_revision: string;
+            /**
+             * Artifact Bytes
+             * @default 0
+             */
+            artifact_bytes: number;
+            /**
+             * Axis
+             * @default admission
+             * @constant
+             */
+            axis: "admission";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * End At
+             * Format: date-time
+             */
+            end_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Organization Id */
+            organization_id: string;
+            /** Organization Name */
+            organization_name: string;
+            /** Partial */
+            partial: boolean;
+            /**
+             * Scope
+             * @default delegated_organization
+             * @constant
+             */
+            scope: "delegated_organization";
+            /**
+             * Snapshot At
+             * Format: date-time
+             */
+            snapshot_at: string;
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "queued" | "processing" | "ready" | "failed" | "revoked" | "expired";
+            summary: components["schemas"]["OrganizationConsumptionSummary"];
+            /** Total Rows */
+            total_rows: number;
+        };
+        /** DelegatedReportPage */
+        DelegatedReportPage: {
+            /** Items */
+            items: components["schemas"]["DelegatedReportJob"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
         /** DeleteAccessGroupBudgetResponse */
         DeleteAccessGroupBudgetResponse: {
             /** Access Group */
@@ -34960,6 +35236,83 @@ export interface components {
             allowed_domains?: string[] | null;
         } & {
             [key: string]: unknown;
+        };
+        /** FinanceAccess */
+        FinanceAccess: {
+            /** Access Revision */
+            access_revision: string | null;
+            /** Can Export */
+            can_export: boolean;
+            /** Can View */
+            can_view: boolean;
+            /** Organization Id */
+            organization_id: string;
+            /** Organization Name */
+            organization_name: string;
+        };
+        /** FinanceGrantUpdate */
+        FinanceGrantUpdate: {
+            /** Can Export */
+            can_export: boolean;
+            /** Can View */
+            can_view: boolean;
+            /** Expected Version */
+            expected_version: number;
+        };
+        /** FinanceGrantView */
+        FinanceGrantView: {
+            /** Can Export */
+            can_export: boolean;
+            /** Can View */
+            can_view: boolean;
+            /** Effective */
+            effective: boolean;
+            /** Grant Id */
+            grant_id: string | null;
+            /** Organization Id */
+            organization_id: string;
+            /** Revision */
+            revision: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "unassigned" | "revoked" | "active" | "organization_disabled" | "membership_inactive" | "membership_changed" | "organization_changed";
+            /** Updated At */
+            updated_at: string | null;
+            /** Updated By */
+            updated_by: string | null;
+            /** User Id */
+            user_id: string;
+            /** Version */
+            version: number;
+        };
+        /** FinanceScope */
+        FinanceScope: {
+            /**
+             * Access Revision
+             * Format: uuid
+             */
+            access_revision: string;
+            /** Can Export */
+            can_export: boolean;
+            /** Can View */
+            can_view: boolean;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** FinanceScopePage */
+        FinanceScopePage: {
+            /** Items */
+            items: components["schemas"]["FinanceScope"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
         };
         /** Finding */
         Finding: {
@@ -76260,6 +76613,76 @@ export interface operations {
             };
         };
     };
+    get_finance_grant_retail_admin_organizations__organization_id__finance_grants__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinanceGrantView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_finance_grant_retail_admin_organizations__organization_id__finance_grants__user_id__patch: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                organization_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FinanceGrantUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinanceGrantView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_organization_reports_retail_admin_organizations__organization_id__reports_get: {
         parameters: {
             query?: {
@@ -78002,6 +78425,40 @@ export interface operations {
             };
         };
     };
+    finance_organizations_retail_organization_finance_organizations_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+                offset?: number;
+                ids?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinanceScopePage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     own_organizations_retail_organizations_get: {
         parameters: {
             query?: {
@@ -78058,6 +78515,208 @@ export interface operations {
                         [key: string]: components["schemas"]["JsonValue"];
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finance_access_retail_organizations__organization_id__finance_access_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinanceAccess"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finance_consumption_retail_organizations__organization_id__finance_consumption_get: {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DelegatedConsumption"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_finance_reports_retail_organizations__organization_id__finance_reports_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DelegatedReportPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_finance_report_retail_organizations__organization_id__finance_reports_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationReportWindow"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DelegatedReportJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_finance_report_retail_organizations__organization_id__finance_reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DelegatedReportJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_finance_report_retail_organizations__organization_id__finance_reports__report_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Range?: string | null;
+            };
+            path: {
+                organization_id: string;
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

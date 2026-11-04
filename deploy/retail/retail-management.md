@@ -14,6 +14,7 @@
 | `/ui/business-labels/` | 维护 Key、团队、自有组织和数据库模型部署的独立分类及管理来源 | 仅当前有效的全站 Proxy Admin |
 | Customer Wallets 中的 Model budgets | 配置账号与精确模型的固定窗口消费额度，可提前安排连续的下一期 | 全站 Proxy Admin 配置，个人 Wallet 仅显示本人的当前及未来额度 |
 | Customer Wallets 中的 Billing organization、Organizations 中的 Consumption | 明确选择账号组织归属，按接纳快照查询实时已结算消费 | 仅当前可写全站 Proxy Admin；详见 [组织消费](organization-consumption.md) |
+| Organizations → Members 的 Finance access、`/ui/organization-finance/` | 为当前组织 admin 成员显式授予 View 或 View+export，并在独立门户读取安全财务投影 | 仅全站可写 Proxy Admin 授权；成员同时具备有效 grant、当前组织 admin 资格及允许的原生门户角色后才能自用，详见 [委派财务](delegated-finance.md) |
 | `/ui/audit-delivery/` | 从 Operation Audit 进入，管理自有审计元数据的异步外投递 | 仅当前可写全站 Proxy Admin，普通用户和只读管理员拒绝 |
 
 创建组织时需要填写组织名称和首位组织管理员的现有账号 ID。账号关联由全站管理员确认客户归属后完成，不发送邀请邮件，也不向组织管理员提供全站账号搜索
@@ -21,6 +22,8 @@
 组织管理员在成员页面可以启用或停用已批准的普通成员，不能新增任意账号、任命其他管理员或修改全站权限。最后一名有效组织管理员不能被移除，冲突时刷新后重试
 
 普通成员只能看到自己的有效组织基本信息。成员关系不开放其他成员的 Key、日志、钱包、历史消费、上游身份或进价。组织停用不会隐式冻结原生个人钱包或转移其资金
+
+财务读取另有明确授权。全站可写 Proxy Admin 可以为同一组织当前启用的 admin 成员批准 View 或 View+export；授权覆盖组织已有接纳归属历史，普通成员不会自动获得权限。原生门户角色限可写 `proxy_admin`、`internal_user`、`customer`，不把原生 viewer、Org Admin 或 Team Admin 当作财务授权。详情、脱敏及旧授权任务永久失效规则见 [显式委派组织财务](delegated-finance.md)
 
 原生只读账号保留允许的个人读取入口，不能提交新组织变更、轮换或新报表任务，也不能发送 Chat 请求。Chat 的个人 Key 页面仍可读取
 
@@ -52,7 +55,7 @@ Redis 健康时已在隔离的两个真实 worker 中验证轮换后旧 Key 均�
 
 创建任务时在有界的 SERIALIZABLE 事务中物化账本可见行集合，并冻结汇总和未决状态。任务创建后才提交的源记录不会混入同一任务，即使它的业务时间早于结束时间。重试、分页和 worker 重启复用同一快照
 
-包含尚未结束的北京时间自然日或未来区间的报表标记为 partial，即使结束时间已在今天的较早时刻。以今天零点为不包含端点的历史窗口不包含当前日。组织历史财务没有按今天的成员关系重算，显式归属快照与管理员实时消费概览见 [组织消费](organization-consumption.md)，固定组织 CSV 见 [组织报表](organization-reports.md)，委派财务和共享钱包仍属于后续批次
+包含尚未结束的北京时间自然日或未来区间的报表标记为 partial，即使结束时间已在今天的较早时刻。以今天零点为不包含端点的历史窗口不包含当前日。组织历史财务没有按今天的成员关系重算，显式归属快照与管理员实时消费概览见 [组织消费](organization-consumption.md)，管理员固定 CSV 见 [组织报表](organization-reports.md)，显式批准成员的安全投影与固定任务见 [委派财务](delegated-finance.md)。共享钱包仍属于后续范围
 
 CSV 只包含账本标识、时间、类型、金额、余额、请求 ID 和模型，不含自由描述、供应商成本、请求正文或凭据。文本单元格防止表格公式注入
 
@@ -64,7 +67,7 @@ CSV 只包含账本标识、时间、类型、金额、余额、请求 ID 和模
 
 组织操作、审计和轮换锁使用有界的诊断连接池，不借用推理财务或终态事实的专用连接。管理数据库耗尽返回脱敏 503；真实 PostgreSQL 测试覆盖管理连接占满时钱包仍可预扣和结算
 
-报表另设连接池，默认每个 worker 最多两个连接。创建快照最多两个并发槽，全局最多两个有效生成租约。CSV 校验、生成和哈希在有界后台线程执行，取消或超时不会释放仍在运行的线程槽去无限排队
+报表另设连接池，默认每个 worker 最多两个连接。创建快照最多两个并发槽，全局最多两个有效生成租约。个人账本、管理员组织和委派组织三类队列合计配额与槽位，不为新队列另开一套额度。CSV 校验、生成和哈希在有界后台线程执行，取消或超时不会释放仍在运行的线程槽去无限排队
 
 组织和报表的权限读取只发生在管理请求中，没有接入推理回调。显式组织归属采集随既有预扣 SQL 一起写入，不新增应用数据库往返；消费预览使用诊断池，不占用财务或终态池。后台初始化可重试，不因为新管理模块启动失败而主动停止现有推理服务
 
@@ -79,6 +82,7 @@ CSV 只包含账本标识、时间、类型、金额、余额、请求 ID 和模
 | `RETAIL_OBJECT_METADATA_ENABLED` | false | 全站管理员业务标签，依赖审计；详见 [业务标签与管理来源](business-labels.md) |
 | `RETAIL_MODEL_BUDGETS_ENABLED` | false | 消费额度管理和查询入口，依赖审计；已保存窗口的执行不随此开关关闭，详见 [模型额度](model-budgets.md) |
 | `RETAIL_ORG_FINANCE_ENABLED` | false | 组织归属管理及实时消费入口，依赖组织和审计；关闭入口不停止已保存有效归属的采集，详见 [组织消费](organization-consumption.md) |
+| `RETAIL_ORG_FINANCE_DELEGATION_ENABLED` | false | 独立的按成员显式委派财务，依赖组织财务和有限组织委派；固定导出另需 report 开关；须全部 API/报表 worker 升级后再开启，详见 [委派财务](delegated-finance.md) |
 | `RETAIL_AUDIT_DELIVERY_ENABLED` | false | 外投递接口与后台 worker，依赖审计；真实地址与签名密钥仅在服务器配置，详见 [审计外投递](audit-delivery.md) |
 | `RETAIL_REPORT_DB_CONNECTIONS` | 2 | 每个 worker 的报表连接，允许 1 至 4 |
 | `RETAIL_REPORT_MAX_ROWS` | 10000 | 单任务最多物化行数，允许 1 至 100000 |
@@ -101,7 +105,7 @@ CSV 只包含账本标识、时间、类型、金额、余额、请求 ID 和模
 
 ## 已知范围
 
-已实现显式请求组织归属、管理员实时概览和固定消费 CSV；无证据旧数据不回填。尚未实现组织共享余额、跨账号代发 Key、委派组织财务、SCIM、大规模 SSO、外部密钥托管、异步任务计费或高级自动路由。任务状态以 [实施清单](enterprise-replacement-backlog.json) 为准，不因本页上线把其他商业功能标为完成
+已实现显式请求组织归属、管理员实时概览、固定消费 CSV 和按组织 admin 成员批准的财务只读/可选导出；无证据旧数据不回填。REP-03 仍为 `validated_scoped_locally`，尚未实现组织共享余额、跨账号代发 Key、SCIM、大规模 SSO、外部密钥托管、异步任务计费或高级自动路由。任务状态以 [实施清单](enterprise-replacement-backlog.json) 为准，不因本页上线把其他商业功能标为完成
 
 组织审计页面按每页 25 个已授权组织搜索与翻页，不一次加载全表，不会根据地址栏中的任意 ID 探测其他组织。选择和查询仍以当前授权页面为范围，撤权或组织查询失败时隐藏之前的选项与事件详情
 
