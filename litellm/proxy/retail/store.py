@@ -13,9 +13,12 @@ import psycopg
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from .budget_accounting import RELEASE_WALLET_SQL, RESERVE_SQL, SETTLE_WALLET_SQL
+from .budget_accounting import initialize_schema as initialize_budget_schema
 from .database import RetailDatabase, database_integer_setting, database_setting
 from .expression_pricing import ExpressionPricingError, validate_expression_policy
 from .models import (
+    BudgetExceeded,
     IdempotencyConflict,
     InsufficientFunds,
     InvalidAmount,
@@ -442,10 +445,17 @@ class WalletStore:
             async with self.transaction() as connection:
                 await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('retail:schema', 0))")
                 await connection.execute(schema, prepare=False)
+                await initialize_budget_schema(connection)
             self._initialized = True
 
     async def initialize_control_plane(self) -> None:
-        from .control_plane_flags import object_metadata_enabled, operation_audit_enabled, organizations_enabled
+        from .budget_management import initialize_budget_management_schema
+        from .control_plane_flags import (
+            model_budgets_enabled,
+            object_metadata_enabled,
+            operation_audit_enabled,
+            organizations_enabled,
+        )
         from .object_metadata_store import initialize_schema as initialize_object_metadata
         from .operation_events import initialize_schema as initialize_audit
         from .organization_store import initialize_schema as initialize_organizations
@@ -462,6 +472,8 @@ class WalletStore:
                     await initialize_organizations(connection)
                 if object_metadata_enabled():
                     await initialize_object_metadata(connection)
+                if model_budgets_enabled():
+                    await initialize_budget_management_schema(connection)
             self._control_plane_initialized = True
 
     async def get_wallet(self, user_id: str, create: bool = False) -> dict[str, JsonValue]:
@@ -649,16 +661,15 @@ class WalletStore:
                 raise ParallelLimitExceeded("The wallet's concurrent request limit has been reached")
             reservation: Final = await _one(
                 connection,
-                """WITH held AS (
-                     UPDATE retail_wallets SET reserved_nanos=reserved_nanos+%s,updated_at=now()
-                     WHERE user_id=%s RETURNING user_id
-                   ) INSERT INTO retail_reservations(request_id,user_id,model,reserved_nanos,price_snapshot,active_until)
-                   SELECT %s,held.user_id,%s,%s,%s,now()+(%s * interval '1 second') FROM held RETURNING *""",
-                (nanos, user_id, request_id, model, nanos, Jsonb(snapshot), self._active_lease_seconds),
+                RESERVE_SQL,
+                (
+                    user_id, model, nanos, nanos, nanos, user_id, request_id,
+                    model, nanos, Jsonb(snapshot), self._active_lease_seconds,
+                ),
                 _ReservationRow,
             )
             if reservation is None:
-                raise ReservationNotFound("The request reservation could not be created")
+                raise BudgetExceeded("The account model budget cannot cover this request")
             return _reservation_view(reservation)
 
     async def record_pending_usage(self, request_id: str, details: Mapping[str, JsonValue]) -> None:
@@ -687,10 +698,8 @@ class WalletStore:
             released: Final = reservation.reserved_nanos if reservation.status == "reserved" else 0
             balance: Final = await _one(
                 connection,
-                """UPDATE retail_wallets SET balance_nanos=balance_nanos-%s,reserved_nanos=reserved_nanos-%s,
-                       total_spent_nanos=total_spent_nanos+%s,updated_at=now() WHERE user_id=%s
-                       RETURNING balance_nanos""",
-                (nanos, released, nanos, reservation.user_id),
+                SETTLE_WALLET_SQL,
+                (request_id, nanos, nanos, request_id, nanos, released, nanos, reservation.user_id),
                 _BalanceRow,
             )
             if balance is None:
@@ -736,9 +745,8 @@ class WalletStore:
                 return _reservation_view(reservation)
             balance: Final = await _one(
                 connection,
-                """UPDATE retail_wallets SET reserved_nanos=reserved_nanos-%s,updated_at=now() WHERE user_id=%s
-                   RETURNING balance_nanos""",
-                (reservation.reserved_nanos, reservation.user_id),
+                RELEASE_WALLET_SQL,
+                (request_id, request_id, reservation.reserved_nanos, reservation.user_id),
                 _BalanceRow,
             )
             if balance is None:

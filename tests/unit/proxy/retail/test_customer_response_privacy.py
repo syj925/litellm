@@ -5,6 +5,8 @@ from typing import Final
 
 import pytest
 
+from litellm.proxy._types import ProxyException
+from litellm.proxy.common_request_processing import proxy_exception_from_route_error
 from litellm.proxy.retail.customer_response_privacy import (
     CustomerSSEPrivacy,
     _frame_boundaries,
@@ -17,6 +19,74 @@ from litellm.proxy.retail.customer_response_privacy import (
 _REQUEST_ID: Final = "gateway-request-123"
 _SECRET: Final = "sk-fixture-private-value"
 _DETAIL: Final = "deployment private-channel failed at https://private.invalid/v1; " + _SECRET
+
+
+@pytest.mark.parametrize("wire_status", (200, 429))
+def test_structured_model_budget_denial_keeps_a_fixed_public_action_and_machine_code(wire_status: int) -> None:
+    denied: Final = ProxyException(message=_DETAIL, type="budget_exceeded", param="model", code=429)
+    assert proxy_exception_from_route_error(denied) is denied
+    result: Final = _mapping(
+        customer_error_payload({"error": denied.to_dict()}, status_code=wire_status, request_id=_REQUEST_ID)
+    )
+    error: Final = _mapping(result["error"])
+    assert error == {
+        "message": "Your account budget for this model cannot cover this request. Reduce the request size or contact "
+        "the account administrator to review the budget window.",
+        "type": "budget_exceeded",
+        "code": "budget_exceeded",
+        "param": "model",
+        "request_id": _REQUEST_ID,
+    }
+    assert _SECRET not in json.dumps(result) and "Retry later" not in str(error["message"])
+
+
+def test_an_upstream_claiming_the_budget_type_cannot_reflect_its_message_or_private_fields() -> None:
+    payload: Final = {
+        "error": {
+            "type": "budget_exceeded",
+            "param": "model",
+            "code": _SECRET,
+            "message": _DETAIL,
+            "provider_cost": "private-cost",
+            "provider_specific_fields": {"api_key": _SECRET},
+        },
+        "api_base": "https://private.invalid",
+        "upstream_request_id": _SECRET,
+    }
+    result: Final = _mapping(customer_error_payload(payload, status_code=429, request_id=_REQUEST_ID))
+    error: Final = _mapping(result["error"])
+    assert (error["type"], error["code"], error["param"]) == ("budget_exceeded", "budget_exceeded", "model")
+    assert "budget window" in str(error["message"])
+    assert all(value not in json.dumps(result) for value in (_SECRET, "private.invalid", "private-cost", "api_base"))
+
+
+@pytest.mark.parametrize(
+    ("kind", "param"),
+    (("rate_limit_error", "model"), ("PrivateBudgetExceeded", "model"), ("budget_exceeded", "deployment_id")),
+)
+def test_other_429_errors_keep_existing_redaction_even_when_messages_mention_budgets(kind: str, param: str) -> None:
+    result: Final = _mapping(
+        customer_error_payload(
+            {"error": {"type": kind, "param": param, "code": "429", "message": "budget exceeded " + _DETAIL}},
+            status_code=429,
+        )
+    )
+    error: Final = _mapping(result["error"])
+    assert error["message"] == "The request limit has been reached. Retry later or reduce concurrent requests."
+    assert error["code"] == "429" and _SECRET not in json.dumps(result)
+
+
+def test_existing_402_wallet_budget_classification_does_not_become_a_model_window_denial() -> None:
+    result: Final = _mapping(
+        customer_error_payload(
+            {"error": {"type": "budget_exceeded", "param": "model", "code": "402", "message": _DETAIL}}, status_code=402
+        )
+    )
+    error: Final = _mapping(result["error"])
+    assert error["code"] == "402" and error["type"] == "budget_exceeded"
+    assert (
+        error["message"] == "Insufficient wallet balance for this request. Add funds or lower the output token limit."
+    )
 
 
 def _mapping(value: object) -> Mapping[str, object]:

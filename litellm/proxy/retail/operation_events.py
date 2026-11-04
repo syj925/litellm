@@ -24,6 +24,8 @@ _ALLOWED_ACTIONS: Final = frozenset(
         "report.completed",
         "report.failed",
         "object_metadata.updated",
+        "model_budget.created",
+        "model_budget.updated",
     )
 )
 _ALLOWED_FIELDS: Final = frozenset(
@@ -40,6 +42,8 @@ _ALLOWED_FIELDS: Final = frozenset(
         "state",
         "kind",
         "tag_count",
+        "model",
+        "limit_usd",
     )
 )
 
@@ -136,6 +140,7 @@ async def append_operation_event(
         "organization_member",
         "report",
         "object_metadata",
+        "model_budget",
     ):
         raise ValueError("Unsupported audit event type")
     await connection.execute(

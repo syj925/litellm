@@ -69,6 +69,8 @@ const eventLabels: Record<string, string> = {
   "report.completed": "Report completed",
   "report.failed": "Report failed",
   "object_metadata.updated": "Business labels updated",
+  "model_budget.created": "Model budget created",
+  "model_budget.updated": "Model budget updated",
 };
 
 function AuditFiltersForm({

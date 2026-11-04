@@ -1,6 +1,6 @@
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import AsyncExitStack
 from typing import Final
 from uuid import uuid4
@@ -8,18 +8,22 @@ from uuid import uuid4
 import psycopg
 import pytest
 import pytest_asyncio
+from fastapi import HTTPException
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from pydantic import JsonValue
 
-from litellm.proxy._types import UserAPIKeyAuth
-from litellm.proxy.retail.billing import RetailBilling
+from litellm import Router
+from litellm.proxy import proxy_server
+from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
+from litellm.proxy.retail.billing import RetailBilling, reservation_id
 from litellm.proxy.retail.models import IdempotencyConflict, InsufficientFunds, ParallelLimitExceeded
 from litellm.proxy.retail.settlement_store import claim_facts, record_facts, release_claims
 from litellm.proxy.retail.settlement_worker import SettlementWorker, finish_request_activity, register_request_activity
 from litellm.proxy.retail.store import WalletStore
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def settlement_store() -> AsyncIterator[WalletStore]:
     database_url: Final = os.environ.get("RETAIL_SETTLEMENT_TEST_DATABASE_URL")
     if not database_url:
@@ -58,6 +62,72 @@ async def _reserve(store: WalletStore, request_id: str) -> None:
         },
         max_parallel=512,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("policy", "supported"),
+    (
+        (None, False),
+        ({"expression": "p * 0.1 + c * 0.1"}, False),
+        (
+            {
+                "expression": "p * 0.1 + c * 0.1 + fixed(u('web_search_requests') * 0.01)",
+                "usage_bounds": {"web_search_requests": "1"},
+            },
+            True,
+        ),
+    ),
+)
+async def test_server_priced_tools_require_an_explicit_supported_price_card(
+    settlement_store: WalletStore,
+    monkeypatch: pytest.MonkeyPatch,
+    policy: Mapping[str, JsonValue] | None,
+    supported: bool,
+) -> None:
+    monkeypatch.setenv("RETAIL_BILLING_ENABLED", "true")
+    router: Final = Router(
+        model_list=[
+            {
+                "model_name": "search-model",
+                "litellm_params": {"model": "openai/fixture-model", "api_key": "fixture"},
+            }
+        ]
+    )
+    monkeypatch.setattr(proxy_server, "llm_router", router)
+    await settlement_store.save_model_price(
+        "search-model",
+        {
+            "input_cost_per_token": "0.0000001",
+            "output_cost_per_token": "0.0000001",
+            "cache_read_input_token_cost": "0",
+            "cache_creation_input_token_cost": "0",
+            "expression_policy": dict(policy) if policy is not None else None,
+        },
+    )
+    callback: Final = RetailBilling(settlement_store)
+    user: Final = UserAPIKeyAuth(user_id="user", user_role=LitellmUserRoles.INTERNAL_USER)
+    request: Final = {"model": "search-model", "tools": [{"type": "web_search"}]}
+    try:
+        if not supported:
+            with pytest.raises(HTTPException) as failure:
+                await callback.async_pre_call_hook(user, None, request, "aresponses")
+            assert failure.value.status_code == 400
+            assert failure.value.detail == (
+                "Server-priced search requires an expression with reported web_search_requests"
+            )
+            assert (await settlement_store.get_wallet("user"))["reserved"] == "0.000000000"
+            return
+        prepared: Final = await callback.async_pre_call_hook(user, None, request, "aresponses")
+        identifier: Final = reservation_id(prepared)
+        assert identifier is not None
+        reservation: Final = await settlement_store.get_reservation(identifier)
+        assert reservation is not None and reservation["status"] == "reserved"
+        assert reservation["price_snapshot"]["version"] == "expression-v1"
+        await finish_request_activity(identifier, settlement_store)
+        await settlement_store.release(identifier, "Fixture completed without forwarding")
+    finally:
+        router.cache.flush_cache()
 
 
 @pytest.mark.asyncio

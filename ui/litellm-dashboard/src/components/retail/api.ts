@@ -112,6 +112,7 @@ export interface RetailConfig {
   organization_management_enabled?: boolean;
   report_export_enabled?: boolean;
   object_metadata_enabled?: boolean;
+  model_budgets_enabled?: boolean;
 }
 
 export class RetailRequestError extends Error {

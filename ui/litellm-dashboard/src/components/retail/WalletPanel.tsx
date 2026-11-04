@@ -16,6 +16,7 @@ import { formatMoney, PageResult, LedgerEntry, retailKeys, retailRequest, Wallet
 import { LedgerTable } from "./BillingPanel";
 import { CustomerModelDiscounts } from "./ModelDiscounts";
 import CustomerPools from "./pools/CustomerPools";
+import CustomerModelBudgets from "./model-budgets/CustomerModelBudgets";
 
 export default function WalletPanel() {
   const { accessToken, userId, isAuthorized } = useAuthorized();
@@ -164,6 +165,7 @@ export default function WalletPanel() {
 
       <CustomerPools accessToken={accessToken} userId={userId} enabled={isAuthorized} />
       <CustomerModelDiscounts accessToken={accessToken} userId={userId} enabled={isAuthorized} />
+      <CustomerModelBudgets />
 
       <section className="overflow-hidden rounded-xl border">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">

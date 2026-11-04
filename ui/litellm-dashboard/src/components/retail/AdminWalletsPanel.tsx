@@ -27,7 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/lib/toast";
-import { isProxyAdminRole } from "@/utils/roles";
+import { canUseAdminControlPlane } from "@/utils/dashboardAccess";
 import { uiHref } from "@/utils/uiHref";
 import {
   formatMoney,
@@ -45,6 +45,8 @@ import {
 import PendingReservations from "./PendingReservations";
 import ModelDiscountEditor, { DiscountScope } from "./ModelDiscounts";
 import PoolAccessEditor from "./pools/PoolAccessEditor";
+import AdminModelBudgetsDialog from "./model-budgets/AdminModelBudgetsDialog";
+import { useModelBudgetConfiguration } from "./model-budgets/BudgetShared";
 
 interface CreditForm {
   user_id: string;
@@ -57,8 +59,9 @@ const emptyCredit: CreditForm = { user_id: "", amount: "", reference: "", descri
 const pageSize = 25;
 
 export default function AdminWalletsPanel() {
-  const { accessToken, userRole, isAuthorized, isLoading: authLoading } = useAuthorized();
-  const isAdmin = isProxyAdminRole(userRole);
+  const { accessToken, userRole, isViewOnly, isAuthorized, isLoading: authLoading } = useAuthorized();
+  const isAdmin = canUseAdminControlPlane({ userRole, isViewOnly });
+  const budgetConfig = useModelBudgetConfiguration(isAuthorized && isAdmin);
   const client = useQueryClient();
   const [filters, setFilters] = useQueryStates({
     page: parseAsInteger.withDefault(1),
@@ -77,6 +80,7 @@ export default function AdminWalletsPanel() {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [discountScope, setDiscountScope] = useState<DiscountScope | null>(null);
   const [poolAccessUser, setPoolAccessUser] = useState<string | null>(null);
+  const [budgetUser, setBudgetUser] = useState<string | null>(null);
   const page = Math.max(1, filters.page);
 
   const wallets = useQuery({
@@ -187,6 +191,7 @@ export default function AdminWalletsPanel() {
     );
   const total = wallets.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const showModelBudgets = Boolean(budgetUser) && isAdmin && !wallets.error;
 
   return (
     <div className="flex flex-col gap-6 p-6 lg:p-8">
@@ -340,6 +345,16 @@ export default function AdminWalletsPanel() {
                       >
                         Pool access
                       </Button>
+                      {budgetConfig.data?.model_budgets_enabled === true && !budgetConfig.error && (
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          aria-label={`Model budgets for customer ${wallet.user_id}`}
+                          onClick={() => setBudgetUser(wallet.user_id)}
+                        >
+                          Model budgets
+                        </Button>
+                      )}
                       <Button
                         size="xs"
                         variant="ghost"
@@ -681,6 +696,9 @@ export default function AdminWalletsPanel() {
           userId={poolAccessUser}
           onClose={() => setPoolAccessUser(null)}
         />
+      )}
+      {showModelBudgets && budgetUser && (
+        <AdminModelBudgetsDialog userId={budgetUser} onClose={() => setBudgetUser(null)} />
       )}
     </div>
   );

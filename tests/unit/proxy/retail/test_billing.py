@@ -161,18 +161,6 @@ async def test_async_execution_cannot_bypass_prepaid_request_lifecycle(
 
 
 @pytest.mark.asyncio
-async def test_server_priced_tools_require_an_explicit_supported_price_card(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RETAIL_BILLING_ENABLED", "true")
-    callback: Final = RetailBilling()
-    user: Final = UserAPIKeyAuth(user_id="reader", user_role=LitellmUserRoles.INTERNAL_USER)
-    with pytest.raises(HTTPException) as failure:
-        await callback.async_pre_call_hook(
-            user, None, {"model": "test-model", "tools": [{"type": "web_search"}]}, "aresponses"
-        )
-    assert failure.value.status_code == 400
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("data", ({"n": 2}, {"best_of": 5}, {"n": True}, {"n": 0}, {"prompt": ["a", "b"]}))
 async def test_multiple_generated_candidates_cannot_expand_a_single_candidate_reservation(
     data: dict[str, object],

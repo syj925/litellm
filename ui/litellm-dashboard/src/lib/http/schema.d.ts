@@ -15253,6 +15253,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/users/{user_id}/model-budgets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Budgets */
+        get: operations["admin_budgets_retail_admin_users__user_id__model_budgets_get"];
+        put?: never;
+        /** Create Budget */
+        post: operations["create_budget_retail_admin_users__user_id__model_budgets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/users/{user_id}/model-budgets/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Budget Models */
+        get: operations["budget_models_retail_admin_users__user_id__model_budgets_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/users/{user_id}/model-budgets/{budget_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Budget */
+        patch: operations["update_budget_retail_admin_users__user_id__model_budgets__budget_id__patch"];
+        trace?: never;
+    };
     "/retail/admin/wallets": {
         parameters: {
             query?: never;
@@ -15418,6 +15470,23 @@ export interface paths {
         };
         /** Ledger */
         get: operations["ledger_retail_ledger_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/model-budgets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Own Budgets */
+        get: operations["own_budgets_retail_model_budgets_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -32919,6 +32988,23 @@ export interface components {
             key?: string | null;
             /** Token */
             token?: string | null;
+        };
+        /** CreateModelBudget */
+        CreateModelBudget: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** Limit Usd */
+            limit_usd: string;
+            /** Model */
+            model: string;
         };
         /** CreateReportRequest */
         CreateReportRequest: {
@@ -52052,6 +52138,15 @@ export interface components {
             toolset_id: string;
             /** Toolset Name */
             toolset_name?: string | null;
+        };
+        /** UpdateModelBudget */
+        UpdateModelBudget: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Expected Version */
+            expected_version: number;
+            /** Limit Usd */
+            limit_usd?: string | null;
         };
         /** UpdateModelGroupRequest */
         UpdateModelGroupRequest: {
@@ -76100,6 +76195,159 @@ export interface operations {
             };
         };
     };
+    admin_budgets_retail_admin_users__user_id__model_budgets_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_budget_retail_admin_users__user_id__model_budgets_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateModelBudget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    budget_models_retail_admin_users__user_id__model_budgets_models_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_budget_retail_admin_users__user_id__model_budgets__budget_id__patch: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                user_id: string;
+                budget_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateModelBudget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_wallets_retail_admin_wallets_get: {
         parameters: {
             query?: {
@@ -76528,6 +76776,41 @@ export interface operations {
                 limit?: number;
                 offset?: number;
                 kind?: ("credit" | "charge" | "release") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    own_budgets_retail_model_budgets_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;

@@ -17,7 +17,7 @@ from pydantic import JsonValue
 
 from litellm._logging import verbose_proxy_logger
 from litellm.integrations.custom_logger import CustomLogger
-from litellm.proxy._types import UserAPIKeyAuth
+from litellm.proxy._types import ProxyException, UserAPIKeyAuth
 
 from .customer_access import customer_resource_policy
 from .database import database_setting
@@ -29,7 +29,7 @@ from .expression_pricing import (
     validate_expression_policy,
 )
 from .expression_usage import request_usage_evidence
-from .models import InsufficientFunds, ParallelLimitExceeded
+from .models import BudgetExceeded, InsufficientFunds, ParallelLimitExceeded
 from .pool_routing import (
     bind_pool_routing,
     clean_pool_metadata,
@@ -450,6 +450,11 @@ class RetailBilling(CustomLogger):
             ) from exc
         except ParallelLimitExceeded as exc:
             raise HTTPException(429, "Your wallet has reached its concurrent request limit") from exc
+        except BudgetExceeded as exc:
+            raise ProxyException(
+                message="Your account model budget cannot cover this request",
+                type="budget_exceeded", param="model", code=429,
+            ) from exc
         _active_reservation.set(request_id)
         _active_pricing.set((request_id, snapshot))
         register_request_activity(request_id, self.store)

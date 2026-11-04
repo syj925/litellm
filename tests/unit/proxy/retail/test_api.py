@@ -35,6 +35,19 @@ from litellm.proxy.retail.api import (
     router,
 )
 from litellm.proxy.retail.store import WalletStore
+from litellm.proxy.retail.models import BudgetExceeded
+
+
+@pytest.mark.asyncio
+async def test_model_budget_admission_rejection_is_429_without_private_policy_details() -> None:
+    async def rejected_operation() -> dict[str, str]:
+        raise BudgetExceeded("private policy/user/provider details")
+
+    with pytest.raises(HTTPException) as rejected:
+        await _execute(rejected_operation())
+    assert (rejected.value.status_code, rejected.value.detail) == (
+        429, "The account model budget is currently exhausted",
+    )
 
 
 @pytest.mark.asyncio

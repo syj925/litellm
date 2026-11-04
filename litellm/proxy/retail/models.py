@@ -29,6 +29,10 @@ class ParallelLimitExceeded(WalletError):
     pass
 
 
+class BudgetExceeded(WalletError):
+    pass
+
+
 class IdempotencyConflict(WalletError):
     pass
 

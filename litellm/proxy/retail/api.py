@@ -44,6 +44,7 @@ from .expression_pricing import (
 )
 from .model_price_catalog import PricingCatalogPage, PricingCatalogPrice, build_pricing_catalog
 from .models import (
+    BudgetExceeded,
     IdempotencyConflict,
     InsufficientFunds,
     InvalidAmount,
@@ -487,6 +488,8 @@ async def _execute(operation: Awaitable[Mapping[str, JsonValue]]) -> dict[str, J
                 raise HTTPException(status_code=402, detail="Insufficient wallet balance") from exc
             case ParallelLimitExceeded():
                 raise HTTPException(status_code=429, detail="Too many requests are already reserved") from exc
+            case BudgetExceeded():
+                raise HTTPException(status_code=429, detail="The account model budget is currently exhausted") from exc
             case _:
                 raise HTTPException(status_code=400, detail="Invalid retail operation") from exc
     except (psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests) as exc:
@@ -581,6 +584,7 @@ def _model_price_view(card: _StoredModelPrice) -> dict[str, JsonValue]:
 @router.get("/config")
 async def config() -> dict[str, JsonValue]:
     from .control_plane_flags import (
+        model_budgets_enabled,
         object_metadata_enabled,
         operation_audit_enabled,
         organizations_enabled,
@@ -596,6 +600,7 @@ async def config() -> dict[str, JsonValue]:
         "organization_management_enabled": organizations_enabled(),
         "report_export_enabled": report_export_enabled(),
         "object_metadata_enabled": object_metadata_enabled(),
+        "model_budgets_enabled": model_budgets_enabled(),
     }
 
 

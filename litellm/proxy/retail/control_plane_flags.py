@@ -21,3 +21,7 @@ def report_export_enabled() -> bool:
 
 def object_metadata_enabled() -> bool:
     return operation_audit_enabled() and os.environ.get("RETAIL_OBJECT_METADATA_ENABLED", "false").lower() == "true"
+
+
+def model_budgets_enabled() -> bool:
+    return operation_audit_enabled() and os.environ.get("RETAIL_MODEL_BUDGETS_ENABLED", "false").lower() == "true"

@@ -20,6 +20,28 @@ from litellm.proxy.auth.route_checks import RouteChecks
 from litellm.proxy.pass_through_endpoints.llm_passthrough_endpoints import router as llm_passthrough_router
 
 
+@pytest.mark.parametrize("role", (LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY))
+def test_personal_model_budgets_are_dashboard_readonly_and_not_a_customer_key_management_grant(
+    role: LitellmUserRoles, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from litellm.constants import UI_SESSION_TOKEN_TEAM_ID
+
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    session: Final = UserAPIKeyAuth(user_role=role, user_id="owner", team_id=UI_SESSION_TOKEN_TEAM_ID)
+    request: Final = Request({"type": "http", "method": "GET", "path": "/retail/model-budgets", "headers": []})
+    assert RouteChecks.is_virtual_key_allowed_to_call_route("/retail/model-budgets", session) is True
+    assert RouteChecks.non_proxy_admin_allowed_routes_check(
+        None, role, "/retail/model-budgets", request, session, {},
+    ) is None
+    admin_route: Final = "/retail/admin/users/owner/model-budgets"
+    with pytest.raises(Exception, match=r"Only proxy admin.*Route=/retail/admin/users/owner/model-budgets"):
+        RouteChecks.non_proxy_admin_allowed_routes_check(None, role, admin_route, request, session, {})
+    customer_key: Final = session.model_copy(update={"team_id": None})
+    with pytest.raises(HTTPException) as api_denied:
+        RouteChecks.is_virtual_key_allowed_to_call_route("/retail/model-budgets", customer_key)
+    assert api_denied.value.status_code == 403
+
+
 @pytest.mark.parametrize("route", ("/key/generate", "/key/list", "/retail/wallet", "/user/info"))
 @pytest.mark.parametrize("allowed_routes", ([], ["management_routes"], ["*"], ["info_routes"]))
 def test_retail_legacy_api_keys_cannot_act_as_dashboard_sessions(

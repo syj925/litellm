@@ -9,6 +9,7 @@ from litellm._logging import verbose_proxy_logger
 
 from .control_plane_flags import operation_audit_enabled
 from .coordination_guard import close_coordination_guard, start_coordination_guard
+from .model_budgets import router as model_budgets_router
 from .object_metadata import router as object_metadata_router
 from .organizations import router as organizations_router
 from .report_worker import close_report_worker, start_report_worker
@@ -49,3 +50,4 @@ router: Final = APIRouter(lifespan=control_plane_lifespan)
 router.include_router(organizations_router)
 router.include_router(reports_router)
 router.include_router(object_metadata_router)
+router.include_router(model_budgets_router)

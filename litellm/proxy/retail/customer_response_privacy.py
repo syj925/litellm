@@ -429,6 +429,17 @@ def _error_object(error: Mapping[str, object], status_code: int, request_id: str
     identifier: Final = _request_id(request_id)
     gemini: Final = error.get("status")
     param: Final = _safe_param(error.get("param"))
+    if status_code == 429 and kind == "budget_exceeded" and param == "model":
+        return {
+            "message": (
+                "Your account budget for this model cannot cover this request. Reduce the request size or contact "
+                "the account administrator to review the budget window."
+            ),
+            "type": "budget_exceeded",
+            "param": "model",
+            "code": "budget_exceeded",
+            **({"request_id": identifier} if identifier is not None else {}),
+        }
     return {
         "message": _message(error.get("message"), status_code, param, code),
         "type": kind if isinstance(kind, str) and kind in _SAFE_TYPES else _default_type(status_code),
