@@ -259,10 +259,14 @@
       "validation_evidence": [
         "validation/r6-2026-11-04.json",
         "validation/r6-2026-11-04.md",
-        "organization-consumption.md"
+        "organization-consumption.md",
+        "validation/r7-2026-11-04.json",
+        "validation/r7-2026-11-04.md",
+        "organization-reports.md"
       ],
       "deployment_status": "local_active_not_production",
-      "implementation_notes": "显式账号组织选择、不可变接纳归属、管理员有界实时消费预览及窄范围原生组织权限修复已验证；个人钱包仍权威，无历史推断或回填；组织固定CSV、委派财务及共享钱包后续实现"
+      "implementation_notes": "显式账号组织选择、不可变接纳归属、管理员实时概览和固定CSV持久任务已在本地验证；固定投影跨晚结算/重试/重启不重算，逐次认证与Range下载；个人钱包仍权威，无历史推断回填；委派财务、共享钱包仍未实现",
+      "latest_validation_commit": "b5abd8f5fac3257532d6eab96025fd8142af3f29"
     },
     {
       "id": "CTRL-01",
@@ -2102,5 +2106,5 @@
   },
   "runtime_scope": "local_only",
   "production_changed": false,
-  "validation_record": "validation/r5-2026-11-04.json"
+  "validation_record": "validation/r7-2026-11-04.json"
 }
