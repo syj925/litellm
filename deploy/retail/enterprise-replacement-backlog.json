@@ -317,11 +317,13 @@
       "validation_evidence": [
         "validation/r3-2026-11-04.json",
         "model-budgets.md",
-        "validation/r4-2026-11-04.json"
+        "validation/r4-2026-11-04.json",
+        "monthly-budgets.md",
+        "validation/r10-2026-11-04.json"
       ],
       "deployment_status": "local_active_not_production",
-      "implementation_notes": "账号与精确公开模型的固定窗口额度及提前安排唯一下一窗口已验证并接入本地；同事务预留/结算/释放、独立计数、未来启停编辑、权限与实际浏览器流程通过；标签、优先级及自然月自动续期未实现",
-      "latest_validation_commit": "51d8e1cb49431ccd95dcc93a52e8254c8d0966d8"
+      "implementation_notes": "账号与精确公开模型的手动固定窗口、提前安排唯一下一窗口及完整自然月计划已接入本地；UTC/Asia/Shanghai、未来金额版本、当前窗口冻结、明确停止、停机缺窗拒绝和双worker恢复均经真实请求与页面验证。R10去重1331项检查、10/10定向变异通过；新增检查未增加请求driver调用，有限配对SQL样本存在内部开销，不代表20000RPM容量。标签预算、优先级配额和共享钱包仍未实现",
+      "latest_validation_commit": "1b96ba5cfdd52d9c1c45f2bbce4294b5f0fdd3d4"
     },
     {
       "id": "CTRL-03",
@@ -2129,5 +2131,5 @@
   },
   "runtime_scope": "local_only",
   "production_changed": false,
-  "validation_record": "validation/r9-2026-11-04.json"
+  "validation_record": "validation/r10-2026-11-04.json"
 }

@@ -1,0 +1,656 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-04",
+  "scope": "CTRL-02 account-model calendar month renewal",
+  "baseline_commit": "f480f8c7e8a1316069d7e2d03a684b71ae672c1a",
+  "implementation_commit": "1b96ba5cfdd52d9c1c45f2bbce4294b5f0fdd3d4",
+  "status": "validated_scoped_locally",
+  "production_changed": false,
+  "capacity_certification": false,
+  "test_counts": {
+    "backend_unit": 1143,
+    "postgres_api": 108,
+    "frontend": 80,
+    "total": 1331
+  },
+  "test_groups": [
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 108,
+      "files": [
+        "tests/unit/proxy/retail/test_monthly_budget_store.py",
+        "tests/unit/proxy/retail/test_budget_management.py",
+        "tests/unit/proxy/retail/test_budget_accounting.py",
+        "tests/unit/proxy/retail/test_control_plane_flags.py",
+        "tests/unit/proxy/retail/test_operation_events.py"
+      ]
+    },
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 1035,
+      "files": [
+        "tests/unit/proxy/auth/test_route_checks.py"
+      ]
+    },
+    {
+      "suite": "postgres",
+      "exit_code": 0,
+      "passed": 99,
+      "files": [
+        "tests/integration/database/test_retail_monthly_budgets.py",
+        "tests/integration/database/test_retail_budget_management.py",
+        "tests/integration/database/test_retail_budgets.py",
+        "tests/integration/database/test_retail_audit_delivery.py"
+      ]
+    },
+    {
+      "suite": "postgres",
+      "exit_code": 0,
+      "passed": 9,
+      "files": [
+        "tests/integration/database/test_retail_monthly_budget_api.py"
+      ]
+    }
+  ],
+  "frontend_files": [
+    "src/components/retail/monthly-budgets/monthlyBudgetInput.test.ts",
+    "src/components/retail/monthly-budgets/MonthlyBudgets.integration.test.tsx",
+    "src/components/retail/monthly-budgets/MonthlyViewer.integration.test.tsx",
+    "src/components/retail/model-budgets/modelBudgetInput.test.ts",
+    "src/components/retail/model-budgets/ModelBudgets.integration.test.tsx"
+  ],
+  "deduplication": "Integrated root runs only; agent repetitions and native/manual assertions are not added",
+  "sampled_mutations": {
+    "sampled": 10,
+    "killed": 10,
+    "whole_repository_claim": false
+  },
+  "quality": {
+    "scoped_python_files": 16,
+    "python_scope_checks": 48,
+    "python_scope_passed": true,
+    "full_repository_typecheck_run": false,
+    "full_frontend_suite_run": false,
+    "official_openapi_generated": true,
+    "webpack_build": true,
+    "production_typescript": true,
+    "frontend_new_findings": 0,
+    "legacy_api_ts_complexity_warning_unchanged": true,
+    "design_detector_findings": 0
+  },
+  "native": [
+    {
+      "name": "runtime",
+      "workers": 2,
+      "cpus": 2,
+      "memory_gib": 2,
+      "monthly_enabled": true,
+      "managed_enabled": false,
+      "source_rows_copied": 0
+    },
+    {
+      "name": "real_upstream_baseline",
+      "requests": 1,
+      "actual_charge_nanos": "14000",
+      "quote_positive": true
+    },
+    {
+      "name": "admin_api_and_permissions",
+      "create_update_stop": true,
+      "idempotent_replays": true,
+      "conflicting_replays_and_stale_versions": 409,
+      "ordinary_admin_denied": 401,
+      "viewer_write_denied": 403,
+      "own_dto_safe": true,
+      "cross_owner": 404,
+      "unknown_query_no_echo": 422
+    },
+    {
+      "name": "missing_monthly_window",
+      "stopped_workers": 2,
+      "rejected_keys": 2,
+      "status": 429,
+      "upstream_calls": 0,
+      "wallet_and_ledger_unchanged": true,
+      "only_new_synthetic_definition_seeded": true,
+      "existing_identity_unchanged": true,
+      "system_clock_changed": false
+    },
+    {
+      "name": "calendar_recovery",
+      "restarted_workers": 2,
+      "unique_occurrences": 2,
+      "current_and_next_complete_months": true,
+      "no_expired_periods_backfilled": true,
+      "calendar_timezone": "Asia/Shanghai",
+      "system_clock_changed": false
+    },
+    {
+      "name": "shared_account_quota",
+      "keys": 2,
+      "resource_pools": 2,
+      "actual_charge_nanos": "28000",
+      "one_frozen_policy": true,
+      "exhausted_request_status": 429,
+      "rejected_request_upstream_calls": 0,
+      "wallet_held_nanos": "0"
+    },
+    {
+      "name": "started_window_frozen",
+      "edits_apply_next_month": true,
+      "active_stop_effective_next_month": true,
+      "current_limit_and_spending_unchanged": true,
+      "current_quota_still_enforced": 429,
+      "future_occurrence_disabled": true
+    },
+    {
+      "name": "browser_fixture",
+      "synthetic_accounts": 3,
+      "separate_admin_target": true,
+      "ordinary_plan_scheduled_and_ready_for_view": true,
+      "credentials_written_only_to_requested_file": true
+    },
+    {
+      "name": "privacy-before-native-delivery",
+      "table_rows": {
+        "LiteLLM_SpendLogs": 4,
+        "retail_request_traces": 10,
+        "retail_operation_events": 11,
+        "retail_native_audit_outbox": 1
+      },
+      "marker_hits": 0,
+      "runtime_log_marker_hits": 0,
+      "full_row_scan": true,
+      "authoritative_key_password_and_configuration_tables_excluded": true
+    },
+    {
+      "name": "privacy-after-native-delivery",
+      "table_rows": {
+        "LiteLLM_SpendLogs": 4,
+        "retail_request_traces": 10,
+        "retail_operation_events": 12,
+        "retail_native_audit_outbox": 0
+      },
+      "marker_hits": 0,
+      "runtime_log_marker_hits": 0,
+      "full_row_scan": true,
+      "authoritative_key_password_and_configuration_tables_excluded": true
+    }
+  ],
+  "browser": {
+    "passed": true,
+    "syntheticOnly": true,
+    "adminCreateUpdateStopRecreate": true,
+    "decimalValuesPreserved": [
+      "2.123456789",
+      "3.000000001"
+    ],
+    "cancelledChildLabelVerifiedOnFinalBuild": true,
+    "ordinaryReadOnlyOwnPlan": true,
+    "ordinaryNoWriteActions": true,
+    "viewerManagementDenied": true,
+    "allBrowserSessionsLoggedOut": true,
+    "screenshots": [
+      "r10-monthly-admin.jpg",
+      "r10-monthly-updated.jpg",
+      "r10-monthly-created-and-stopped.jpg",
+      "r10-monthly-customer.jpg",
+      "r10-monthly-viewer-denied.jpg",
+      "r10-cancelled-window.jpg"
+    ]
+  },
+  "gui_backend": {
+    "passed": true,
+    "scope": "Read-only backing state for real browser actions on synthetic demo target",
+    "writes_performed_by_this_proof": 0,
+    "exact_decimal_edit_preserved": true,
+    "old_plan_stopped_and_child_disabled": true,
+    "new_same_model_plan_scheduled_and_child_enabled": true,
+    "wallet_and_ledger_no_charge": true
+  },
+  "privacy": {
+    "scope": "R10 synthetic data only",
+    "stages": [
+      {
+        "stage": "before-native-delivery",
+        "tables": [
+          {
+            "table": "LiteLLM_SpendLogs",
+            "exists": true,
+            "rows": 4,
+            "marker_hits": 0,
+            "scan": "full row JSON",
+            "columns": [
+              "request_id",
+              "call_type",
+              "api_key",
+              "spend",
+              "total_tokens",
+              "prompt_tokens",
+              "completion_tokens",
+              "startTime",
+              "endTime",
+              "completionStartTime",
+              "model",
+              "model_id",
+              "model_group",
+              "custom_llm_provider",
+              "api_base",
+              "user",
+              "metadata",
+              "cache_hit",
+              "cache_key",
+              "request_tags",
+              "team_id",
+              "end_user",
+              "requester_ip_address",
+              "messages",
+              "response",
+              "proxy_server_request",
+              "session_id",
+              "status",
+              "mcp_namespaced_tool_name",
+              "organization_id",
+              "agent_id",
+              "request_duration_ms",
+              "created_at",
+              "updated_at",
+              "litellm_call_id",
+              "billing_agent_id"
+            ]
+          },
+          {
+            "table": "retail_request_traces",
+            "exists": true,
+            "rows": 10,
+            "marker_hits": 0,
+            "scan": "full row JSON",
+            "columns": [
+              "trace_id",
+              "call_id",
+              "retail_request_id",
+              "trace",
+              "request_body",
+              "body_expires_at",
+              "recorded_until_ms",
+              "created_at",
+              "updated_at"
+            ]
+          },
+          {
+            "table": "retail_operation_events",
+            "exists": true,
+            "rows": 11,
+            "marker_hits": 0,
+            "scan": "full row JSON",
+            "columns": [
+              "id",
+              "organization_id",
+              "actor_id",
+              "action",
+              "resource_type",
+              "resource_id",
+              "result",
+              "version_before",
+              "version_after",
+              "changes",
+              "idempotency_key",
+              "request_digest",
+              "response",
+              "created_at"
+            ]
+          },
+          {
+            "table": "retail_native_audit_outbox",
+            "exists": true,
+            "rows": 1,
+            "marker_hits": 0,
+            "scan": "full row JSON",
+            "columns": [
+              "id",
+              "source_id",
+              "actor_id",
+              "action",
+              "resource_id",
+              "affected_count",
+              "occurred_at",
+              "state",
+              "attempts",
+              "next_attempt_at",
+              "lease_owner",
+              "lease_token",
+              "lease_until",
+              "expires_at",
+              "error_code"
+            ]
+          }
+        ],
+        "runtime_log_marker_hits": 0
+      },
+      {
+        "stage": "after-native-delivery",
+        "tables": [
+          {
+            "table": "LiteLLM_SpendLogs",
+            "exists": true,
+            "rows": 4,
+            "marker_hits": 0,
+            "scan": "full row JSON",
+            "columns": [
+              "request_id",
+              "call_type",
+              "api_key",
+              "spend",
+              "total_tokens",
+              "prompt_tokens",
+              "completion_tokens",
+              "startTime",
+              "endTime",
+              "completionStartTime",
+              "model",
+              "model_id",
+              "model_group",
+              "custom_llm_provider",
+              "api_base",
+              "user",
+              "metadata",
+              "cache_hit",
+              "cache_key",
+              "request_tags",
+              "team_id",
+              "end_user",
+              "requester_ip_address",
+              "messages",
+              "response",
+              "proxy_server_request",
+              "session_id",
+              "status",
+              "mcp_namespaced_tool_name",
+              "organization_id",
+              "agent_id",
+              "request_duration_ms",
+              "created_at",
+              "updated_at",
+              "litellm_call_id",
+              "billing_agent_id"
+            ]
+          },
+          {
+            "table": "retail_request_traces",
+            "exists": true,
+            "rows": 10,
+            "marker_hits": 0,
+            "scan": "full row JSON",
+            "columns": [
+              "trace_id",
+              "call_id",
+              "retail_request_id",
+              "trace",
+              "request_body",
+              "body_expires_at",
+              "recorded_until_ms",
+              "created_at",
+              "updated_at"
+            ]
+          },
+          {
+            "table": "retail_operation_events",
+            "exists": true,
+            "rows": 12,
+            "marker_hits": 0,
+            "scan": "full row JSON",
+            "columns": [
+              "id",
+              "organization_id",
+              "actor_id",
+              "action",
+              "resource_type",
+              "resource_id",
+              "result",
+              "version_before",
+              "version_after",
+              "changes",
+              "idempotency_key",
+              "request_digest",
+              "response",
+              "created_at"
+            ]
+          },
+          {
+            "table": "retail_native_audit_outbox",
+            "exists": true,
+            "rows": 0,
+            "marker_hits": 0,
+            "scan": "full row JSON",
+            "columns": [
+              "id",
+              "source_id",
+              "actor_id",
+              "action",
+              "resource_id",
+              "affected_count",
+              "occurred_at",
+              "state",
+              "attempts",
+              "next_attempt_at",
+              "lease_owner",
+              "lease_token",
+              "lease_until",
+              "expires_at",
+              "error_code"
+            ]
+          }
+        ],
+        "runtime_log_marker_hits": 0
+      }
+    ],
+    "runtime_log_marker_hits": 0,
+    "authoritative_user_and_key_tables_excluded": true,
+    "configuration_tables_excluded": true
+  },
+  "performance": {
+    "run_class": "final_after_native_provision_idle",
+    "process_started_at_utc": "2026-11-04T12:56:27.793495+00:00",
+    "process_finished_at_utc": "2026-11-04T12:56:47.008922+00:00",
+    "interference_context": "Root coordinated pause of native business scenarios and API PG suites after native provision; idle native pollers/local UI node activity may remain. Shared local host, not dedicated hardware.",
+    "baseline": "f480f8c7e8a1316069d7e2d03a684b71ae672c1a",
+    "current_head": "9657dbd02d610a2d5811a79be8cce12827eaaa82",
+    "image": "litellm-retail-local:1.106.6-pool3.3.3",
+    "concurrency": 16,
+    "rounds": 2,
+    "pairs_per_version_per_scenario": 600,
+    "warmup_each": 20,
+    "verified_equal_driver_dependency_files": [
+      "litellm/proxy/retail/store.py",
+      "litellm/proxy/retail/database.py",
+      "litellm/proxy/retail/schema.sql",
+      "litellm/proxy/retail/models.py",
+      "litellm/proxy/retail/organization_attribution.py",
+      "litellm/proxy/retail/organization_attribution_schema.sql",
+      "litellm/proxy/retail/budget_schema.sql"
+    ],
+    "baseline_budget_accounting_sha256": "ee41c4d1209a3597df1d0071cdf82a2491f8a239dd81fc1bc74d21ea2cd34268",
+    "current_budget_accounting_sha256": "63b8f5ab0e1f9969be27dd9a1bd9d3ec720ea3bce4c2e6b11436f8bbfdf25620",
+    "baseline_override_explanation": "WalletStore/database/schema/models/attribution/budget_schema are byte-content unchanged in git diff from R9; only the R9 budget_accounting module is overlaid. R9 initializes its own empty database with no monthly schema.",
+    "current_source_unchanged": true,
+    "comparisons": [
+      {
+        "scenario": "no_plan",
+        "phase": "sequential-1",
+        "count_each": 300,
+        "reserve_p50_delta_ms": 1.7055,
+        "reserve_p95_delta_ms": 3.2564,
+        "release_p95_delta_ms": -0.0748,
+        "pair_p95_delta_ms": 3.4979,
+        "execute_calls_equal": true
+      },
+      {
+        "scenario": "no_plan",
+        "phase": "interleaved-2-part-1",
+        "count_each": 150,
+        "reserve_p50_delta_ms": 0.6884,
+        "reserve_p95_delta_ms": 2.2822,
+        "release_p95_delta_ms": 2.9219,
+        "pair_p95_delta_ms": 5.0977,
+        "execute_calls_equal": true
+      },
+      {
+        "scenario": "no_plan",
+        "phase": "interleaved-2-part-2",
+        "count_each": 150,
+        "reserve_p50_delta_ms": 0.4608,
+        "reserve_p95_delta_ms": -1.9378,
+        "release_p95_delta_ms": 0.4955,
+        "pair_p95_delta_ms": -4.0735,
+        "execute_calls_equal": true
+      },
+      {
+        "scenario": "active_budget",
+        "phase": "sequential-1",
+        "count_each": 300,
+        "reserve_p50_delta_ms": 1.7846,
+        "reserve_p95_delta_ms": 1.1522,
+        "release_p95_delta_ms": 1.7736,
+        "pair_p95_delta_ms": -0.3559,
+        "execute_calls_equal": true
+      },
+      {
+        "scenario": "active_budget",
+        "phase": "interleaved-2-part-1",
+        "count_each": 150,
+        "reserve_p50_delta_ms": 1.2441,
+        "reserve_p95_delta_ms": 3.5182,
+        "release_p95_delta_ms": 0.3252,
+        "pair_p95_delta_ms": 3.9446,
+        "execute_calls_equal": true
+      },
+      {
+        "scenario": "active_budget",
+        "phase": "interleaved-2-part-2",
+        "count_each": 150,
+        "reserve_p50_delta_ms": 2.3104,
+        "reserve_p95_delta_ms": 1.5965,
+        "release_p95_delta_ms": 1.3849,
+        "pair_p95_delta_ms": 0.3748,
+        "execute_calls_equal": true
+      }
+    ],
+    "measurement": "In-process WalletStore reserve and release latency including same-wallet admission waiting. Driver metric counts psycopg AsyncConnection.execute invocations; excludes implicit transaction commands and internal PostgreSQL trigger statements.",
+    "limitations": [
+      "Bounded synthetic database-path overhead, no upstream/HTTP/SSE/Redis/native-auth/settlement traffic and no production SLA or 20000-RPM capacity conclusion.",
+      "Single fixed synthetic wallet; concurrency16 is mostly serialized by the existing wallet gate. p95 includes that queue and run-to-run host variation.",
+      "The constrained comparison is R9 active fixed-window policy versus R10 active full-month policy with matching limit/accounting work; their calendar shapes differ.",
+      "Warmup20 may not stabilize prepared statement caches across every pooled connection; retained fixed bounds rather than expanding samples.",
+      "Two interleaved chunks each150 total300 per version in round2; no latency percentile is reconstructed from averaged chunk percentiles."
+    ],
+    "cleanup": {
+      "own_databases_dropped": [
+        "r10_paired_baseline_a5af363f8247",
+        "r10_paired_current_a5af363f8247"
+      ],
+      "own_probe_containers_closed": true,
+      "existing_services_changed": false
+    },
+    "native_provision_window_utc": {
+      "started_at": "2026-11-04T12:52:53.6278782Z",
+      "runtime_started_at": "2026-11-04T12:52:56.800803456Z",
+      "finished_at": "2026-11-04T12:52:57.5817229Z",
+      "source": "API agent artifact and Docker State metadata"
+    },
+    "actual_measured_window_utc": {
+      "started_at": "2026-11-04T12:56:35.743095+00:00",
+      "finished_at": "2026-11-04T12:56:45.214167+00:00"
+    },
+    "native_business_pause_confirmed": true,
+    "interpretation": "Indexed monthly expectation/cancelled-policy checks and independent reservation trigger add internal SQL work. The measured final admission execute median increases roughly 0.10-0.23ms; same-wallet queueing at concurrency16 amplifies small additional service time. This is a source-supported interpretation, not server-only trigger timing or an end-to-end gateway capacity result."
+  },
+  "activation": {
+    "local_active": true,
+    "production_changed": false,
+    "capacity_certification": false,
+    "financial_table_count": 18,
+    "native_identity_table_count": 3,
+    "native_audit_table_count": 2,
+    "existing_fingerprint_table_count": 23,
+    "existing_fingerprints_unchanged": true,
+    "monthly_table_row_counts": {
+      "retail_model_budget_recurrences": 0,
+      "retail_model_budget_recurrence_terms": 0,
+      "retail_model_budget_occurrences": 0
+    },
+    "monthly_budgets_enabled": true,
+    "native_audit_enabled": true,
+    "managed_secrets_enabled": false,
+    "real_monthly_plans_created": 0,
+    "new_pool_count": 0,
+    "two_workers": true,
+    "audit_paused": true,
+    "source_overlays_match": true,
+    "overlay_mount_count": 45,
+    "overlay_file_count": 1062,
+    "ui_overlay_files": 911,
+    "final_ui_refreshed_after_backend_activation": true,
+    "existing_fingerprints_unchanged_after_final_ui": true
+  },
+  "http": {
+    "public_statuses": {
+      "/health/readiness": 200,
+      "/health/liveliness": 200,
+      "/ui/welcome/": 200,
+      "/ui/wallet-admin/": 200,
+      "/ui/wallet/": 200
+    },
+    "unauthenticated_private_statuses": {
+      "/retail/monthly-budgets": 401,
+      "/retail/admin/users/unconfigured-example/monthly-budgets": 401
+    },
+    "authenticated_own_monthly_plans": 0,
+    "own_private_no_store": true,
+    "qa_routes_absent": true,
+    "monthly_budgets_enabled": true,
+    "native_audit_enabled": true,
+    "production_changed": false
+  },
+  "cleanup": {
+    "scope": "Exact owned R9/R10 isolated fixtures only",
+    "main_service_mutated": false,
+    "network_endpoints_verified_before_cleanup": {
+      "codex-retail-r9-qa": [
+        "codex-retail-r10-native-proxy-f0325eda",
+        "codex-retail-r10-native-redis-f0325eda",
+        "codex-retail-r9-qa-db"
+      ],
+      "codex-retail-r9-http": [
+        "codex-retail-r10-native-proxy-f0325eda"
+      ]
+    },
+    "main_readiness_before": 200,
+    "wallet_and_quota_holds_before_cleanup": {
+      "wallet_holds": "0",
+      "quota_holds": "0"
+    },
+    "fixture_secret_fields_redacted": {
+      "r9-native-http\\browser-fixture.json": 3,
+      "r10-native-http\\browser-fixture.json": 3
+    },
+    "r9_prior_runtime_and_redis_absent": true,
+    "r10_runtime_and_redis_absent": true,
+    "owned_database_dropped": true,
+    "shared_qa_postgres_removed": true,
+    "shared_qa_networks_removed": true,
+    "scripts_and_validation_evidence_preserved": true,
+    "main_readiness_after": 200,
+    "passed": true
+  },
+  "limitations": [
+    "Only account + exact public model + USD monthly limits; tags/priority/shared wallet are not implemented",
+    "Only UTC and Asia/Shanghai; first start is next or a later full month",
+    "Future limit edits and stopping do not rewrite the current month or previous allocations",
+    "A flag rollback does not remove durable budget expectations; old binaries may safely reject requests",
+    "Paired database sample is not HTTP/SSE/native-auth/upstream capacity or 20000 RPM certification",
+    "R10 privacy markers do not retroactively prove managed-secret database privacy for R9",
+    "Production and real external identity/secret platforms remain unchanged"
+  ]
+}
