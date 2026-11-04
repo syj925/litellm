@@ -37,9 +37,9 @@ def config(https: bool = True) -> OidcConfig:
     })
 
 
-def request(query: bytes = b"", headers: tuple[tuple[bytes, bytes], ...] = ()) -> Request:
+def request(query: bytes = b"", headers: tuple[tuple[bytes, bytes], ...] = (), *, scheme: str = "https") -> Request:
     scope: Final[Scope] = {
-        "type": "http", "scheme": "https", "method": "GET", "path": CALLBACK_PATH,
+        "type": "http", "scheme": scheme, "method": "GET", "path": CALLBACK_PATH,
         "query_string": query, "headers": headers, "server": ("gateway.test", 443),
     }
     return Request(scope)
@@ -112,6 +112,46 @@ def test_fixed_origin_and_session_cookie_security_do_not_trust_forwarded_headers
     assert cookie["token"]["httponly"] == ""
     assert cookie["token"]["path"] == "/"
     assert cookie["token"]["domain"] == ""
+
+
+@pytest.mark.parametrize("public_origin,scheme,host,allowed", (
+    ("https://gateway.test:443", "https", b"gateway.test", True),
+    ("https://gateway.test", "https", b"gateway.test:443", True),
+    ("http://127.0.0.1:80", "http", b"127.0.0.1", True),
+    ("http://127.0.0.1", "http", b"127.0.0.1:80", True),
+    ("https://gateway.test:8443", "https", b"gateway.test:8443", True),
+    ("https://gateway.test:8443", "https", b"gateway.test", False),
+    ("https://gateway.test", "https", b"gateway.test:8443", False),
+    ("https://gateway.test:443", "https", b"gateway.test:444", False),
+    ("http://127.0.0.1:80", "http", b"127.0.0.1:81", False),
+    ("https://gateway.test", "http", b"gateway.test:443", False),
+))
+def test_origin_normalizes_only_default_ports_without_changing_scheme_or_other_ports(
+    public_origin: str, scheme: str, host: bytes, allowed: bool,
+) -> None:
+    base: Final = config(public_origin.startswith("https://"))
+    settings: Final = OidcConfig.model_validate({**base.model_dump(), "public_origin": public_origin})
+    incoming: Final = request(headers=((b"host", host),), scheme=scheme)
+    assert correct_origin(incoming, settings) is allowed
+
+
+@pytest.mark.parametrize("host", (
+    b"gateway.test:not-a-port", b"gateway.test:65536", b"gateway.test:-1", b"[broken",
+    b"user@gateway.test", b"user:password@gateway.test", b"@gateway.test",
+    b"", b"gateway.test/path", b"gateway.test?query", b"gateway.test#fragment",
+    b"gateway.test\\other", b"gateway.test\n", b" gateway.test",
+))
+def test_invalid_host_port_and_userinfo_fail_closed_without_raising(host: bytes) -> None:
+    assert not correct_origin(request(headers=((b"host", host),)), config())
+
+
+@pytest.mark.parametrize("headers", (
+    (), ((b"host", b"gateway.test"), (b"host", b"other.test")),
+))
+def test_missing_or_duplicate_raw_host_cannot_fall_back_to_scope_server(
+    headers: tuple[tuple[bytes, bytes], ...],
+) -> None:
+    assert not correct_origin(request(headers=headers), config())
 
 
 def test_private_failures_keep_native_session_and_flow_cookie_untouched() -> None:

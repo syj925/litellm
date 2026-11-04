@@ -35,10 +35,32 @@ def valid_query(request: Request, allowed: frozenset[str]) -> bool:
     )
 
 
+def _request_origin(request: Request) -> str | None:
+    hosts: Final = tuple(request.headers.getlist("host"))
+    if len(hosts) != 1:
+        return None
+    host: Final = hosts[0]
+    if any(ord(character) < 33 or ord(character) > 126 for character in host):
+        return None
+    if any(character in host for character in ("/", "\\", "?", "#")):
+        return None
+    return f"{request.scope.get('scheme', '')}://{host}"
+
+
 def correct_origin(request: Request, config: OidcConfig) -> bool:
-    actual: Final = urlsplit(str(request.url))
-    expected: Final = urlsplit(config.public_origin)
-    return (actual.scheme, actual.hostname, actual.port) == (expected.scheme, expected.hostname, expected.port)
+    origin: Final = _request_origin(request)
+    if origin is None:
+        return False
+    try:
+        actual: Final = urlsplit(origin)
+        expected: Final = urlsplit(config.public_origin)
+        if actual.username is not None or actual.password is not None:
+            return False
+        actual_port: Final = actual.port if actual.port is not None else 443 if actual.scheme == "https" else 80
+        expected_port: Final = expected.port if expected.port is not None else 443 if expected.scheme == "https" else 80
+    except ValueError:
+        return False
+    return (actual.scheme, actual.hostname, actual_port) == (expected.scheme, expected.hostname, expected_port)
 
 
 def session_cookie(response: Response, config: OidcConfig, jwt_token: str, expires_at: datetime) -> None:
