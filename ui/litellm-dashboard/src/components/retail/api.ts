@@ -113,6 +113,7 @@ export interface RetailConfig {
   report_export_enabled?: boolean;
   object_metadata_enabled?: boolean;
   model_budgets_enabled?: boolean;
+  monthly_budgets_enabled?: boolean;
   audit_delivery_enabled?: boolean;
   org_finance_enabled?: boolean;
   org_finance_delegation_enabled?: boolean;

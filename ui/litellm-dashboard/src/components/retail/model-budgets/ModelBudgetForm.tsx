@@ -44,7 +44,7 @@ function formCopy(draft: ModelBudgetDraft) {
   return { label: "Edit fixed-window budget", title: `Edit budget for ${draft.budget.model}` };
 }
 
-export default function ModelBudgetForm({
+function FixedWindowBudgetForm({
   accessToken,
   actorId,
   userId,
@@ -259,4 +259,19 @@ export default function ModelBudgetForm({
       )}
     </section>
   );
+}
+
+export default function ModelBudgetForm(props: Parameters<typeof FixedWindowBudgetForm>[0]) {
+  if (props.draft.kind !== "create" && props.draft.budget.recurrence_id)
+    return (
+      <section className="space-y-4" aria-label="Monthly plan window">
+        <p className="text-sm text-muted-foreground">
+          This window is controlled by its monthly plan. Change the future limit or stop the plan from Monthly plans.
+        </p>
+        <Button variant="outline" onClick={props.onCancel}>
+          Back to budgets
+        </Button>
+      </section>
+    );
+  return <FixedWindowBudgetForm {...props} />;
 }

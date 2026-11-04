@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { retailRequest, type PageResult } from "../api";
 import { ManagementError, managementQuery } from "../management/ManagementShared";
+import CustomerMonthlyBudgets from "../monthly-budgets/CustomerMonthlyBudgets";
 import { BudgetPagination, BudgetScopeNote, useModelBudgetConfiguration } from "./BudgetShared";
 import { modelBudgetListParsers, modelBudgetPageSize } from "./modelBudgetInput";
 import ModelBudgetsTable from "./ModelBudgetsTable";
@@ -105,5 +106,10 @@ export default function CustomerModelBudgets() {
       />
     );
   if (config.data?.model_budgets_enabled !== true) return null;
-  return <CustomerBudgetList />;
+  return (
+    <div className="space-y-6">
+      <CustomerBudgetList />
+      {config.data.monthly_budgets_enabled === true && <CustomerMonthlyBudgets />}
+    </div>
+  );
 }

@@ -222,7 +222,7 @@ it("keeps budget guidance compact and reveals the full accounting rules on reque
   renderWithProviders(<BudgetScopeNote />);
   expect(screen.getByText(/Each exact public model shares its budget/)).toBeVisible();
   const accounting = screen.getByText(/Final charges can exceed the estimate/);
-  const renewal = screen.getByText(/Windows do not repeat automatically/);
+  const renewal = screen.getByText(/Windows created manually do not repeat automatically/);
   expect(accounting).not.toBeVisible();
   expect(renewal).not.toBeVisible();
   const user = userEvent.setup();

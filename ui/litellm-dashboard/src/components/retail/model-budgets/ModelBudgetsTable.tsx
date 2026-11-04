@@ -17,11 +17,13 @@ export default function ModelBudgetsTable<T extends ModelBudget>({
   items,
   onEdit,
   onSchedule,
+  onManageMonthly,
   disabled = false,
 }: {
   items: T[];
   onEdit?: (budget: T) => void;
   onSchedule?: (budget: T) => void;
+  onManageMonthly?: (budget: T) => void;
   disabled?: boolean;
 }) {
   return (
@@ -61,6 +63,7 @@ export default function ModelBudgetsTable<T extends ModelBudget>({
                   <span className="text-xs text-muted-foreground">Enforcement paused</span>
                 )}
                 {budget.successor_id && <span className="text-xs text-muted-foreground">Next window scheduled</span>}
+                {budget.recurrence_id && <span className="text-xs text-muted-foreground">Calendar-month plan</span>}
                 {/[1-9]/.test(budget.overrun_usd) && (
                   <span className="text-xs text-destructive">Above limit: {formatMoney(budget.overrun_usd)}</span>
                 )}
@@ -69,7 +72,21 @@ export default function ModelBudgetsTable<T extends ModelBudget>({
             {(onEdit || onSchedule) && (
               <TableCell className="pr-5 text-right">
                 <div className="flex flex-col items-end gap-2">
-                  {onEdit && (
+                  {budget.recurrence_id &&
+                    (onManageMonthly ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={disabled}
+                        onClick={() => onManageMonthly(budget)}
+                        aria-label={`Manage monthly plan for ${budget.model}`}
+                      >
+                        Manage monthly plan
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Managed by a monthly plan</span>
+                    ))}
+                  {onEdit && !budget.recurrence_id && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -80,7 +97,7 @@ export default function ModelBudgetsTable<T extends ModelBudget>({
                       Edit
                     </Button>
                   )}
-                  {onSchedule && (
+                  {onSchedule && !budget.recurrence_id && (
                     <Button
                       variant="outline"
                       size="sm"

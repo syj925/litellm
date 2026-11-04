@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient, type Query } from "@tanstack/react-query";
 import { Plus, RefreshCw, Wallet } from "lucide-react";
-import { useQueryStates } from "nuqs";
+import { useQueryState, useQueryStates } from "nuqs";
 import { useCallback, useId, useState } from "react";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { LoadingState } from "@/components/shared/LoadingState";
@@ -11,11 +11,14 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/lib/toast";
 import { canUseAdminControlPlane } from "@/utils/dashboardAccess";
 import { retailRequest, type PageResult } from "../api";
 import { ManagementError, ManagementFeatureGate, managementQuery } from "../management/ManagementShared";
-import { BudgetPagination, BudgetScopeNote } from "./BudgetShared";
+import AdminMonthlyBudgets from "../monthly-budgets/AdminMonthlyBudgets";
+import { budgetModeParser, monthlyBudgetParsers } from "../monthly-budgets/monthlyBudgetInput";
+import { BudgetPagination, BudgetScopeNote, useModelBudgetConfiguration } from "./BudgetShared";
 import ModelBudgetForm from "./ModelBudgetForm";
 import { modelBudgetListParsers, modelBudgetModelParsers, modelBudgetPageSize } from "./modelBudgetInput";
 import ModelBudgetsTable from "./ModelBudgetsTable";
@@ -26,11 +29,13 @@ function AdminBudgetWorkspace({
   accessToken,
   actorId,
   onSavingChange,
+  onManageMonthly,
 }: {
   userId: string;
   accessToken: string;
   actorId: string | null;
   onSavingChange: (saving: boolean) => void;
+  onManageMonthly?: (model: string) => void;
 }) {
   const id = useId();
   const client = useQueryClient();
@@ -148,6 +153,7 @@ function AdminBudgetWorkspace({
                   items={visible.items}
                   onEdit={(budget) => setDraft({ kind: "edit", budget })}
                   onSchedule={(budget) => setDraft({ kind: "successor", budget })}
+                  onManageMonthly={onManageMonthly ? (budget) => onManageMonthly(budget.model) : undefined}
                   disabled={budgets.isFetching}
                 />
               ) : (
@@ -174,6 +180,10 @@ function AdminBudgetWorkspace({
 export default function AdminModelBudgetsDialog({ userId, onClose }: { userId: string; onClose: () => void }) {
   const { accessToken, userId: actorId, userRole, isViewOnly, isAuthorized } = useAuthorized();
   const [saving, setSaving] = useState(false);
+  const allowed = isAuthorized && canUseAdminControlPlane({ userRole, isViewOnly });
+  const config = useModelBudgetConfiguration(allowed);
+  const [mode, setMode] = useQueryState("budget_mode", budgetModeParser);
+  const [, setMonthly] = useQueryStates(monthlyBudgetParsers);
   const [, setFilters] = useQueryStates(modelBudgetListParsers);
   const [, setModels] = useQueryStates(modelBudgetModelParsers);
   if (!isAuthorized || !accessToken || !canUseAdminControlPlane({ userRole, isViewOnly })) return null;
@@ -181,6 +191,8 @@ export default function AdminModelBudgetsDialog({ userId, onClose }: { userId: s
     if (saving) return;
     void setFilters({ budget_q: null, budget_page: null });
     void setModels({ budget_model_q: null, budget_model_page: null });
+    void setMonthly({ monthly_q: null, monthly_page: null });
+    void setMode(null);
     onClose();
   };
   return (
@@ -191,12 +203,46 @@ export default function AdminModelBudgetsDialog({ userId, onClose }: { userId: s
           <DialogDescription className="break-all">{userId}</DialogDescription>
         </DialogHeader>
         <ManagementFeatureGate feature="model_budgets_enabled" title="Model budgets">
-          <AdminBudgetWorkspace
-            userId={userId}
-            accessToken={accessToken}
-            actorId={actorId}
-            onSavingChange={setSaving}
-          />
+          {config.data?.monthly_budgets_enabled === true ? (
+            <Tabs
+              value={mode}
+              onValueChange={(value) => {
+                if (!saving && (value === "fixed" || value === "monthly")) void setMode(value);
+              }}
+              className="gap-5"
+            >
+              <TabsList variant="line">
+                <TabsTrigger value="fixed" disabled={saving}>
+                  Budget windows
+                </TabsTrigger>
+                <TabsTrigger value="monthly" disabled={saving}>
+                  Monthly plans
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="fixed">
+                <AdminBudgetWorkspace
+                  userId={userId}
+                  accessToken={accessToken}
+                  actorId={actorId}
+                  onSavingChange={setSaving}
+                  onManageMonthly={(model) => {
+                    void setMonthly({ monthly_q: model.slice(0, 100), monthly_page: 1 });
+                    void setMode("monthly");
+                  }}
+                />
+              </TabsContent>
+              <TabsContent value="monthly">
+                <AdminMonthlyBudgets userId={userId} onSavingChange={setSaving} />
+              </TabsContent>
+            </Tabs>
+          ) : (
+            <AdminBudgetWorkspace
+              userId={userId}
+              accessToken={accessToken}
+              actorId={actorId}
+              onSavingChange={setSaving}
+            />
+          )}
         </ManagementFeatureGate>
       </DialogContent>
     </Dialog>

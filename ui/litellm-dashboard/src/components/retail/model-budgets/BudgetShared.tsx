@@ -57,8 +57,9 @@ export function BudgetScopeNote() {
         <summary className="w-fit cursor-pointer font-medium text-foreground">How budget windows work</summary>
         <div className="mt-3 space-y-2">
           <p>
-            A new window starts when created; a scheduled next window starts exactly when the current one ends. Each
-            window counts its own reservations and charges. Earlier usage and requests already in progress are excluded.
+            A manually created fixed window starts when created; a scheduled fixed window starts when the current one
+            ends. Calendar-month plans use their selected timezone’s month boundary. Each window counts its own
+            reservations and charges; earlier usage and requests already in progress are excluded.
           </p>
           <p>
             Final charges can exceed the estimate. Actual retail charges are recorded, and the remaining budget controls
@@ -67,7 +68,8 @@ export function BudgetScopeNote() {
           </p>
           <p>
             A scheduled window has its own limit and starts with no usage. Unused capacity does not carry over. Windows
-            do not repeat automatically; one next window can be arranged while the current one is running.
+            created manually do not repeat automatically; one next window can be arranged while the current one is
+            running. Monthly plans are managed separately.
           </p>
         </div>
       </details>

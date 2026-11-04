@@ -14,6 +14,7 @@ export interface ModelBudget {
   accounted_at: string | null;
   predecessor_id: string | null;
   successor_id: string | null;
+  recurrence_id?: string | null;
   state: "scheduled" | "active" | "disabled" | "expired";
 }
 
