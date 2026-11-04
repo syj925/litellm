@@ -449,6 +449,7 @@ class WalletStore:
             self._initialized = True
 
     async def initialize_control_plane(self) -> None:
+        from .audit_delivery_store import initialize_schema as initialize_audit_delivery
         from .budget_management import initialize_budget_management_schema
         from .control_plane_flags import (
             model_budgets_enabled,
@@ -468,6 +469,7 @@ class WalletStore:
             async with self.diagnostic_transaction() as connection:
                 await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('retail:control-plane-schema',0))")
                 await initialize_audit(connection)
+                await initialize_audit_delivery(connection)
                 if organizations_enabled():
                     await initialize_organizations(connection)
                 if object_metadata_enabled():

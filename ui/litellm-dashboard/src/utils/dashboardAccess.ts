@@ -49,6 +49,7 @@ const retailAdminPages = new Set([
   "wallet-admin",
   "model-pricing",
   "business-labels",
+  "audit-delivery",
 ]);
 
 export const isProxyDashboardRole = (role: string): boolean => proxyRoles.has(roleKey(role));

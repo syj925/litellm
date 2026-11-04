@@ -25,3 +25,7 @@ def object_metadata_enabled() -> bool:
 
 def model_budgets_enabled() -> bool:
     return operation_audit_enabled() and os.environ.get("RETAIL_MODEL_BUDGETS_ENABLED", "false").lower() == "true"
+
+
+def audit_delivery_enabled() -> bool:
+    return operation_audit_enabled() and os.environ.get("RETAIL_AUDIT_DELIVERY_ENABLED", "false").lower() == "true"

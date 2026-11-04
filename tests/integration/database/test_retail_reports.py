@@ -443,8 +443,11 @@ async def test_unresolved_holds_are_separate_from_settled_ledger_and_frozen(runt
 async def test_audit_failure_cannot_leave_successful_job_or_partial_snapshot(runtime: ReportRuntime) -> None:
     await seed(runtime, count=2)
     async with runtime.reports.transaction() as connection:
-        await connection.execute("DROP TABLE retail_operation_events")
-    with pytest.raises(psycopg.errors.UndefinedTable):
+        await connection.execute("""CREATE FUNCTION reject_fixture_audit_write() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN RAISE EXCEPTION 'Audit writes rejected by fixture'; END; $$""")
+        await connection.execute("""CREATE TRIGGER reject_fixture_audit_write BEFORE INSERT ON retail_operation_events
+        FOR EACH ROW EXECUTE FUNCTION reject_fixture_audit_write()""")
+    with pytest.raises(psycopg.errors.RaiseException, match="Audit writes rejected by fixture"):
         await runtime.reports.create("owner", "owner", "audit-failure", runtime.window)
     async with runtime.reports.transaction() as connection:
         state: Final = await (

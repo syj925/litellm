@@ -12,6 +12,7 @@
 | `/ui/chat/api-keys/` | 使用已有自有接口轮换 API Key | 按原生账号和 Key 的实时权限校验；只读账号不能轮换 |
 | `/ui/business-labels/` | 维护 Key、团队、自有组织和数据库模型部署的独立分类及管理来源 | 仅当前有效的全站 Proxy Admin |
 | Customer Wallets 中的 Model budgets | 配置账号与精确模型的固定窗口消费额度，可提前安排连续的下一期 | 全站 Proxy Admin 配置，个人 Wallet 仅显示本人的当前及未来额度 |
+| `/ui/audit-delivery/` | 从 Operation Audit 进入，管理自有审计元数据的异步外投递 | 仅当前可写全站 Proxy Admin，普通用户和只读管理员拒绝 |
 
 创建组织时需要填写组织名称和首位组织管理员的现有账号 ID。账号关联由全站管理员确认客户归属后完成，不发送邀请邮件，也不向组织管理员提供全站账号搜索
 
@@ -75,6 +76,7 @@ CSV 只包含账本标识、时间、类型、金额、余额、请求 ID 和模
 | `RETAIL_REPORT_EXPORT_ENABLED` | false | 账号账本导出 |
 | `RETAIL_OBJECT_METADATA_ENABLED` | false | 全站管理员业务标签，依赖审计；详见 [业务标签与管理来源](business-labels.md) |
 | `RETAIL_MODEL_BUDGETS_ENABLED` | false | 消费额度管理和查询入口，依赖审计；已保存窗口的执行不随此开关关闭，详见 [模型额度](model-budgets.md) |
+| `RETAIL_AUDIT_DELIVERY_ENABLED` | false | 外投递接口与后台 worker，依赖审计；真实地址与签名密钥仅在服务器配置，详见 [审计外投递](audit-delivery.md) |
 | `RETAIL_REPORT_DB_CONNECTIONS` | 2 | 每个 worker 的报表连接，允许 1 至 4 |
 | `RETAIL_REPORT_MAX_ROWS` | 10000 | 单任务最多物化行数，允许 1 至 100000 |
 | `RETAIL_REPORT_MAX_BYTES` | 10485760 | 单产物字节上限，最大 25 MiB |

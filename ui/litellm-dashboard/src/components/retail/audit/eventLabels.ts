@@ -1,0 +1,16 @@
+export const eventLabels: Record<string, string> = {
+  "organization.created": "Organization created",
+  "organization.updated": "Organization updated",
+  "organization.member_associated": "Account associated",
+  "organization.member_updated": "Membership updated",
+  "report.created": "Report requested",
+  "report.completed": "Report completed",
+  "report.failed": "Report failed",
+  "object_metadata.updated": "Business labels updated",
+  "model_budget.created": "Model budget created",
+  "model_budget.updated": "Model budget updated",
+  "model_budget.scheduled": "Next model budget window scheduled",
+  "audit_delivery.updated": "Audit delivery configuration updated",
+  "audit_delivery.retried": "Audit delivery retried",
+  "audit_delivery.discarded": "Outstanding audit deliveries discarded",
+};

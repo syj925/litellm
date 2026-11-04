@@ -1,6 +1,7 @@
 import pytest
 
 from litellm.proxy.retail.control_plane_flags import (
+    audit_delivery_enabled,
     model_budgets_enabled,
     object_metadata_enabled,
     operation_audit_enabled,
@@ -18,6 +19,7 @@ def test_audit_rollback_disables_dependent_management_writes(monkeypatch: pytest
     monkeypatch.setenv("RETAIL_REPORT_EXPORT_ENABLED", "true")
     monkeypatch.setenv("RETAIL_OBJECT_METADATA_ENABLED", "true")
     monkeypatch.setenv("RETAIL_MODEL_BUDGETS_ENABLED", "true")
+    monkeypatch.setenv("RETAIL_AUDIT_DELIVERY_ENABLED", "true")
     assert (
         operation_audit_enabled(),
         organizations_enabled(),
@@ -25,7 +27,8 @@ def test_audit_rollback_disables_dependent_management_writes(monkeypatch: pytest
         report_export_enabled(),
         object_metadata_enabled(),
         model_budgets_enabled(),
-    ) == (enabled, enabled, enabled, enabled, enabled, enabled)
+        audit_delivery_enabled(),
+    ) == (enabled, enabled, enabled, enabled, enabled, enabled, enabled)
 
 
 def test_organization_rollback_preserves_personal_reports(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -44,6 +47,7 @@ def test_unconfigured_modules_stay_closed(monkeypatch: pytest.MonkeyPatch) -> No
         "RETAIL_REPORT_EXPORT_ENABLED",
         "RETAIL_OBJECT_METADATA_ENABLED",
         "RETAIL_MODEL_BUDGETS_ENABLED",
+        "RETAIL_AUDIT_DELIVERY_ENABLED",
     ):
         monkeypatch.delenv(name, raising=False)
     assert (
@@ -53,4 +57,5 @@ def test_unconfigured_modules_stay_closed(monkeypatch: pytest.MonkeyPatch) -> No
         report_export_enabled(),
         object_metadata_enabled(),
         model_budgets_enabled(),
-    ) == (False, False, False, False, False, False)
+        audit_delivery_enabled(),
+    ) == (False, False, False, False, False, False, False)

@@ -2,6 +2,7 @@
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { ClipboardList, RefreshCw, Search } from "lucide-react";
+import Link from "next/link";
 import { useQueryStates } from "nuqs";
 import { useId, useState, type FormEvent } from "react";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
@@ -11,12 +12,13 @@ import { LoadingState } from "@/components/shared/LoadingState";
 import { Page } from "@/components/shared/Page";
 import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components/shared/PageHeader";
 import { StateMessage } from "@/components/shared/StateMessage";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { isProxyAdminRole } from "@/utils/roles";
+import { uiHref } from "@/utils/uiHref";
 import { retailRequest, type PageResult } from "../api";
 import {
   ManagementError,
@@ -32,6 +34,7 @@ import {
 import { beijingTimeInput, managementInterval } from "../management/time";
 import type { RetailOrganization } from "../organizations/types";
 import AuditOrganizationSearch from "./AuditOrganizationSearch";
+import { eventLabels } from "./eventLabels";
 
 interface OperationEvent {
   id: string;
@@ -60,19 +63,6 @@ const auditParsers = {
 type AppliedAuditFilters = { organization: string; action: string; actor: string; start: string; end: string };
 type AuditFilters = AppliedAuditFilters & { page: number; scope_query: string; scope_page: number };
 const inputClass = "h-9 w-full rounded-md border border-input bg-background px-3 text-sm";
-const eventLabels: Record<string, string> = {
-  "organization.created": "Organization created",
-  "organization.updated": "Organization updated",
-  "organization.member_associated": "Account associated",
-  "organization.member_updated": "Membership updated",
-  "report.created": "Report requested",
-  "report.completed": "Report completed",
-  "report.failed": "Report failed",
-  "object_metadata.updated": "Business labels updated",
-  "model_budget.created": "Model budget created",
-  "model_budget.updated": "Model budget updated",
-  "model_budget.scheduled": "Next model budget window scheduled",
-};
 
 function AuditFiltersForm({
   filters,
@@ -479,13 +469,20 @@ function OperationAuditWorkspace() {
             Operation Audit
           </PageHeaderTitle>
           <PageHeaderDescription>
-            Recorded organization, membership, and report operations, with actor IDs and change history.
+            Supported management operations, with authorized actor IDs and change history.
           </PageHeaderDescription>
         </PageHeader>
-        <Button variant="outline" disabled={!mayRead || events.isFetching} onClick={() => void events.refetch()}>
-          <RefreshCw />
-          Refresh events
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {admin && (
+            <Link className={buttonVariants({ variant: "outline" })} href={uiHref("audit-delivery")}>
+              Audit delivery
+            </Link>
+          )}
+          <Button variant="outline" disabled={!mayRead || events.isFetching} onClick={() => void events.refetch()}>
+            <RefreshCw />
+            Refresh events
+          </Button>
+        </div>
       </div>
       <AuditScopePanel
         admin={admin}

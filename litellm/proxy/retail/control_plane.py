@@ -7,6 +7,8 @@ from fastapi import APIRouter, FastAPI
 
 from litellm._logging import verbose_proxy_logger
 
+from .audit_delivery import router as audit_delivery_router
+from .audit_delivery_worker import close_audit_delivery_worker, start_audit_delivery_worker
 from .control_plane_flags import operation_audit_enabled
 from .coordination_guard import close_coordination_guard, start_coordination_guard
 from .model_budgets import router as model_budgets_router
@@ -24,6 +26,7 @@ async def _initialize_management() -> None:
             await store.initialize()
             await store.initialize_control_plane()
             await start_report_worker(store)
+            await start_audit_delivery_worker(store)
         except Exception as exc:  # noqa: BLE001  # optional management outages must not stop inference or settlement
             verbose_proxy_logger.warning("Retail management startup deferred (%s)", type(exc).__name__)
         else:
@@ -43,7 +46,10 @@ async def control_plane_lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             await close_report_worker()
         finally:
-            await close_coordination_guard()
+            try:
+                await close_audit_delivery_worker()
+            finally:
+                await close_coordination_guard()
 
 
 router: Final = APIRouter(lifespan=control_plane_lifespan)
@@ -51,3 +57,4 @@ router.include_router(organizations_router)
 router.include_router(reports_router)
 router.include_router(object_metadata_router)
 router.include_router(model_budgets_router)
+router.include_router(audit_delivery_router)

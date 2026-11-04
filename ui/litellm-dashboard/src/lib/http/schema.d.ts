@@ -14647,6 +14647,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/audit-delivery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audit Delivery Status */
+        get: operations["audit_delivery_status_retail_admin_audit_delivery_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Configure Audit Delivery */
+        patch: operations["configure_audit_delivery_retail_admin_audit_delivery_patch"];
+        trace?: never;
+    };
+    "/retail/admin/audit-delivery/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audit Deliveries */
+        get: operations["audit_deliveries_retail_admin_audit_delivery_deliveries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/audit-delivery/deliveries/{delivery_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Audit Delivery */
+        post: operations["retry_audit_delivery_retail_admin_audit_delivery_deliveries__delivery_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/audit-delivery/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discard Audit Deliveries */
+        post: operations["discard_audit_deliveries_retail_admin_audit_delivery_discard_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/catalog-sources": {
         parameters: {
             query?: never;
@@ -27809,6 +27878,56 @@ export interface components {
              */
             unnamed_teams_count: number;
         };
+        /** AuditDeliveryStatus */
+        AuditDeliveryStatus: {
+            /** Activated At */
+            activated_at: string | null;
+            /** Config Version */
+            config_version: number;
+            /** Configuration Error */
+            configuration_error: ("not_configured" | "invalid_configuration") | null;
+            /** Configuration Matches */
+            configuration_matches: boolean;
+            counts: components["schemas"]["DeliveryCounts"];
+            /** Destination Configured */
+            destination_configured: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Global Concurrency
+             * @default 2
+             * @constant
+             */
+            global_concurrency: 2;
+            /** Last Delivered At */
+            last_delivered_at: string | null;
+            /** Last Failure At */
+            last_failure_at: string | null;
+            /** Last Overflow At */
+            last_overflow_at: string | null;
+            /**
+             * Max Attempts
+             * @default 5
+             * @constant
+             */
+            max_attempts: 5;
+            /** Overflow Count */
+            overflow_count: number;
+            /**
+             * Queue Capacity
+             * @default 10000
+             * @constant
+             */
+            queue_capacity: 10000;
+            /** Retained Count */
+            retained_count: number;
+            /**
+             * Retention Days
+             * @default 7
+             * @constant
+             */
+            retention_days: 7;
+        };
         /**
          * AuditLogResponse
          * @description Response model for a single audit log entry
@@ -32280,6 +32399,13 @@ export interface components {
             /** Api Base */
             api_base: string;
         };
+        /** ConfigureAuditDelivery */
+        ConfigureAuditDelivery: {
+            /** Enabled */
+            enabled: boolean;
+            /** Expected Version */
+            expected_version: number;
+        };
         /** ContainerAuto */
         ContainerAuto: {
             /** File Ids */
@@ -33791,6 +33917,74 @@ export interface components {
             /** User Ids */
             user_ids: string[];
         };
+        /** DeliveryCounts */
+        DeliveryCounts: {
+            /** Delivered */
+            delivered: number;
+            /** Discarded */
+            discarded: number;
+            /** Failed */
+            failed: number;
+            /** Pending */
+            pending: number;
+            /** Processing */
+            processing: number;
+        };
+        /** DeliveryJobView */
+        DeliveryJobView: {
+            /** Action */
+            action: string;
+            /** Attempts */
+            attempts: number;
+            /** Completed At */
+            completed_at: string | null;
+            /** Configuration Matches */
+            configuration_matches: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error Code */
+            error_code: ("timeout" | "transport_error" | "http_retryable" | "http_rejected" | "redirect_rejected" | "lease_expired" | "expired" | "discarded") | null;
+            /** Event Id */
+            event_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Next Attempt At
+             * Format: date-time
+             */
+            next_attempt_at: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Resource Type */
+            resource_type: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "processing" | "delivered" | "failed" | "discarded";
+            /** Version */
+            version: number;
+        };
+        /** DeliveryPage */
+        DeliveryPage: {
+            /** Items */
+            items: components["schemas"]["DeliveryJobView"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
         /** Deployment */
         Deployment: {
             /** Blocked */
@@ -33801,6 +33995,16 @@ export interface components {
             model_name: string;
         } & {
             [key: string]: unknown;
+        };
+        /** DiscardAuditDeliveries */
+        DiscardAuditDeliveries: {
+            /**
+             * Confirmation
+             * @constant
+             */
+            confirmation: "discard_pending";
+            /** Expected Version */
+            expected_version: number;
         };
         /** DiscoverAgentRequest */
         DiscoverAgentRequest: {
@@ -47666,6 +47870,11 @@ export interface components {
             passed: number;
             /** Total */
             total: number;
+        };
+        /** RetryAuditDelivery */
+        RetryAuditDelivery: {
+            /** Expected Version */
+            expected_version: number;
         };
         /**
          * RetryPolicy
@@ -74741,6 +74950,166 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResponseItemList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_delivery_status_retail_admin_audit_delivery_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditDeliveryStatus"];
+                };
+            };
+        };
+    };
+    configure_audit_delivery_retail_admin_audit_delivery_patch: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigureAuditDelivery"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditDeliveryStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_deliveries_retail_admin_audit_delivery_deliveries_get: {
+        parameters: {
+            query?: {
+                state?: ("pending" | "processing" | "delivered" | "failed" | "discarded") | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_audit_delivery_retail_admin_audit_delivery_deliveries__delivery_id__retry_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetryAuditDelivery"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryJobView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_audit_deliveries_retail_admin_audit_delivery_discard_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscardAuditDeliveries"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditDeliveryStatus"];
                 };
             };
             /** @description Validation Error */
