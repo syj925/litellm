@@ -28,13 +28,14 @@ function isScimInactive(user: UserInfo): boolean {
 }
 
 interface UserRowActionsProps {
+  readOnly: boolean;
   user: UserInfo;
   onUserClick: (userId: string, openInEditMode?: boolean) => void;
   onDeleteUser: (user: UserInfo) => void;
   onResetPassword: (userId: string) => void;
 }
 
-function UserRowActions({ user, onUserClick, onDeleteUser, onResetPassword }: UserRowActionsProps) {
+function UserRowActions({ user, readOnly, onUserClick, onDeleteUser, onResetPassword }: UserRowActionsProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -45,14 +46,18 @@ function UserRowActions({ user, onUserClick, onDeleteUser, onResetPassword }: Us
         <MoreHorizontal className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuItem onClick={() => onUserClick(user.user_id, true)} data-testid="user-action-edit">
-          <Pencil />
-          Edit user
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onResetPassword(user.user_id)} data-testid="user-action-reset-password">
-          <KeyRound />
-          Reset password
-        </DropdownMenuItem>
+        {!readOnly && (
+          <DropdownMenuItem onClick={() => onUserClick(user.user_id, true)} data-testid="user-action-edit">
+            <Pencil />
+            Edit user
+          </DropdownMenuItem>
+        )}
+        {!readOnly && (
+          <DropdownMenuItem onClick={() => onResetPassword(user.user_id)} data-testid="user-action-reset-password">
+            <KeyRound />
+            Reset password
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           onClick={() => void copyToClipboard(user.user_id, "User ID copied")}
           data-testid="user-action-copy"
@@ -60,17 +65,20 @@ function UserRowActions({ user, onUserClick, onDeleteUser, onResetPassword }: Us
           <Copy />
           Copy user ID
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onClick={() => onDeleteUser(user)} data-testid="user-action-delete">
-          <Trash2 />
-          Delete user
-        </DropdownMenuItem>
+        {!readOnly && <DropdownMenuSeparator />}
+        {!readOnly && (
+          <DropdownMenuItem variant="destructive" onClick={() => onDeleteUser(user)} data-testid="user-action-delete">
+            <Trash2 />
+            Delete user
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
 export interface UsersTableColumnsDeps {
+  readOnly?: boolean;
   possibleUIRoles: Record<string, Record<string, string>> | null;
   includeSelection: boolean;
   onUserClick: (userId: string, openInEditMode?: boolean) => void;
@@ -81,6 +89,7 @@ export interface UsersTableColumnsDeps {
 export const getUsersTableColumns = ({
   possibleUIRoles,
   includeSelection,
+  readOnly = false,
   onUserClick,
   onDeleteUser,
   onResetPassword,
@@ -256,6 +265,7 @@ export const getUsersTableColumns = ({
       cell: ({ row }) => (
         <div className="flex justify-end">
           <UserRowActions
+            readOnly={readOnly}
             user={row.original}
             onUserClick={onUserClick}
             onDeleteUser={onDeleteUser}

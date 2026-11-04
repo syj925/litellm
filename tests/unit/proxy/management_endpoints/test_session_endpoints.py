@@ -3,6 +3,7 @@ Tests for POST /session/logout and revoke_ui_session_keys
 (litellm/proxy/management_endpoints/session_endpoints.py).
 """
 
+from typing import Final
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -298,3 +299,55 @@ async def test_revoke_ui_session_keys_noop_without_db():
         )
 
     assert revoked == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outbox_available", (True, False))
+async def test_audited_logout_binds_archive_to_native_transaction_and_fails_closed_on_outbox_storage(
+    monkeypatch: pytest.MonkeyPatch, outbox_available: bool,
+) -> None:
+    from litellm.proxy import proxy_server
+
+    prisma: Final = _make_prisma(find_unique_row=_session_row())
+    transaction: Final = MagicMock()
+    transaction.execute_raw = AsyncMock(return_value=1)
+    transaction.litellm_deletedverificationtoken.create_many = AsyncMock(return_value=1)
+
+    async def query(sql: str, *args: object) -> object:
+        if 'FROM "LiteLLM_UserTable"' in sql:
+            return [{"user_id": USER_ID, "user_role": "internal_user", "password": "fixture-password-hash"}]
+        if 'FROM "LiteLLM_VerificationToken" WHERE token=' in sql:
+            return [{"user_id": USER_ID, "team_id": UI_SESSION_TOKEN_TEAM_ID, "active": True,
+                     "metadata": {}, "allowed_routes": []}]
+        if 'DELETE FROM "LiteLLM_VerificationToken"' in sql:
+            return [{"token": HASHED_TOKEN, "user_id": USER_ID, "team_id": UI_SESSION_TOKEN_TEAM_ID}]
+        if "SELECT source_id,retained_count" in sql:
+            return [{"source_id": "f1da69f6-048f-440c-b963-bd05450633ce", "retained_count": 0}] if outbox_available else []
+        return []
+
+    transaction.query_raw = AsyncMock(side_effect=query)
+    prisma.tx.return_value.__aenter__ = AsyncMock(return_value=transaction)
+    prisma.tx.return_value.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setenv("RETAIL_OPERATION_AUDIT_ENABLED", "true")
+    monkeypatch.setenv("RETAIL_NATIVE_AUDIT_ENABLED", "true")
+    monkeypatch.setattr(proxy_server, "prisma_client", prisma)
+    response: Final = Response()
+    if not outbox_available:
+        with pytest.raises(HTTPException) as unavailable:
+            await session_logout(response=response, user_api_key_dict=_ui_session_caller())
+        assert unavailable.value.status_code == 503
+        assert unavailable.value.detail == "Session storage is temporarily unavailable"
+        assert "set-cookie" not in response.headers
+        transaction.litellm_deletedverificationtoken.create_many.assert_not_awaited()
+        assert prisma.tx.return_value.__aexit__.await_args.args[0] is not None
+        return
+    result: Final = await session_logout(response=response, user_api_key_dict=_ui_session_caller())
+    assert result.message == "Session revoked."
+    assert 'token=""' in response.headers["set-cookie"]
+    prisma.db.litellm_verificationtoken.delete_many.assert_not_awaited()
+    records: Final = transaction.litellm_deletedverificationtoken.create_many.await_args.kwargs["data"]
+    assert len(records) == 1 and records[0]["token"] == HASHED_TOKEN
+    assert records[0]["deleted_by"] == USER_ID
+    events: Final = tuple(call.args for call in transaction.query_raw.await_args_list if "INSERT INTO retail_native_audit_outbox" in call.args[0])
+    assert len(events) == 1 and "native_session.revoked" in events[0]
+    assert HASHED_TOKEN not in str(events)

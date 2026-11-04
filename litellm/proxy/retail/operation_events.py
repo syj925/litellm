@@ -38,6 +38,9 @@ _ALLOWED_ACTIONS: Final = frozenset(
         "audit_delivery.updated",
         "audit_delivery.retried",
         "audit_delivery.discarded",
+        "native_key.rotated",
+        "native_password.changed",
+        "native_session.revoked",
     )
 )
 _ALLOWED_FIELDS: Final = frozenset(
@@ -150,7 +153,10 @@ async def append_operation_event(
     idempotency_key: str,
     request_digest: str,
     response: Mapping[str, JsonValue],
+    occurred_at: datetime | None = None,
 ) -> None:
+    if occurred_at is not None and occurred_at.utcoffset() is None:
+        raise ValueError("Audit occurrence time requires an explicit timezone")
     if action not in _ALLOWED_ACTIONS or resource_type not in (
         "organization",
         "organization_member",
@@ -162,13 +168,14 @@ async def append_operation_event(
         "finance_grant",
         "delegated_report",
         "audit_delivery",
+        "native_operation",
     ):
         raise ValueError("Unsupported audit event type")
     await connection.execute(
         """INSERT INTO retail_operation_events
         (id,organization_id,actor_id,action,resource_type,resource_id,result,version_before,version_after,
-         changes,idempotency_key,request_digest,response)
-        VALUES(%s,%s,%s,%s,%s,%s,'succeeded',%s,%s,%s,%s,%s,%s)""",
+         changes,idempotency_key,request_digest,response,created_at)
+        VALUES(%s,%s,%s,%s,%s,%s,'succeeded',%s,%s,%s,%s,%s,%s,COALESCE(%s,clock_timestamp()))""",
         (
             str(uuid4()),
             organization_id,
@@ -182,6 +189,7 @@ async def append_operation_event(
             idempotency_key,
             request_digest,
             Jsonb(dict(response)),
+            occurred_at,
         ),
     )
 

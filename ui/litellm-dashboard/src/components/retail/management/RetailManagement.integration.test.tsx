@@ -237,6 +237,126 @@ it("does not probe foreign audit organizations from a deep link", async () => {
   expect(calls.map((call) => call.url.pathname)).toEqual(["/retail/config", "/retail/organizations"]);
 });
 
+const addedAuditActions = [
+  ["billing_organization.updated", "Billing organization updated"],
+  ["organization_report.created", "Organization report requested"],
+  ["organization_report.completed", "Organization report completed"],
+  ["organization_report.failed", "Organization report failed"],
+  ["finance_grant.updated", "Finance access updated"],
+  ["delegated_report.created", "Delegated finance report requested"],
+  ["delegated_report.completed", "Delegated finance report completed"],
+  ["delegated_report.failed", "Delegated finance report failed"],
+  ["native_key.rotated", "API key rotated"],
+  ["native_password.changed", "Account password changed"],
+  ["native_session.revoked", "Account sessions revoked"],
+] as const;
+
+it.each(addedAuditActions)("filters and labels the controlled admin audit action %s", async (action, label) => {
+  const calls = serve((request) =>
+    response(
+      page(
+        request.url.searchParams.get("action") === action
+          ? [
+              {
+                id: "audit-event",
+                organization_id: null,
+                actor_id: "actor-one",
+                action,
+                resource_type: "organization",
+                resource_id: "organization-one",
+                result: "succeeded",
+                version_before: 1,
+                version_after: 2,
+                created_at: "2026-11-01T00:00:00Z",
+                changes: {},
+              },
+            ]
+          : [],
+      ),
+    ),
+  );
+  renderWithProviders(<RetailOperationAuditPanel />, { searchParams: { page: "3" } });
+  const select = await screen.findByRole("combobox", { name: "Action" });
+  const values = within(select)
+    .getAllByRole("option")
+    .map((option) => (option as HTMLOptionElement).value);
+  expect(values).toEqual([
+    "",
+    "organization.created",
+    "organization.updated",
+    "organization.member_associated",
+    "organization.member_updated",
+    "report.created",
+    "report.completed",
+    "report.failed",
+    "object_metadata.updated",
+    "model_budget.created",
+    "model_budget.updated",
+    "model_budget.scheduled",
+    ...addedAuditActions.map(([value]) => value),
+    "audit_delivery.updated",
+    "audit_delivery.retried",
+    "audit_delivery.discarded",
+  ]);
+  fireEvent.change(select, { target: { value: action } });
+  await userEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+  const events = screen.getByRole("region", { name: "Operation events" });
+  expect(await within(events).findByText(label)).toBeInTheDocument();
+  const filtered = calls.find((call) => call.url.searchParams.get("action") === action);
+  expect(filtered?.url.pathname).toBe("/retail/admin/operation-events");
+  expect(filtered?.url.searchParams.get("offset")).toBe("0");
+});
+
+it.each([
+  { role: "Internal User", viewer: false },
+  { role: "Admin", viewer: true },
+])(
+  "limits audit action options and deep links to organization actions for $role (viewer=$viewer)",
+  async ({ role, viewer }) => {
+    auth.userRole = role;
+    auth.isViewOnly = viewer;
+    const calls = serve((request) =>
+      response(page(request.url.pathname.endsWith("operation-events") ? [] : [organization])),
+    );
+    renderWithProviders(<RetailOperationAuditPanel />, {
+      searchParams: { organization: organization.id, action: "finance_grant.updated" },
+    });
+    await screen.findByText("No operation events found");
+    const select = screen.getByRole("combobox", { name: "Action" });
+    expect(select).toHaveValue("");
+    expect(
+      within(select)
+        .getAllByRole("option")
+        .map((option) => (option as HTMLOptionElement).value),
+    ).toEqual([
+      "",
+      "organization.created",
+      "organization.updated",
+      "organization.member_associated",
+      "organization.member_updated",
+    ]);
+    expect(calls.find((call) => call.url.pathname.endsWith("operation-events"))?.url.searchParams.has("action")).toBe(
+      false,
+    );
+    fireEvent.change(select, { target: { value: "organization.member_updated" } });
+    await userEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.searchParams.get("action") === "organization.member_updated")).toBe(true),
+    );
+    expect(calls.some((call) => call.url.pathname.includes("/admin/"))).toBe(false);
+  },
+);
+
+it("ignores unrecognized audit deep-link actions instead of sending unsupported filter values", async () => {
+  const calls = serve(() => response(page([])));
+  renderWithProviders(<RetailOperationAuditPanel />, { searchParams: { action: "unsupported.action" } });
+  await screen.findByText("No operation events found");
+  expect(screen.getByRole("combobox", { name: "Action" })).toHaveValue("");
+  expect(calls.find((call) => call.url.pathname.endsWith("operation-events"))?.url.searchParams.has("action")).toBe(
+    false,
+  );
+});
+
 it("creates personal reports without account overrides and reuses the key after a failed retry", async () => {
   auth.userRole = "Internal User";
   let writes = 0;

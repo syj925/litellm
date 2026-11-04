@@ -14,10 +14,13 @@ ownership checks can reject low-privilege roles, and a self-revoke endpoint
 that takes no body cannot be aimed at other keys.
 """
 
+import asyncio
+from datetime import timedelta
 from typing import TYPE_CHECKING, Annotated, Final, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import TypeAdapter
+from prisma.errors import PrismaError
+from pydantic import TypeAdapter, ValidationError
 
 from litellm._logging import verbose_proxy_logger
 from litellm.constants import UI_SESSION_TOKEN_TEAM_ID
@@ -30,9 +33,16 @@ from litellm.proxy._types import (
 )
 from litellm.proxy.auth.auth_checks import delete_cache_key_objects
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+from litellm.proxy.common_utils.auth_cache_invalidation_pubsub import evict_and_broadcast
 from litellm.proxy.management_endpoints.key_management_endpoints import (  # noqa: F401  # legacy module exports
     _persist_deleted_verification_tokens,  # pyright: ignore[reportPrivateUsage,reportUnusedImport]  # backwards-compatible package export
     persist_deleted_verification_tokens,
+)
+from litellm.proxy.retail.control_plane_flags import native_audit_enabled
+from litellm.proxy.retail.native_audit_store import NativeAuditConflict, NativeAuditUnavailable
+from litellm.proxy.retail.native_session_transactions import (
+    logout_in_transaction,
+    require_native_session_success,
 )
 from litellm.repositories.verification_token_repository import (
     VerificationTokenRepository,
@@ -40,6 +50,8 @@ from litellm.repositories.verification_token_repository import (
 
 if TYPE_CHECKING:
     from prisma import types as prisma_types
+
+    from litellm.proxy.utils import PrismaClient
 
 router: Final = APIRouter()
 
@@ -49,6 +61,37 @@ _TOKEN_LIST: Final = TypeAdapter(list[str])
 def _error_detail(message: str) -> HTTPExceptionErrorDetail:
     detail: Final[HTTPExceptionErrorDetail] = {"error": message}
     return detail
+
+
+async def invalidate_native_sessions(
+    auth: UserAPIKeyAuth, revoked_tokens: tuple[str, ...], *, include_caller: bool = False,
+) -> None:
+    from litellm.proxy.proxy_server import proxy_logging_obj, user_api_key_cache
+
+    tokens: Final = (
+        (*revoked_tokens, auth.token)
+        if include_caller and auth.token is not None and auth.token not in revoked_tokens else revoked_tokens
+    )
+    await delete_cache_key_objects(
+        hashed_tokens=tokens, user_api_key_cache=user_api_key_cache, proxy_logging_obj=proxy_logging_obj,
+    )
+    if include_caller and auth.user_id:
+        await evict_and_broadcast(cache_keys=(auth.user_id,), user_api_key_cache=user_api_key_cache)
+
+
+async def _logout_audited(prisma_client: "PrismaClient", auth: UserAPIKeyAuth) -> bool:
+    try:
+        async with asyncio.timeout(8), prisma_client.tx(timeout=timedelta(seconds=8)) as transaction:
+            await transaction.execute_raw("SET LOCAL lock_timeout='1000ms'")
+            await transaction.execute_raw("SET LOCAL statement_timeout='5000ms'")
+            outcome: Final = require_native_session_success(await logout_in_transaction(transaction, auth))
+            await persist_deleted_verification_tokens(
+                keys=outcome.revoked, prisma_client=prisma_client, user_api_key_dict=auth, tx=transaction,
+            )
+    except (PrismaError, TimeoutError, NativeAuditUnavailable, NativeAuditConflict, ValidationError) as exc:
+        raise HTTPException(503, "Session storage is temporarily unavailable") from exc
+    await invalidate_native_sessions(auth, outcome.revoked_tokens(), include_caller=True)
+    return outcome.changed
 
 
 async def revoke_ui_session_keys(
@@ -143,6 +186,11 @@ async def session_logout(
             status_code=403,
             detail=_error_detail("Only UI session tokens can be revoked through this endpoint."),
         )
+
+    if native_audit_enabled():
+        changed: Final = await _logout_audited(prisma_client, user_api_key_dict)
+        response.delete_cookie("token")
+        return SessionLogoutResponse(message="Session revoked." if changed else "Session already revoked.")
 
     hashed_token: Final = user_api_key_dict.token
     revoked = False

@@ -18,6 +18,12 @@ from pydantic import JsonValue
 from litellm._logging import verbose_proxy_logger
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.proxy._types import ProxyException, UserAPIKeyAuth
+from litellm.router_utils.managed_credential_errors import (
+    credential_rejected_before_dispatch,
+    is_credential_rejection,
+    mark_credential_dispatch,
+    reset_credential_dispatch,
+)
 
 from .customer_access import customer_resource_policy
 from .database import database_setting
@@ -302,6 +308,7 @@ class RetailBilling(CustomLogger):
         self, user_api_key_dict: UserAPIKeyAuth, data: Mapping[str, object], call_type: str,
     ) -> Mapping[str, object]:
         _active_reservation.set(None)
+        reset_credential_dispatch()
         reset_pool_routing()
         policy: Final = _resource_policy(user_api_key_dict)
         exempt: Final = (
@@ -479,6 +486,7 @@ class RetailBilling(CustomLogger):
 
     async def async_pre_call_deployment_hook(self, kwargs: Mapping[str, object], call_type: object) -> None:
         guard_pool_deployment(kwargs)
+        mark_credential_dispatch()
 
     async def async_post_call_failure_deployment_hook(
         self,
@@ -620,6 +628,13 @@ class RetailBilling(CustomLogger):
         store: Final = self._store()
         reservation: Final = await store.get_reservation(request_id)
         if reservation is None or reservation["status"] != "reserved":
+            return
+        if credential_rejected_before_dispatch(original_exception):
+            await store.release(request_id, "Credential validation rejected the request before dispatch")
+            record_event("billing.released", {"retail_request_id": request_id, "reason": "no_upstream_contacted"})
+            return
+        if is_credential_rejection(original_exception):
+            record_event("billing.pending", {"retail_request_id": request_id, "reason": "prior_deployment_dispatch"})
             return
         if pool_rejected_before_upstream():
             await store.release(request_id, "No eligible resource-pool deployment was contacted")

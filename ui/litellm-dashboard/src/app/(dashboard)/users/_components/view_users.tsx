@@ -39,6 +39,7 @@ interface ViewUserDashboardProps {
   accessToken: string | null;
   token: string | null;
   userRole: string | null;
+  isViewOnly?: boolean;
   userID: string | null;
   teams: any[] | null;
   orgAdminOrgIds?: Array<{ organization_id: string; organization_alias: string }> | null;
@@ -54,11 +55,13 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
   accessToken,
   token,
   userRole,
+  isViewOnly = false,
   userID,
   teams,
   orgAdminOrgIds,
 }) => {
   const isProxyAdmin = userRole ? isProxyAdminRole(userRole) : false;
+  const canManageUsers = isProxyAdmin && !isViewOnly;
   const queryClient = useQueryClient();
 
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: DEFAULT_PAGE_SIZE });
@@ -139,9 +142,9 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
   const handleUserClick = useCallback(
     (userId: string, openInEdit: boolean = false) => {
       void setSelectedUserId(userId);
-      setOpenInEditMode(openInEdit);
+      setOpenInEditMode(openInEdit && !isViewOnly);
     },
-    [setSelectedUserId],
+    [setSelectedUserId, isViewOnly],
   );
 
   const handleCloseUserInfo = useCallback(() => {
@@ -150,12 +153,14 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
   }, [setSelectedUserId]);
 
   const handleDelete = useCallback((user: UserInfo) => {
+    if (isViewOnly) return;
     setUserToDelete(user);
     setIsDeleteModalOpen(true);
-  }, []);
+  }, [isViewOnly]);
 
   const handleResetPassword = useCallback(
     async (userId: string) => {
+      if (isViewOnly) return;
       if (!accessToken) {
         toast.fromError("Access token not found");
         return;
@@ -169,10 +174,11 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
         toast.fromError("Failed to generate password reset link");
       }
     },
-    [accessToken],
+    [accessToken, isViewOnly],
   );
 
   const confirmDelete = async () => {
+    if (isViewOnly) return;
     if (userToDelete && accessToken) {
       try {
         setIsDeletingUser(true);
@@ -203,6 +209,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
   };
 
   const handleToggleSelectionMode = () => {
+    if (isViewOnly) return;
     setSelectionMode(!selectionMode);
     setRowSelection({});
   };
@@ -284,9 +291,10 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
         onClose={handleCloseUserInfo}
         accessToken={accessToken}
         userRole={userRole}
+        isViewOnly={isViewOnly}
         possibleUIRoles={possibleUIRoles}
         initialTab={openInEditMode ? 1 : 0}
-        startInEditMode={openInEditMode}
+        startInEditMode={openInEditMode && !isViewOnly}
       />
     );
   }
@@ -306,7 +314,8 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
       onColumnFiltersChange={handleColumnFiltersChange}
       searchValue={searchInput}
       onSearchChange={handleSearchChange}
-      selectionEnabled={isProxyAdmin && selectionMode}
+      selectionEnabled={canManageUsers && selectionMode}
+      readOnly={isViewOnly}
       rowSelection={rowSelection}
       onRowSelectionChange={setRowSelection}
       onUserClick={handleUserClick}
@@ -328,15 +337,15 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
           )}
           {!userListQuery.isLoading && userID && accessToken && (
             <>
-              {isProxyAdmin && (
+              {canManageUsers && (
                 <CreateUserButton userID={userID} accessToken={accessToken} possibleUIRoles={possibleUIRoles} />
               )}
 
-              {isProxyAdmin && (
+              {canManageUsers && (
                 <BulkCreateUsersButton accessToken={accessToken} teams={teams} possibleUIRoles={possibleUIRoles} />
               )}
 
-              {isProxyAdmin && (
+              {canManageUsers && (
                 <Button
                   type="button"
                   onClick={handleToggleSelectionMode}
@@ -347,7 +356,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
                 </Button>
               )}
 
-              {isProxyAdmin && selectionMode && (
+              {canManageUsers && selectionMode && (
                 <Button
                   type="button"
                   onClick={() => setIsBulkEditModalVisible(true)}
@@ -362,7 +371,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
         </div>
       </div>
 
-      {isProxyAdmin ? (
+      {canManageUsers ? (
         <Tabs defaultValue="users" className="gap-0">
           <TabsList variant="line" className="mb-4">
             <TabsTrigger value="users" className="flex-none data-active:text-primary after:bg-primary">
@@ -402,7 +411,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
 
       {/* Existing Modals */}
       <DeleteResourceModal
-        isOpen={isDeleteModalOpen}
+        isOpen={isDeleteModalOpen && !isViewOnly}
         title="Delete User?"
         message="Are you sure you want to delete this user? This action cannot be undone."
         resourceInformationTitle="User Information"
@@ -424,7 +433,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
       />
 
       <OnboardingModal
-        isInvitationLinkModalVisible={isInvitationLinkModalVisible}
+        isInvitationLinkModalVisible={isInvitationLinkModalVisible && !isViewOnly}
         setIsInvitationLinkModalVisible={setIsInvitationLinkModalVisible}
         baseUrl={baseUrl || ""}
         invitationLinkData={invitationLinkData}
@@ -432,7 +441,7 @@ const ViewUserDashboard: React.FC<ViewUserDashboardProps> = ({
       />
 
       <BulkEditUserModal
-        open={isBulkEditModalVisible}
+        open={isBulkEditModalVisible && canManageUsers}
         onCancel={() => setIsBulkEditModalVisible(false)}
         selectedUsers={selectedUsers}
         possibleUIRoles={possibleUIRoles}

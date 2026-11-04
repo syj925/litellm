@@ -2749,7 +2749,7 @@ class Router:
                 ).start()
 
             kwargs.setdefault("messages", messages)
-            self._update_kwargs_with_deployment(deployment=deployment, kwargs=kwargs)
+            self._update_kwargs_with_deployment(deployment=deployment, kwargs=kwargs, function_name="completion")
             kwargs.pop("silent_model", None)  # Ensure it's not in kwargs either
             model_name = litellm_params["model"]
             potential_model_client: Final = self._get_client(deployment=deployment, kwargs=kwargs)
@@ -2776,6 +2776,7 @@ class Router:
                     "caching": self.cache_responses,
                     "client": model_client,
                     **kwargs,
+                    **self._managed_credentials_for_attempt(deployment, kwargs),
                 }
             )
             response: Final = litellm.completion(**input_kwargs)
@@ -3936,7 +3937,7 @@ class Router:
                 )
 
             kwargs.setdefault("messages", messages)
-            self._update_kwargs_with_deployment(deployment=deployment, kwargs=kwargs)
+            self._update_kwargs_with_deployment(deployment=deployment, kwargs=kwargs, function_name="acompletion")
             kwargs.pop("silent_model", None)  # Ensure it's not in kwargs either
 
             model_name = litellm_params["model"]
@@ -3954,6 +3955,7 @@ class Router:
                     "caching": self.cache_responses,
                     "client": model_client,
                     **kwargs,
+                    **self._managed_credentials_for_attempt(deployment, kwargs),
                 }
             )
 
@@ -4203,6 +4205,14 @@ class Router:
         - Merges tools from deployment with request (proxy-configured tools + request tools).
         - On a fallback hop, drops the encrypted reasoning this deployment cannot decrypt, keeping its summary.
         """
+        if self._has_managed_credential(deployment):
+            if function_name not in ("completion", "acompletion"):
+                from litellm.router_utils.managed_credential_errors import ManagedCredentialRequestRejected
+
+                raise ManagedCredentialRequestRejected(deployment["model_name"], unsupported=True)
+            self._managed_credentials_for_attempt(deployment, kwargs)
+        elif isinstance(kwargs.get("api_key"), str) and kwargs["api_key"].startswith("retail-secret/"):
+            self._managed_credentials_for_attempt(deployment, kwargs)
         for key in self._forwarded_alias_marker_keys_the_deployment_sets(
             deployment=deployment, forwarded_keys=kwargs.pop(_ALIAS_MARKER_FORWARDED_PARAMS_KWARG, ())
         ):
@@ -4308,6 +4318,40 @@ class Router:
                 (_FALLBACK_HOP_ADAPTER.validate_python(deployment),),
                 unmarked_origin=deployment_that_just_failed,
             )
+
+    @staticmethod
+    def _has_managed_credential(deployment: Mapping[str, object]) -> bool:
+        params: Final = deployment.get("litellm_params")
+        key: Final = params.get("api_key") if isinstance(params, Mapping) else None
+        return isinstance(key, str) and key.startswith("retail-secret/")
+
+    @staticmethod
+    def _managed_credentials_for_attempt(
+        deployment: Mapping[str, object], kwargs: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        requested_key: Final = kwargs.get("api_key")
+        if not Router._has_managed_credential(deployment) and not (
+            isinstance(requested_key, str) and requested_key.startswith("retail-secret/")
+        ):
+            return MappingProxyType({})
+        from litellm.proxy.retail.custom_secret_adapter import (
+            ManagedSecretOverrideRejected,
+            ManagedSecretUnavailable,
+            managed_credential_kwargs,
+        )
+
+        public_model: Final = deployment.get("model_name")
+        model: Final = public_model if isinstance(public_model, str) else "model"
+        try:
+            return managed_credential_kwargs(deployment, kwargs)
+        except ManagedSecretUnavailable:
+            from litellm.router_utils.managed_credential_errors import ManagedCredentialUnavailable
+
+            raise ManagedCredentialUnavailable(model) from None
+        except ManagedSecretOverrideRejected:
+            from litellm.router_utils.managed_credential_errors import ManagedCredentialRequestRejected
+
+            raise ManagedCredentialRequestRejected(model) from None
 
     def _get_async_openai_model_client(self, deployment: dict, kwargs: dict):
         """
@@ -12807,6 +12851,8 @@ class Router:
                 InitalizeCachedClient.set_max_parallel_requests_client(litellm_router_instance=self, model=deployment)
                 client = self.cache.get_cache(key=cache_key, local_only=True, parent_otel_span=parent_otel_span)
             return client
+        elif self._has_managed_credential(deployment):
+            return None
         elif client_type == "async":
             if kwargs.get("stream") is True:
                 cache_key = f"{model_id}_stream_async_client"

@@ -8,10 +8,13 @@ request kwargs to OTEL spans, which would log plaintext passwords. The audit
 signal is emitted by hand below, with field names only, never values.
 """
 
+import asyncio
+from datetime import timedelta
 from typing import TYPE_CHECKING, Annotated, Final
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import TypeAdapter
+from prisma.errors import PrismaError
+from pydantic import TypeAdapter, ValidationError
 
 from litellm._logging import verbose_proxy_logger
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
@@ -31,8 +34,18 @@ from litellm.proxy.auth.password_policy import (
     validate_password_policy,
 )
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
-from litellm.proxy.management_endpoints.session_endpoints import revoke_ui_session_keys
+from litellm.proxy.management_endpoints.session_endpoints import (
+    invalidate_native_sessions,
+    persist_deleted_verification_tokens,
+    revoke_ui_session_keys,
+)
 from litellm.proxy.management_helpers.audit_logs import create_object_audit_log
+from litellm.proxy.retail.control_plane_flags import native_audit_enabled
+from litellm.proxy.retail.native_audit_store import NativeAuditConflict, NativeAuditUnavailable
+from litellm.proxy.retail.native_session_transactions import (
+    change_password_in_transaction,
+    require_native_session_success,
+)
 from litellm.proxy.utils import hash_password, verify_password
 from litellm.repositories.prisma_protocols import TableActions
 from litellm.repositories.user_repository import UserRepository
@@ -63,9 +76,31 @@ def _is_password_login_session(user_api_key_dict: UserAPIKeyAuth) -> bool:
 
 def _user_table(
     prisma_client: "PrismaClient | None",
+    *,
+    use_writer: bool = False,
 ) -> "TableActions[prisma_models.LiteLLM_UserTable]":
-    user_table: Final[TableActions[prisma_models.LiteLLM_UserTable]] = UserRepository(prisma_client).table
+    user_table: Final[TableActions[prisma_models.LiteLLM_UserTable]] = UserRepository(
+        prisma_client, use_writer=use_writer,
+    ).table
     return user_table
+
+
+async def _change_password_audited(
+    prisma_client: "PrismaClient", auth: UserAPIKeyAuth, *, expected_hash: str, replacement_hash: str,
+) -> None:
+    try:
+        async with asyncio.timeout(8), prisma_client.tx(timeout=timedelta(seconds=8)) as transaction:
+            await transaction.execute_raw("SET LOCAL lock_timeout='1000ms'")
+            await transaction.execute_raw("SET LOCAL statement_timeout='5000ms'")
+            outcome: Final = require_native_session_success(await change_password_in_transaction(
+                transaction, auth, expected_hash=expected_hash, replacement_hash=replacement_hash,
+            ))
+            await persist_deleted_verification_tokens(
+                keys=outcome.revoked, prisma_client=prisma_client, user_api_key_dict=auth, tx=transaction,
+            )
+    except (PrismaError, TimeoutError, NativeAuditUnavailable, NativeAuditConflict, ValidationError) as exc:
+        raise HTTPException(503, "Password storage is temporarily unavailable") from exc
+    await invalidate_native_sessions(auth, outcome.revoked_tokens(), include_caller=True)
 
 
 @router.post(
@@ -117,8 +152,9 @@ async def change_password(
             detail=_error_detail("No user is associated with this session, so there is no password to change."),
         )
 
+    audited: Final = native_audit_enabled()
     find_user: Final[prisma_types.LiteLLM_UserTableWhereInput] = {"user_id": user_id}
-    user_row: Final = await _user_table(prisma_client).find_first(where=find_user)
+    user_row: Final = await _user_table(prisma_client, use_writer=audited).find_first(where=find_user)
     stored_password: Final = user_row.password if user_row is not None else None
     if stored_password is None:
         raise HTTPException(
@@ -141,8 +177,15 @@ async def change_password(
     validate_password_policy(data.new_password, general_settings)
     await validate_password_not_breached(data.new_password, general_settings, hibp_client)
 
+    replacement_hash: Final = hash_password(data.new_password)
+    if audited:
+        await _change_password_audited(
+            prisma_client, user_api_key_dict, expected_hash=stored_password, replacement_hash=replacement_hash,
+        )
+        return ChangePasswordResponse(user_id=user_id, message="Password updated successfully.")
+
     password_update: Final[prisma_types.LiteLLM_UserTableUpdateInput] = {
-        "password": hash_password(data.new_password),
+        "password": replacement_hash,
         "password_reset_required": False,
         "last_breach_check_at": None,
     }

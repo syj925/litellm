@@ -34,7 +34,7 @@ import {
 import { beijingTimeInput, managementInterval } from "../management/time";
 import type { RetailOrganization } from "../organizations/types";
 import AuditOrganizationSearch from "./AuditOrganizationSearch";
-import { eventLabels } from "./eventLabels";
+import { authorizedAuditAction, eventLabels, organizationEventLabels } from "./eventLabels";
 
 interface OperationEvent {
   id: string;
@@ -77,7 +77,7 @@ function AuditFiltersForm({
 }) {
   const formId = useId();
   const [organization, setOrganization] = useState(filters.organization);
-  const [action, setAction] = useState(filters.action);
+  const [action, setAction] = useState(authorizedAuditAction(filters.action, admin));
   const [actor, setActor] = useState(filters.actor);
   const [start, setStart] = useState(beijingTimeInput(filters.start));
   const [end, setEnd] = useState(beijingTimeInput(filters.end));
@@ -92,7 +92,7 @@ function AuditFiltersForm({
     setError("");
     const appliedFilters = {
       organization: organization.trim(),
-      action,
+      action: authorizedAuditAction(action, admin),
       actor: admin ? actor.trim() : "",
       start: interval.interval?.start_at ?? "",
       end: interval.interval?.end_at ?? "",
@@ -133,11 +133,11 @@ function AuditFiltersForm({
           <select
             id={`${formId}-action`}
             className={inputClass}
-            value={action}
+            value={authorizedAuditAction(action, admin)}
             onChange={(event) => setAction(event.target.value)}
           >
             <option value="">All actions</option>
-            {Object.entries(eventLabels).map(([value, label]) => (
+            {Object.entries(admin ? eventLabels : organizationEventLabels).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
@@ -285,7 +285,7 @@ function useOperationAudit(filters: AuditFilters) {
     : `/organizations/${encodeURIComponent(scoped?.id ?? "")}/operation-events`;
   const queryParameters = {
     organization_id: admin ? filters.organization : undefined,
-    action: filters.action,
+    action: authorizedAuditAction(filters.action, admin),
     actor_id: admin ? filters.actor : undefined,
     start: filters.start,
     end: filters.end,
@@ -424,7 +424,7 @@ function AuditScopePanel({
       )}
       {showFilters && (
         <AuditFiltersForm
-          key={JSON.stringify(filters)}
+          key={JSON.stringify([admin, filters])}
           filters={filters}
           admin={admin}
           organizations={allowed}

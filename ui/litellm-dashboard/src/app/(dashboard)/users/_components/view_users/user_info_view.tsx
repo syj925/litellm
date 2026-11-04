@@ -53,6 +53,7 @@ interface UserInfoViewProps {
   onClose: () => void;
   accessToken: string | null;
   userRole: string | null;
+  isViewOnly?: boolean;
   onDelete?: () => void;
   possibleUIRoles: Record<string, Record<string, string>> | null;
   initialTab?: number; // 0 for Overview, 1 for Details
@@ -83,12 +84,15 @@ export default function UserInfoView({
   onClose,
   accessToken,
   userRole,
+  isViewOnly = false,
   onDelete,
   possibleUIRoles,
   initialTab = 0,
   startInEditMode = false,
 }: UserInfoViewProps) {
-  const { premiumUser, userId: signedInUserId } = useAuthorized();
+  const { premiumUser, userId: signedInUserId, isViewOnly: sessionViewOnly } = useAuthorized();
+  const readOnly = isViewOnly || Boolean(sessionViewOnly);
+  const canModifyUser = !readOnly && Boolean(userRole && rolesWithWriteAccess.includes(userRole));
   const canViewAutoRouterUsage = hasProxyWideSpendView(userRole);
   const canViewSavings = canViewAutoRouterUsage || (Boolean(userId.trim()) && userId === signedInUserId);
   const activityDateRange = useActivityDateRange();
@@ -97,7 +101,7 @@ export default function UserInfoView({
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isEditing, setIsEditing] = useState(startInEditMode);
+  const [isEditing, setIsEditing] = useState(startInEditMode && canModifyUser);
   const [userModels, setUserModels] = useState<string[]>([]);
   const [isInvitationLinkModalVisible, setIsInvitationLinkModalVisible] = useState(false);
   const [invitationLinkData, setInvitationLinkData] = useState<InvitationLink | null>(null);
@@ -167,10 +171,10 @@ export default function UserInfoView({
     fetchData();
   }, [accessToken, userId, userRole]);
 
-  const isProxyAdmin = userRole === "proxy_admin" || userRole === "Admin";
+  const isProxyAdmin = !readOnly && (userRole === "proxy_admin" || userRole === "Admin");
 
   const fetchAllTeams = async () => {
-    if (!accessToken) return;
+    if (!accessToken || !isProxyAdmin) return;
     setIsLoadingTeams(true);
     try {
       const teams = await teamListCall(accessToken, null);
@@ -188,6 +192,7 @@ export default function UserInfoView({
   };
 
   const handleOpenAddTeamModal = () => {
+    if (!isProxyAdmin) return;
     setSelectedTeamId("");
     setSelectedRole("user");
     setIsAddTeamModalOpen(true);
@@ -195,7 +200,7 @@ export default function UserInfoView({
   };
 
   const handleAddTeamSubmit = async () => {
-    if (!accessToken || !selectedTeamId) return;
+    if (!accessToken || !selectedTeamId || !isProxyAdmin) return;
     setIsAddingTeam(true);
     try {
       const member: Member = {
@@ -230,12 +235,13 @@ export default function UserInfoView({
   };
 
   const handleOpenRemoveTeamModal = (team: TeamDisplayInfo) => {
+    if (!isProxyAdmin) return;
     setTeamToRemove(team);
     setIsRemoveTeamModalOpen(true);
   };
 
   const handleRemoveTeamConfirm = async () => {
-    if (!accessToken || !teamToRemove) return;
+    if (!accessToken || !teamToRemove || !isProxyAdmin) return;
     setIsRemovingTeam(true);
     try {
       const member: Member = {
@@ -280,6 +286,7 @@ export default function UserInfoView({
   const selectedTeamOption = availableTeamsForAdd.find((team) => team.team_id === selectedTeamId) ?? null;
 
   const handleResetPassword = async () => {
+    if (!canModifyUser) return;
     if (!accessToken) {
       toast.fromError("Access token not found");
       return;
@@ -295,6 +302,7 @@ export default function UserInfoView({
   };
 
   const handleDelete = async () => {
+    if (!canModifyUser) return;
     try {
       if (!accessToken) return;
       setIsDeletingUser(true);
@@ -318,6 +326,7 @@ export default function UserInfoView({
   };
 
   const handleUserUpdate = async (formValues: Record<string, any>) => {
+    if (!canModifyUser) return;
     try {
       if (!accessToken || !userData) return;
 
@@ -439,7 +448,7 @@ export default function UserInfoView({
             </Button>
           </div>
         </div>
-        {userRole && rolesWithWriteAccess.includes(userRole) && (
+        {canModifyUser && (
           <div className="flex items-center space-x-2">
             <Button variant="secondary" onClick={handleResetPassword} className="flex items-center">
               <RefreshCw />
@@ -458,7 +467,7 @@ export default function UserInfoView({
       </div>
 
       <DeleteResourceModal
-        isOpen={isDeleteModalOpen}
+        isOpen={isDeleteModalOpen && canModifyUser}
         title="Delete User?"
         message="Are you sure you want to delete this user? This action cannot be undone."
         resourceInformationTitle="User Information"
@@ -596,12 +605,12 @@ export default function UserInfoView({
           <Card className="block p-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-medium">User Settings</h3>
-              {!isEditing && userRole && rolesWithWriteAccess.includes(userRole) && (
+              {!isEditing && canModifyUser && (
                 <Button onClick={() => setIsEditing(true)}>Edit Settings</Button>
               )}
             </div>
 
-            {isEditing && userData ? (
+            {isEditing && canModifyUser && userData ? (
               <UserEditView
                 userData={userDataForEdit}
                 onCancel={() => setIsEditing(false)}
@@ -745,7 +754,7 @@ export default function UserInfoView({
         )}
       </Tabs>
       <OnboardingModal
-        isInvitationLinkModalVisible={isInvitationLinkModalVisible}
+        isInvitationLinkModalVisible={isInvitationLinkModalVisible && canModifyUser}
         setIsInvitationLinkModalVisible={setIsInvitationLinkModalVisible}
         baseUrl={baseUrl || ""}
         invitationLinkData={invitationLinkData}
@@ -754,7 +763,7 @@ export default function UserInfoView({
 
       {/* Delete Team Member Modal */}
       <DeleteResourceModal
-        isOpen={isRemoveTeamModalOpen}
+        isOpen={isRemoveTeamModalOpen && isProxyAdmin}
         title="Remove from Team"
         alertMessage="Removing this user from the team will also delete any keys the user created for this team."
         message="Are you sure you want to remove this user from the team? This action cannot be undone."
@@ -771,7 +780,7 @@ export default function UserInfoView({
 
       {/* Add to Team Modal */}
       <Dialog
-        open={isAddTeamModalOpen}
+        open={isAddTeamModalOpen && isProxyAdmin}
         onOpenChange={(open) => !open && setIsAddTeamModalOpen(false)}
         disablePointerDismissal={isAddingTeam}
       >

@@ -17,6 +17,10 @@ services:
       RETAIL_BILLING_ENABLED: "true"
       RETAIL_REGISTRATION_ENABLED: "true"
       RETAIL_OPERATION_AUDIT_ENABLED: "${RETAIL_OPERATION_AUDIT_ENABLED:-false}"
+      RETAIL_NATIVE_AUDIT_ENABLED: "${RETAIL_NATIVE_AUDIT_ENABLED:-false}"
+      RETAIL_MANAGED_SECRETS_ENABLED: "${RETAIL_MANAGED_SECRETS_ENABLED:-false}"
+      RETAIL_MANAGED_SECRETS_CONFIG: "${RETAIL_MANAGED_SECRETS_CONFIG:-}"
+      RETAIL_VAULT_TOKEN: "${RETAIL_VAULT_TOKEN:-}"
       RETAIL_ORGANIZATIONS_ENABLED: "${RETAIL_ORGANIZATIONS_ENABLED:-false}"
       RETAIL_ORGANIZATION_DELEGATION_ENABLED: "${RETAIL_ORGANIZATION_DELEGATION_ENABLED:-false}"
       RETAIL_REPORT_EXPORT_ENABLED: "${RETAIL_REPORT_EXPORT_ENABLED:-false}"
@@ -49,6 +53,7 @@ services:
       - ../litellm/litellm/proxy/common_utils/user_api_key_cache.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/common_utils/user_api_key_cache.py:ro
       - ../litellm/litellm/proxy/common_utils/http_parsing_utils.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/common_utils/http_parsing_utils.py:ro
       - ../litellm/litellm/router.py:/app/.venv/lib/python3.13/site-packages/litellm/router.py:ro
+      - ../litellm/litellm/router_utils/managed_credential_errors.py:/app/.venv/lib/python3.13/site-packages/litellm/router_utils/managed_credential_errors.py:ro
       - ../litellm/litellm/litellm_core_utils/request_trace_transport.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/request_trace_transport.py:ro
       - ../litellm/litellm/litellm_core_utils/logging_worker.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/logging_worker.py:ro
       - ../litellm/litellm/litellm_core_utils/streaming_handler.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/streaming_handler.py:ro
@@ -63,6 +68,8 @@ services:
       - ../litellm/litellm/proxy/spend_tracking/spend_tracking_utils.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/spend_tracking/spend_tracking_utils.py:ro
       - ../litellm/litellm/proxy/management_endpoints/daily_activity_routes.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/management_endpoints/daily_activity_routes.py:ro
       - ../litellm/litellm/proxy/management_endpoints/internal_user_endpoints.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/management_endpoints/internal_user_endpoints.py:ro
+      - ../litellm/litellm/proxy/management_endpoints/password_endpoints.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/management_endpoints/password_endpoints.py:ro
+      - ../litellm/litellm/proxy/management_endpoints/session_endpoints.py:/app/.venv/lib/python3.13/site-packages/litellm/proxy/management_endpoints/session_endpoints.py:ro
       - ../litellm/litellm/types/utils.py:/app/.venv/lib/python3.13/site-packages/litellm/types/utils.py:ro
       - ../litellm/litellm/utils.py:/app/.venv/lib/python3.13/site-packages/litellm/utils.py:ro
       - ../litellm/litellm/cost_calculator.py:/app/.venv/lib/python3.13/site-packages/litellm/cost_calculator.py:ro

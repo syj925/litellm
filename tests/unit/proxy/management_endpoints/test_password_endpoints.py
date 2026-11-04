@@ -490,3 +490,60 @@ async def test_change_password_requires_db():
             )
 
     assert exc_info.value.status_code == 500
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("credential_present", (True, False))
+async def test_audited_password_change_uses_fresh_session_and_archives_on_the_same_native_transaction(
+    monkeypatch: pytest.MonkeyPatch, credential_present: bool,
+) -> None:
+    from litellm.proxy import proxy_server
+    from litellm.proxy._types import ChangePasswordRequest
+
+    stored: Final = hash_password(CURRENT_PASSWORD)
+    prisma: Final = _make_prisma(_make_user_row(stored))
+    prisma.writer_db.litellm_usertable.find_first = AsyncMock(return_value=_make_user_row(stored))
+    transaction: Final = MagicMock()
+    transaction.execute_raw = AsyncMock(return_value=1)
+    transaction.litellm_deletedverificationtoken.create_many = AsyncMock(return_value=1)
+
+    async def query(sql: str, *args: object) -> object:
+        if 'FROM "LiteLLM_UserTable"' in sql:
+            return [{"user_id": "user-123", "user_role": "internal_user", "password": stored}]
+        if 'FROM "LiteLLM_VerificationToken" WHERE token=' in sql:
+            return [{"user_id": "user-123", "team_id": UI_TEAM_ID, "active": True,
+                     "metadata": dict(PASSWORD_SESSION_METADATA), "allowed_routes": []}] if credential_present else []
+        if 'DELETE FROM "LiteLLM_VerificationToken"' in sql:
+            return [{"token": "fixture-revoked-session", "user_id": "user-123", "team_id": UI_TEAM_ID}]
+        if "SELECT source_id,retained_count" in sql:
+            return [{"source_id": "cb600afc-3675-4fcd-bc06-fac693e46ef7", "retained_count": 0}]
+        return []
+
+    transaction.query_raw = AsyncMock(side_effect=query)
+    prisma.tx.return_value.__aenter__ = AsyncMock(return_value=transaction)
+    prisma.tx.return_value.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setenv("RETAIL_OPERATION_AUDIT_ENABLED", "true")
+    monkeypatch.setenv("RETAIL_NATIVE_AUDIT_ENABLED", "true")
+    monkeypatch.setattr(proxy_server, "prisma_client", prisma)
+    monkeypatch.setattr(proxy_server, "general_settings", _POLICY_NO_BREACH_CHECK)
+    caller: Final = _caller().model_copy(update={"token": "fixture-caller-session"})
+    data: Final = ChangePasswordRequest(current_password=CURRENT_PASSWORD, new_password=NEW_PASSWORD)
+    if not credential_present:
+        with pytest.raises(HTTPException) as denied:
+            await change_password(data=data, user_api_key_dict=caller, hibp_client=_hibp_client_never_called())
+        assert denied.value.status_code == 403
+        transaction.litellm_deletedverificationtoken.create_many.assert_not_awaited()
+        assert not any('UPDATE "LiteLLM_UserTable"' in call.args[0] for call in transaction.execute_raw.await_args_list)
+        return
+    result: Final = await change_password(data=data, user_api_key_dict=caller, hibp_client=_hibp_client_never_called())
+    assert result.user_id == "user-123"
+    prisma.db.litellm_usertable.update.assert_not_awaited()
+    records: Final = transaction.litellm_deletedverificationtoken.create_many.await_args.kwargs["data"]
+    assert len(records) == 1 and records[0]["token"] == "fixture-revoked-session"
+    assert records[0]["deleted_by"] == "user-123"
+    assert records[0]["deleted_at"] is not None
+    updates: Final = tuple(call.args for call in transaction.execute_raw.await_args_list if 'UPDATE "LiteLLM_UserTable"' in call.args[0])
+    assert len(updates) == 1 and verify_password(NEW_PASSWORD, updates[0][2])
+    outbox: Final = tuple(call.args for call in transaction.query_raw.await_args_list if "INSERT INTO retail_native_audit_outbox" in call.args[0])
+    assert len(outbox) == 2
+    assert CURRENT_PASSWORD not in str(outbox) and NEW_PASSWORD not in str(outbox) and stored not in str(outbox)

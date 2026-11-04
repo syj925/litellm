@@ -5,6 +5,10 @@ def operation_audit_enabled() -> bool:
     return os.environ.get("RETAIL_OPERATION_AUDIT_ENABLED", "false").lower() == "true"
 
 
+def native_audit_enabled() -> bool:
+    return operation_audit_enabled() and os.environ.get("RETAIL_NATIVE_AUDIT_ENABLED", "false").lower() == "true"
+
+
 def organizations_enabled() -> bool:
     return operation_audit_enabled() and os.environ.get("RETAIL_ORGANIZATIONS_ENABLED", "false").lower() == "true"
 

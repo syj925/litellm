@@ -42,6 +42,7 @@ interface UsersTableProps {
   searchValue: string;
   onSearchChange: (value: string) => void;
   selectionEnabled: boolean;
+  readOnly?: boolean;
   rowSelection: RowSelectionState;
   onRowSelectionChange: OnChangeFn<RowSelectionState>;
   onUserClick: (userId: string, openInEditMode?: boolean) => void;
@@ -83,6 +84,7 @@ export function UsersTable({
   searchValue,
   onSearchChange,
   selectionEnabled,
+  readOnly = false,
   rowSelection,
   onRowSelectionChange,
   onUserClick,
@@ -94,13 +96,14 @@ export function UsersTable({
   const columns = useMemo(() => {
     const columnDeps = {
       possibleUIRoles,
-      includeSelection: selectionEnabled,
+      includeSelection: selectionEnabled && !readOnly,
+      readOnly,
       onUserClick,
       onDeleteUser,
       onResetPassword,
     };
     return getUsersTableColumns(columnDeps);
-  }, [possibleUIRoles, selectionEnabled, onUserClick, onDeleteUser, onResetPassword]);
+  }, [possibleUIRoles, selectionEnabled, readOnly, onUserClick, onDeleteUser, onResetPassword]);
 
   const roleOptions = useMemo(
     () =>

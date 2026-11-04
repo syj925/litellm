@@ -25105,3 +25105,40 @@ async def test_responses_fallback_wrapper_disconnect_billing_keeps_the_primary_s
     wrapped.adopt_fallback_headers(fallback)
 
     assert wrapped.partial_response_on_disconnect().response.usage.output_tokens == primary_tokens + fallback_tokens
+
+
+@pytest.mark.parametrize("client_type,stream", (("async", False), ("async", True), (None, False), (None, True)))
+def test_managed_credentials_ignore_preconstructed_clients_but_preserve_parallel_gate(
+    client_type: str | None, stream: bool,
+) -> None:
+    router: Final = Router(model_list=[{
+        "model_name": "managed", "litellm_params": {
+            "model": "openai/managed-fixture", "api_key": "retail-secret/fixture", "api_base": "https://example.invalid/v1",
+        }, "model_info": {"id": "managed-client"},
+    }])
+    deployment: Final = router.model_list[0]
+    assert router._has_managed_credential(deployment)
+    cached: Final = object()
+    for suffix in ("async_client", "stream_async_client", "client", "stream_client", "max_parallel_requests_client"):
+        router.cache.set_cache(key="managed-client_" + suffix, value=cached, local_only=True)
+    assert router._get_client(deployment, {"stream": stream}, client_type) is None
+    assert router._get_client(deployment, {}, "max_parallel_requests") is cached
+
+
+@pytest.mark.parametrize("function_name", (None, "aembedding", "aresponses", "_ageneric_api_call_with_fallbacks"))
+def test_managed_credentials_reject_unverified_request_families_before_dispatch(function_name: str | None) -> None:
+    router: Final = Router(model_list=[{
+        "model_name": "managed", "litellm_params": {
+            "model": "openai/managed-fixture", "api_key": "retail-secret/fixture", "api_base": "https://example.invalid/v1",
+        },
+    }])
+    with pytest.raises(litellm.BadRequestError, match="does not support this request type"):
+        router._update_kwargs_with_deployment(router.model_list[0], {}, function_name)
+
+
+def test_a_caller_cannot_turn_a_normal_deployment_into_a_managed_credential_reference() -> None:
+    router: Final = Router(model_list=[{
+        "model_name": "ordinary", "litellm_params": {"model": "openai/fixture", "api_key": "fixture-unusable"},
+    }])
+    with pytest.raises(litellm.BadRequestError, match="does not allow routing overrides"):
+        router._update_kwargs_with_deployment(router.model_list[0], {"api_key": "retail-secret/caller"}, "acompletion")

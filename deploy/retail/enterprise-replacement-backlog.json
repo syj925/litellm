@@ -111,10 +111,11 @@
         "validation/r2-2026-11-04.json",
         "validation/r3-2026-11-04.json",
         "validation/r4-2026-11-04.json",
-        "validation/r5-2026-11-04.json"
+        "validation/r5-2026-11-04.json",
+        "validation/r9-2026-11-04.json"
       ],
       "deployment_status": "local_active_not_production",
-      "implementation_notes": "自有组织、报表、分类、消费额度及外投递控制的领域写入具备同事务不可修改事件；允许的事件可另建元数据外投递意图，溢出缺口有计数；原生跨库操作和全部拒绝尝试仍未覆盖",
+      "implementation_notes": "自有组织、报表、分类、消费额度及外投递控制的领域写入具备同事务不可修改事件；R9 新增自有Key轮换、自助改密和logout三类原生同事务outbox及跨库幂等桥，保留原发生时间，默认关闭，使用运维合同见native-audit.md，R9真实双worker、队列满回滚和源事件幂等已验收，本地已启用。其他原生充值、价格、渠道、账号CRUD和旧Key管理入口、全部拒绝尝试仍未覆盖；原生商业Audit Logs许可门禁不变",
       "latest_validation_commit": "4b8570bcae99305a54e92b8d4e3850fca464753f"
     },
     {
@@ -268,7 +269,8 @@
         "organization-reports.md",
         "delegated-finance.md",
         "validation/r8-2026-11-04.json",
-        "validation/r8-2026-11-04.md"
+        "validation/r8-2026-11-04.md",
+        "validation/r9-2026-11-04.json"
       ],
       "deployment_status": "local_active_not_production",
       "implementation_notes": "显式账号组织选择、不可变接纳归属、管理员实时概览和固定CSV持久任务已在本地验证；新增逐成员显式View/可选export的委派财务独立门户与安全投影，旧授权任务及操作键不因重新授权复活，三类报表合计资源和额度；R8接口、真实双worker与实际浏览器验收已完成，本地已启用；个人钱包仍权威，无历史推断回填；共享钱包仍未实现",
@@ -421,20 +423,24 @@
       "id": "ID-SECRET",
       "phase": "R3",
       "title": "外部密钥托管和缓存刷新",
-      "status": "deferred",
+      "status": "validated_scoped_locally",
       "depends_on": [
         "BASE-01",
         "AUD-01"
       ],
       "acceptance": [
-        "按供应方SDK独立实现",
+        "首版按Vault KV v2官方HTTP协议独立读取；其他供应方SDK或协议另行验收",
         "缓存和刷新有界",
         "不逐请求读取外部Vault",
         "凭据不进入日志和审计"
       ],
       "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "validation_evidence": [
+        "managed-secrets.md",
+        "validation/r9-2026-11-04.json"
+      ],
+      "deployment_status": "implemented_and_isolated_validated_main_disabled",
+      "implementation_notes": "R9 首版为server JSON固定refs与环境token、后台预热刷新及硬TTL/拒绝销毁；仅Router openai/ Chat同步、异步和显式部署调用，最终每attempt副本注key并绕过旧SDKclient；非Chat、非openai及客户端路由覆盖拒绝，关闭prefix拒绝且无环境fallback。main未配置真实Vault，最终R9验收另记；团队配置UI、其他秘密后端/KMS、Vault登录续租及原生商业集成仍未覆盖"
     },
     {
       "id": "SPEC-BYOK",
@@ -938,6 +944,11 @@
         "AUD-01"
       ],
       "reason": "管理操作事件独立于推理日志和财务账本",
+      "current_scoped_implementation": {
+        "task": "AUD-01",
+        "evidence": "native-audit.md",
+        "scope": "Own control-plane events and a default-off native transaction outbox bridge for retail key rotation, self password change and logout only; other native CRUD and commercial Audit Logs remain separate"
+      },
       "refs": [
         {
           "path": "litellm/proxy/management_helpers/audit_logs.py",
@@ -1229,7 +1240,12 @@
       "tasks": [
         "ID-SECRET"
       ],
-      "reason": "按实际企业供应方需求接入",
+      "reason": "首版独立实现Vault KV v2的OpenAI Chat服务端固定引用；其他秘密后端及原生集成继续按实际需求验收",
+      "current_scoped_implementation": {
+        "task": "ID-SECRET",
+        "evidence": "managed-secrets.md",
+        "scope": "Default-off server-configured Vault KV v2 reads with bounded background cache and per-attempt OpenAI Chat credential injection; team configuration UI, other secret backends and native paid gates remain unchanged"
+      },
       "refs": [
         {
           "path": "litellm/secret_managers/hashicorp_secret_manager.py",
@@ -2112,5 +2128,5 @@
   },
   "runtime_scope": "local_only",
   "production_changed": false,
-  "validation_record": "validation/r8-2026-11-04.json"
+  "validation_record": "validation/r9-2026-11-04.json"
 }

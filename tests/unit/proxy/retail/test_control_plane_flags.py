@@ -3,6 +3,7 @@ import pytest
 from litellm.proxy.retail.control_plane_flags import (
     audit_delivery_enabled,
     model_budgets_enabled,
+    native_audit_enabled,
     object_metadata_enabled,
     operation_audit_enabled,
     organization_delegation_enabled,
@@ -24,6 +25,7 @@ def test_audit_rollback_disables_dependent_management_writes(monkeypatch: pytest
     monkeypatch.setenv("RETAIL_OBJECT_METADATA_ENABLED", "true")
     monkeypatch.setenv("RETAIL_MODEL_BUDGETS_ENABLED", "true")
     monkeypatch.setenv("RETAIL_AUDIT_DELIVERY_ENABLED", "true")
+    monkeypatch.setenv("RETAIL_NATIVE_AUDIT_ENABLED", "true")
     assert (
         operation_audit_enabled(),
         organizations_enabled(),
@@ -34,7 +36,8 @@ def test_audit_rollback_disables_dependent_management_writes(monkeypatch: pytest
         object_metadata_enabled(),
         model_budgets_enabled(),
         audit_delivery_enabled(),
-    ) == (enabled, enabled, enabled, enabled, enabled, enabled, enabled, enabled, enabled)
+        native_audit_enabled(),
+    ) == (enabled, enabled, enabled, enabled, enabled, enabled, enabled, enabled, enabled, enabled)
 
 
 def test_organization_rollback_preserves_personal_reports(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -58,6 +61,7 @@ def test_unconfigured_modules_stay_closed(monkeypatch: pytest.MonkeyPatch) -> No
         "RETAIL_OBJECT_METADATA_ENABLED",
         "RETAIL_MODEL_BUDGETS_ENABLED",
         "RETAIL_AUDIT_DELIVERY_ENABLED",
+        "RETAIL_NATIVE_AUDIT_ENABLED",
     ):
         monkeypatch.delenv(name, raising=False)
     assert (
@@ -70,7 +74,8 @@ def test_unconfigured_modules_stay_closed(monkeypatch: pytest.MonkeyPatch) -> No
         object_metadata_enabled(),
         model_budgets_enabled(),
         audit_delivery_enabled(),
-    ) == (False, False, False, False, False, False, False, False, False)
+        native_audit_enabled(),
+    ) == (False, False, False, False, False, False, False, False, False, False)
 
 
 @pytest.mark.parametrize(
