@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-11-03",
+  "updated_at": "2026-11-04",
   "source_baseline": "e3f8f7d3",
   "document_status": "implementation_in_progress",
   "implementation_started": true,
@@ -107,10 +107,12 @@
       "implementation_commit": "b8c27ba2dd39a5021fcd8cf85ad43e2f3775c19a",
       "validation_evidence": [
         "validation/r1-2026-11-03.json",
-        "retail-management.md"
+        "retail-management.md",
+        "validation/r2-2026-11-04.json"
       ],
       "deployment_status": "local_active_not_production",
-      "implementation_notes": "组织和报表的领域写入具备同事务不可修改事件；原生跨库操作及全部拒绝尝试不在覆盖范围"
+      "implementation_notes": "组织、报表与自有业务标签的领域写入具备同事务不可修改事件；原生跨库操作及全部拒绝尝试不在覆盖范围",
+      "latest_validation_commit": "67eb5b696c4b7a87da488d6d3f28a736f76496ad"
     },
     {
       "id": "ORG-01",
@@ -180,10 +182,12 @@
       "implementation_commit": "b8c27ba2dd39a5021fcd8cf85ad43e2f3775c19a",
       "validation_evidence": [
         "validation/r1-2026-11-03.json",
-        "retail-management.md"
+        "retail-management.md",
+        "validation/r2-2026-11-04.json"
       ],
       "deployment_status": "local_active_not_production",
-      "implementation_notes": "新页面与菜单已接入；审计选择器当前仅前 100 个授权组织，超过范围的选择器分页待完善"
+      "implementation_notes": "新页面与菜单已接入；审计组织范围已补服务端每页25搜索与分页，超过100个授权组织可检索，撤权隐藏缓存；本轮该改动通过组件验证，未完成浏览器视觉验收",
+      "latest_validation_commit": "67eb5b696c4b7a87da488d6d3f28a736f76496ad"
     },
     {
       "id": "REP-01",
@@ -256,7 +260,7 @@
       "id": "CTRL-01",
       "phase": "R2",
       "title": "自有业务标签、管理来源字段和字段校验",
-      "status": "deferred",
+      "status": "validated_with_limits_locally",
       "depends_on": [
         "AUD-01",
         "ORG-02"
@@ -265,9 +269,13 @@
         "稳定标签命名与高基数限制",
         "服务端校验、脱敏和版本记录"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "67eb5b696c4b7a87da488d6d3f28a736f76496ad",
+      "validation_evidence": [
+        "validation/r2-2026-11-04.json",
+        "business-labels.md"
+      ],
+      "deployment_status": "local_active_not_production",
+      "implementation_notes": "四类对象的独立管理员分类、受控标签校验、原生模型来源投影、版本幂等与同事务审计已验证；不覆盖原生高级元数据/请求标签或任意校验回调；浏览器视觉验收待完成"
     },
     {
       "id": "CTRL-02",
@@ -770,7 +778,12 @@
           "path": "litellm/proxy/management_endpoints/key_management_endpoints.py",
           "line": 2428
         }
-      ]
+      ],
+      "current_scoped_implementation": {
+        "task": "CTRL-01",
+        "evidence": "validation/r2-2026-11-04.json",
+        "scope": "Admin-only own labels and separate provenance; native premium gates, request attachments and custom callbacks remain unchanged"
+      }
     },
     {
       "id": "B16",
@@ -789,7 +802,12 @@
           "path": "litellm/proxy/_types.py",
           "line": 5186
         }
-      ]
+      ],
+      "current_scoped_implementation": {
+        "task": "CTRL-01",
+        "evidence": "validation/r2-2026-11-04.json",
+        "scope": "Admin-only own labels and separate provenance; native premium gates, request attachments and custom callbacks remain unchanged"
+      }
     },
     {
       "id": "B17",
@@ -901,7 +919,12 @@
           "path": "litellm/proxy/management_helpers/team_metadata_validation.py",
           "line": 105
         }
-      ]
+      ],
+      "current_scoped_implementation": {
+        "task": "CTRL-01",
+        "evidence": "validation/r2-2026-11-04.json",
+        "scope": "Admin-only own labels and separate provenance; native premium gates, request attachments and custom callbacks remain unchanged"
+      }
     },
     {
       "id": "B23",
@@ -1371,7 +1394,12 @@
           "path": "litellm/proxy/proxy_server.py",
           "line": 7519
         }
-      ]
+      ],
+      "current_scoped_implementation": {
+        "task": "CTRL-01",
+        "evidence": "validation/r2-2026-11-04.json",
+        "scope": "Admin-only own labels and separate provenance; native premium gates, request attachments and custom callbacks remain unchanged"
+      }
     },
     {
       "id": "B43",
@@ -2041,5 +2069,5 @@
   },
   "runtime_scope": "local_only",
   "production_changed": false,
-  "validation_record": "validation/r1-2026-11-03.json"
+  "validation_record": "validation/r2-2026-11-04.json"
 }
