@@ -1,0 +1,409 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-04",
+  "scope": "account exact-public-model fixed-window successor scheduling",
+  "implementation_commit": "51d8e1cb49431ccd95dcc93a52e8254c8d0966d8",
+  "baseline_commit": "776553a3ebf5b8fa40b9b0cbb228f140105932e5",
+  "status": "validated_scoped_locally",
+  "local_active": true,
+  "production_changed": false,
+  "test_counts": {
+    "backend_unit_unique": 175,
+    "postgres_unique": 59,
+    "ui_unique": 67,
+    "unique_total": 301,
+    "shared_operation_event_cases_removed": 9
+  },
+  "backend_test_groups": [
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 112,
+      "files": [
+        "tests/unit/proxy/retail/test_budget_accounting.py",
+        "tests/unit/proxy/retail/test_operation_events.py",
+        "tests/unit/proxy/retail/test_store.py",
+        "tests/unit/proxy/retail/test_settlement_stream.py",
+        "tests/unit/proxy/retail/test_control_plane_access.py",
+        "tests/unit/proxy/retail/test_control_plane_http.py",
+        "tests/unit/proxy/retail/test_control_plane_flags.py"
+      ]
+    },
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 72,
+      "files": [
+        "tests/unit/proxy/retail/test_budget_management.py",
+        "tests/unit/proxy/retail/test_operation_events.py"
+      ]
+    },
+    {
+      "suite": "postgres",
+      "exit_code": 0,
+      "passed": 26,
+      "files": [
+        "tests/integration/database/test_retail_budgets.py"
+      ]
+    },
+    {
+      "suite": "postgres",
+      "exit_code": 0,
+      "passed": 32,
+      "files": [
+        "tests/integration/database/test_retail_budget_management.py"
+      ]
+    },
+    {
+      "suite": "postgres",
+      "exit_code": 0,
+      "passed": 1,
+      "files": [
+        "tests/integration/database/test_retail_budget_management.py::test_successor_full_year_horizon_is_relative_to_its_start_not_creation_clock"
+      ]
+    }
+  ],
+  "ui": {
+    "feature": "advance fixed-window model budget UI",
+    "status": "source_frozen",
+    "tests": {
+      "budget_input_unit": 29,
+      "budget_component_integration": 25,
+      "management_regression": 13,
+      "unique_total": 67,
+      "budget_log": "r4-ui-tests.log",
+      "management_log": "r4-ui-management-regression.log"
+    },
+    "lint": {
+      "exit_code": 0,
+      "warnings": 0,
+      "log": "r4-ui-eslint.log"
+    },
+    "production_types": {
+      "exit_code": 0,
+      "log": "r4-ui-types.log"
+    },
+    "design_detector": [],
+    "mutation": {
+      "change": "derive successor start from creation time instead of predecessor end",
+      "failed_tests": 2,
+      "exit_code": 1,
+      "restored": true,
+      "restored_tests_pass": true,
+      "log": "r4-ui-mutant.log"
+    },
+    "browser": "owned by root; not accessed by UI agent",
+    "api_schema_hand_edited": false,
+    "ui_scope": [
+      "scheduled state and paused marker",
+      "single successor action",
+      "read-only model and start",
+      "exact USD and expected config version",
+      "same-key retry and conflict reload",
+      "personal read-only future windows",
+      "operation audit label",
+      "compact summary with collapsed full accounting guidance"
+    ],
+    "compact_guidance_checks": {
+      "budget_tests": 54,
+      "lint_exit": 0,
+      "types_exit": 0,
+      "detector_exit": 0,
+      "detector_log": "r4-ui-compact-detection.json"
+    }
+  },
+  "native_http": {
+    "result": "passed",
+    "source_rows_copied": 0,
+    "no_external_model_calls": true,
+    "observations": [
+      {
+        "name": "schema_clone",
+        "schema_bytes": 195329,
+        "source_rows_copied": 0
+      },
+      {
+        "name": "runtime",
+        "worker_count": 2,
+        "retail_billing_enabled": true
+      },
+      {
+        "name": "scheduled_successor",
+        "created_status": 201,
+        "same_key_replayed": true,
+        "duplicate_status": 409,
+        "future_chain_status": 409,
+        "server_start_matches_parent_end": true,
+        "future_edit_status": 200,
+        "creation_time_is_actual": true
+      },
+      {
+        "name": "privacy",
+        "owner_rows": 2,
+        "ordinary_write_status": 401,
+        "unknown_status": 404,
+        "invalid_status": 422,
+        "management_fields_omitted": true
+      },
+      {
+        "name": "before_cutover",
+        "requests": 16,
+        "http200": 1,
+        "http429": 15,
+        "workers": 2,
+        "durable_total_charges": 3
+      },
+      {
+        "name": "waiting_for_cutover",
+        "future_charges_before_activation": 0,
+        "scheduled_start": "2026-11-04T07:05:34.482808Z"
+      },
+      {
+        "name": "after_cutover",
+        "requests": 16,
+        "http200": 1,
+        "http429": 15,
+        "workers": 2,
+        "durable_total_charges": 4
+      },
+      {
+        "name": "accounting",
+        "independent_windows": true,
+        "old_state": "expired",
+        "new_state": "active",
+        "holds_zero": true,
+        "schedule_audit_events": 1,
+        "expired_new_operation_status": 409,
+        "expired_idempotent_replay_status": 201
+      }
+    ]
+  },
+  "browser": {
+    "scope": "isolated native runtime only",
+    "result": "passed",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "admin": {
+      "nativeLogin": true,
+      "createdSuccessorThroughForm": true,
+      "initialLimitUSD": "8.000000000",
+      "initialEnforcement": false,
+      "scheduledAndPausedVisible": true,
+      "duplicateAndFutureChainButtonsDisabled": true,
+      "editedFutureWindowThroughForm": true,
+      "updatedLimitUSD": "9.000000000",
+      "updatedEnforcement": true,
+      "modelAndDatesReadOnly": true,
+      "compactGuidanceChecked": true
+    },
+    "owner": {
+      "nativeLogin": true,
+      "foreignAdminPageDenied": true,
+      "ownThreeWindowsVisible": true,
+      "editButtons": 0,
+      "scheduleButtons": 0,
+      "adminWalletLinks": 0,
+      "managementProvenanceNotVisible": true
+    },
+    "screenshots": [
+      "outputs/r4-budget-admin.jpg",
+      "outputs/r4-budget-admin-updated.jpg",
+      "outputs/r4-budget-owner.jpg"
+    ],
+    "notes": [
+      "Date fill required a native keyboard confirmation before React change state committed; no page-script mutation used",
+      "No existing customer or production data used"
+    ],
+    "completedAt": "2026-11-04T07:15:45.100Z"
+  },
+  "request_path": {
+    "baseline": "776553a3",
+    "financial_sql_unchanged": true,
+    "checked": [
+      "RESERVE_SQL",
+      "SETTLE_WALLET_SQL",
+      "RELEASE_WALLET_SQL"
+    ],
+    "throughput_certified": false
+  },
+  "activation": {
+    "local_active": true,
+    "production_changed": false,
+    "financial_fingerprint_unchanged": true,
+    "initial_financial_baseline_unchanged": true,
+    "source_overlays_match": true,
+    "overlay_file_count": 114
+  },
+  "live_http": {
+    "production_changed": false,
+    "paid_model_requests": false,
+    "policies_created_on_existing_accounts": false,
+    "feature_enabled": true,
+    "admin_routes": {
+      "budgets": {
+        "status": 200,
+        "rows": 0,
+        "private": true
+      },
+      "models": {
+        "status": 200,
+        "rows": 25,
+        "private": true
+      }
+    },
+    "anonymous_status": 401,
+    "safe_validation_status": 422,
+    "unknown_budget_status": 404,
+    "unknown_successor_status": 404,
+    "successor_safe_validation_status": 422,
+    "healthy_workers": 2,
+    "page_status": {
+      "/health/readiness": 200,
+      "/health/liveliness": 200,
+      "/ui/wallet/": 200,
+      "/ui/wallet-admin/": 200,
+      "/ui/business-labels/": 200,
+      "/ui/operation-audit/": 200
+    },
+    "existing_account_budget_policy_count": 0,
+    "completed": true
+  },
+  "final_checks": {
+    "live_secret_matches": 0,
+    "files_checked": 21,
+    "financial_fingerprint_unchanged": true,
+    "existing_accounts_budget_count": 0,
+    "production_changed": false
+  },
+  "cleanup": {
+    "all_owned_qa_containers_removed": true,
+    "owned_native_database_dropped": true,
+    "owned_ephemeral_postgres_removed": true,
+    "owned_qa_networks_removed": true,
+    "local_gateway_retained": true,
+    "production_changed": false
+  },
+  "manual_mutation_checks": {
+    "accounting": {
+      "mutation": "Late old settlement charged to currently active window instead of bound original policy",
+      "test": "tests/integration/database/test_retail_budgets.py::test_successor_cutover_preserves_old_holds_and_separates_late_settlement",
+      "baseline": "passed within 26-case accounting PostgreSQL suite",
+      "mutant_exit_code": 1,
+      "mutation_killed": true,
+      "working_tree_source_unchanged": true
+    },
+    "management": {
+      "manual_mutants": [
+        {
+          "mutant": "ignore-future-start",
+          "exit_code": 1,
+          "killed": true,
+          "selection": "half_open_state"
+        },
+        {
+          "mutant": "misclassify-start-boundary",
+          "exit_code": 1,
+          "killed": true,
+          "selection": "half_open_state"
+        },
+        {
+          "mutant": "coerce-successor-version",
+          "exit_code": 1,
+          "killed": true,
+          "selection": "successor_requires_strict_cas"
+        }
+      ],
+      "source_sha256_before": "fac0215dc2b13a0fd03d029c15cc78e3c5a8160a177d6f55f684c2a14ff2b8a8",
+      "source_sha256_after": "fac0215dc2b13a0fd03d029c15cc78e3c5a8160a177d6f55f684c2a14ff2b8a8",
+      "source_unchanged": true,
+      "killed": 3,
+      "total": 3
+    },
+    "ui": {
+      "change": "derive successor start from creation time instead of predecessor end",
+      "failed_tests": 2,
+      "exit_code": 1,
+      "restored": true,
+      "restored_tests_pass": true,
+      "log": "r4-ui-mutant.log"
+    },
+    "sampled_mutants": 5,
+    "all_killed": true,
+    "full_repository_coverage_claimed": false
+  },
+  "checks": {
+    "generated_api_schema": true,
+    "webpack_production_build": true,
+    "final_production_types": true,
+    "changed_python_strict_checks": true,
+    "changed_ui_lint_zero_warnings": true,
+    "design_detector": [],
+    "whole_repository_checks_claimed": false
+  },
+  "source_sha256": {
+    "deploy/retail/enterprise-feature-inventory.md": "be8106b5c3e124b08cf7d8f8bbf9dd4e71cdbad224369af95531514d8d2b1179",
+    "deploy/retail/model-budgets.md": "13fb01661552380c34760b99a7ed2aa0d505d80815310d70f24a1d6e83e4bfd1",
+    "deploy/retail/retail-management.md": "50d2f315f43082b50b02633272ead40e2311d40f05f8f6b65278070752c67d2e",
+    "litellm/proxy/retail/budget_accounting.py": "c1c75efdcec4ac06e42d138dd6cc0973a13623bbfa89cbc8d711d432d15d6130",
+    "litellm/proxy/retail/budget_management.py": "fac0215dc2b13a0fd03d029c15cc78e3c5a8160a177d6f55f684c2a14ff2b8a8",
+    "litellm/proxy/retail/budget_schema.sql": "f905e4d615033f47f3f5db2327a64b63fb7b508aa5e4df7541293854cc2d5ebc",
+    "litellm/proxy/retail/model_budgets.py": "7db673eb4ae3bb706fd77300990104ce6292879426306cad8cbb1d8e57a494b8",
+    "litellm/proxy/retail/operation_events.py": "3d4ce16e89f4fb6e2ec6e282c30768a4cc038b6b66028485e52b4906883f2378",
+    "tests/integration/database/test_retail_budget_management.py": "4db55473fee6bf017f574dc8ff04060ee8cc4e019dcaa4b98198db2d91b79dea",
+    "tests/integration/database/test_retail_budgets.py": "de7a18c5102ee3639cc3d4b1ab7ead79daa6a157fb1d6203c3fdb883ab180bd1",
+    "tests/unit/proxy/retail/test_budget_management.py": "e589d6770baa6692b2b5eaaa376f684411846d52269f2121e4779c449305e24c",
+    "ui/litellm-dashboard/src/components/retail/audit/RetailOperationAuditPanel.tsx": "2caae6b27814a2ccbaf7f8cb1e8ce124deb4c0c3fd47c699685d582e30df7f2a",
+    "ui/litellm-dashboard/src/components/retail/model-budgets/AdminModelBudgetsDialog.tsx": "64ddd1773c02a487c9c7027615688de1300f18cd39baf2f94278fc2b8fee219f",
+    "ui/litellm-dashboard/src/components/retail/model-budgets/BudgetShared.tsx": "0e768a507d360dafc456b94f1c9b5239d0ba5607890715b611d657a45a47b607",
+    "ui/litellm-dashboard/src/components/retail/model-budgets/ModelBudgetForm.tsx": "f159a25a68b3f33738c4ab9af8150fc69d699694c5657c5c65e2fabfc71eeec6",
+    "ui/litellm-dashboard/src/components/retail/model-budgets/ModelBudgets.integration.test.tsx": "5635967a8e78f520de60d0f7ac12f3c996c87f1324843f3a3b0f82d55e1f49bc",
+    "ui/litellm-dashboard/src/components/retail/model-budgets/ModelBudgetsTable.tsx": "7bead9af054c8120475e2826e007c3f634cdd6e3e96913d8d6d33c072ac5870a",
+    "ui/litellm-dashboard/src/components/retail/model-budgets/modelBudgetInput.test.ts": "229867bac5dbc00bb0957199f5282dc9ea557c5868fc7d9d8343873934c17ed1",
+    "ui/litellm-dashboard/src/components/retail/model-budgets/modelBudgetInput.ts": "ceb2cae9e1398de2773393ad0ec41c36c857278e470b02907c1213e2a3c9028f",
+    "ui/litellm-dashboard/src/components/retail/model-budgets/types.ts": "591eaacea2565b10b769c3b2de65cfb6bc251b23936939fbdb5cc6c697b4f917",
+    "ui/litellm-dashboard/src/lib/http/schema.d.ts": "b7dbba7de3552a093cf53817471c6440f9ac8691c876b27e537d7a845ba21497"
+  },
+  "commands": {
+    "backend_regressions": [
+      "tests/unit/proxy/retail/test_budget_accounting.py",
+      "tests/unit/proxy/retail/test_operation_events.py",
+      "tests/unit/proxy/retail/test_store.py",
+      "tests/unit/proxy/retail/test_settlement_stream.py",
+      "tests/unit/proxy/retail/test_control_plane_access.py",
+      "tests/unit/proxy/retail/test_control_plane_http.py",
+      "tests/unit/proxy/retail/test_control_plane_flags.py"
+    ],
+    "management_unit": [
+      "tests/unit/proxy/retail/test_budget_management.py",
+      "tests/unit/proxy/retail/test_operation_events.py"
+    ],
+    "postgres": [
+      "tests/integration/database/test_retail_budgets.py",
+      "tests/integration/database/test_retail_budget_management.py"
+    ],
+    "postgres_additional": [
+      "tests/integration/database/test_retail_budget_management.py::test_successor_full_year_horizon_is_relative_to_its_start_not_creation_clock"
+    ],
+    "ui_files": [
+      "src/components/retail/model-budgets/modelBudgetInput.test.ts",
+      "src/components/retail/model-budgets/ModelBudgets.integration.test.tsx",
+      "src/components/retail/management/RetailManagement.integration.test.tsx"
+    ],
+    "api": "npm.cmd run gen:api with RETAIL_PORTAL_ENABLED=true in Python generator",
+    "build": "npm.cmd run build -- --webpack",
+    "types": "node node_modules/typescript/bin/tsc --project tsconfig.production.json --noEmit"
+  },
+  "limitations": [
+    "one future successor only; future parents cannot chain",
+    "no carryover or automatic natural-month renewal",
+    "no retrospective gap filling",
+    "late old requests remain bound to original window",
+    "actual charge can exceed estimate",
+    "management switch does not disable saved windows",
+    "older binaries without successor support are not rollback compatible",
+    "no production deployment, production capacity certification or mobile visual acceptance",
+    "other deferred enterprise replacement tasks remain deferred"
+  ]
+}

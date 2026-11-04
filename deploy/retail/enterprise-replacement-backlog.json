@@ -109,11 +109,12 @@
         "validation/r1-2026-11-03.json",
         "retail-management.md",
         "validation/r2-2026-11-04.json",
-        "validation/r3-2026-11-04.json"
+        "validation/r3-2026-11-04.json",
+        "validation/r4-2026-11-04.json"
       ],
       "deployment_status": "local_active_not_production",
-      "implementation_notes": "组织、报表、业务标签与消费额度管理的领域写入具备同事务不可修改事件；原生跨库操作及全部拒绝尝试不在覆盖范围",
-      "latest_validation_commit": "799cdb7ff547db3ce6ac90eb8d27ec74c1c5c205"
+      "implementation_notes": "组织、报表、业务标签、消费额度及提前续接管理的领域写入具备同事务不可修改事件；原生跨库操作及全部拒绝尝试不在覆盖范围",
+      "latest_validation_commit": "51d8e1cb49431ccd95dcc93a52e8254c8d0966d8"
     },
     {
       "id": "ORG-01",
@@ -297,10 +298,12 @@
       "implementation_commit": "799cdb7ff547db3ce6ac90eb8d27ec74c1c5c205",
       "validation_evidence": [
         "validation/r3-2026-11-04.json",
-        "model-budgets.md"
+        "model-budgets.md",
+        "validation/r4-2026-11-04.json"
       ],
       "deployment_status": "local_active_not_production",
-      "implementation_notes": "账号与精确公开模型的固定窗口额度已接入钱包同事务预留/结算/释放；跨Key/资源池共享、未知占用保留、暂停持续跟踪和晚到结算已验证；标签、优先级及自动自然月续期未实现，视觉验收待补"
+      "implementation_notes": "账号与精确公开模型的固定窗口额度及提前安排唯一下一窗口已验证并接入本地；同事务预留/结算/释放、独立计数、未来启停编辑、权限与实际浏览器流程通过；标签、优先级及自然月自动续期未实现",
+      "latest_validation_commit": "51d8e1cb49431ccd95dcc93a52e8254c8d0966d8"
     },
     {
       "id": "CTRL-03",
@@ -2089,5 +2092,5 @@
   },
   "runtime_scope": "local_only",
   "production_changed": false,
-  "validation_record": "validation/r3-2026-11-04.json"
+  "validation_record": "validation/r4-2026-11-04.json"
 }
