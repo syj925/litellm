@@ -30,6 +30,13 @@ from litellm.proxy._experimental.mcp_server.byok_oauth_endpoints import (
 )
 from litellm.proxy._types import MCPTransport
 
+
+@pytest.mark.asyncio
+async def test_control_plane_oidc_key_cannot_authorize_byok_cookie_operations() -> None:
+    from litellm.proxy._experimental.mcp_server.byok_oauth_endpoints import _session_key_is_live
+
+    assert await _session_key_is_live("sk-retail-oidc-ui-fixture-session") is False
+
 # ---------------------------------------------------------------------------
 # _verify_pkce
 # ---------------------------------------------------------------------------

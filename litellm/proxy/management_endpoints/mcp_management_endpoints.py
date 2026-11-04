@@ -2257,7 +2257,9 @@ if MCP_AVAILABLE:
         )
         request_data = populate_request_with_path_params(request_data=request_data, request=request)
 
-        return await user_api_key_auth_builder(
+        from litellm.proxy.retail.oidc_sessions import fresh_oidc_session, oidc_request_key
+
+        resolved: Final = await user_api_key_auth_builder(
             request=request,
             api_key=api_key,
             azure_api_key_header="",
@@ -2265,6 +2267,9 @@ if MCP_AVAILABLE:
             google_ai_studio_api_key_header=None,
             azure_apim_header=None,
             request_data=request_data,
+        )
+        return await fresh_oidc_session(
+            resolved, oidc_request_key(request, api_key), request.url.path, request.method,
         )
 
     async def _get_cached_temporary_mcp_server_or_404(

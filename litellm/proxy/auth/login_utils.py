@@ -485,7 +485,9 @@ def _ui_session_exp_timestamp() -> int:
     return int((datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)).timestamp())
 
 
-def encode_ui_session_jwt(returned_ui_token_object: ReturnedUITokenObject, master_key: str) -> str:
+def encode_ui_session_jwt(
+    returned_ui_token_object: ReturnedUITokenObject, master_key: str, *, expires_at: datetime | None = None,
+) -> str:
     """Encode a UI session cookie JWT with a bounded ``exp``.
 
     The single choke point every UI login path (SSO and username/password /login, /v2,
@@ -494,7 +496,10 @@ def encode_ui_session_jwt(returned_ui_token_object: ReturnedUITokenObject, maste
     master key rotates, and the session-cookie readers that require a bounded lifetime
     (the MCP interactive sign-in) reject it.
     """
-    claims: Final = {**cast(dict, returned_ui_token_object), "exp": _ui_session_exp_timestamp()}
+    expiration: Final = (
+        min(_ui_session_exp_timestamp(), int(expires_at.timestamp())) if expires_at else _ui_session_exp_timestamp()
+    )
+    claims: Final = {**returned_ui_token_object, "exp": expiration}
     return jwt.encode(claims, master_key, algorithm="HS256")
 
 

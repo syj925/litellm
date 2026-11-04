@@ -2536,6 +2536,11 @@ async def prepare_key_update_data(
     from litellm.proxy.retail.customer_access import customer_key_metadata, is_customer_personal_key
     from litellm.proxy.retail.key_policy import validate_native_key_resource_metadata
 
+    if "metadata" in data.model_fields_set and data.metadata is None:
+        stored_metadata: Final = TypeAdapter(Mapping[str, object]).validate_python(existing_key_row.metadata or {})
+        for reserved_field in LiteLLM_Reserved_Metadata_Fields:
+            if stored_metadata.get(reserved_field) is not None:
+                raise HTTPException(400, f"{reserved_field} is immutable once set and cannot be changed via update.")
     customer_personal: Final = user_api_key_dict is not None and is_customer_personal_key(
         user_api_key_dict, existing_key_row.team_id,
     )
@@ -3166,6 +3171,10 @@ async def _validate_update_key_data(
 ) -> None:
     """Validate permissions and constraints for key update."""
     checked_prisma_client: Final = _require_prisma_client(prisma_client)
+
+    from litellm.proxy.retail.oidc_sessions import reject_oidc_key_update
+
+    reject_oidc_key_update(existing_key_row.metadata, frozenset(data.model_fields_set))
 
     from litellm.proxy.retail.customer_access import validate_customer_key_request
 
@@ -4717,6 +4726,9 @@ async def generate_key_helper_fn(
     llm_router: Router | None = None,
 ):
     from litellm.proxy.proxy_server import premium_user, prisma_client
+    from litellm.proxy.retail.oidc_sessions import reject_oidc_key_regeneration
+
+    reject_oidc_key_regeneration(metadata, token or key or "")
 
     if prisma_client is None:
         raise Exception("Connect Proxy to database to generate keys - https://docs.litellm.ai/docs/proxy/virtual_keys ")
@@ -5675,6 +5687,9 @@ async def _execute_virtual_key_regeneration(
     """Generate new token, update DB, invalidate cache, and return response."""
     from litellm.proxy import proxy_server
     from litellm.proxy.proxy_server import hash_token
+    from litellm.proxy.retail.oidc_sessions import reject_oidc_key_regeneration
+
+    reject_oidc_key_regeneration(key_in_db.metadata, key)
 
     from litellm.proxy.retail.customer_access import validate_customer_key_request
 

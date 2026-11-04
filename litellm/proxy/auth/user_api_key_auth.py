@@ -1606,6 +1606,10 @@ async def user_api_key_auth_builder(
                 custom_litellm_key_header_name=custom_litellm_key_header_name,
             )
 
+        from litellm.proxy.retail.oidc_sessions import remember_oidc_credential
+
+        remember_oidc_credential(request, api_key, route)
+
         if open_telemetry_logger is not None:
             # Reuse the span created by user_api_key_auth (before body parse)
             # so it survives _read_request_body failures. For callers that
@@ -2044,15 +2048,23 @@ async def user_api_key_auth_builder(
             ## Check CACHE
             try:
                 with tracer.trace("litellm.proxy.auth.get_key_object_check_cache"):
-                    valid_token = IdentityStore.key_from_principal(
-                        await IdentityStore(
-                            prisma_client,
-                            user_api_key_cache,
-                            parent_otel_span=parent_otel_span,
-                            proxy_logging_obj=proxy_logging_obj,
-                            check_cache_only=True,
-                        ).resolve(hashed_token=hash_token(api_key))
-                    )
+                    try:
+                        valid_token = IdentityStore.key_from_principal(  # rebind-ok: preserve legacy cached-token selection
+                            await IdentityStore(
+                                prisma_client,
+                                user_api_key_cache,
+                                parent_otel_span=parent_otel_span,
+                                proxy_logging_obj=proxy_logging_obj,
+                                check_cache_only=True,
+                            ).resolve(hashed_token=hash_token(api_key))
+                        )
+                    except Exception as exc:  # noqa: BLE001  # sanitize private session failures before tracing records them
+                        from litellm.proxy.auth.auth_exception_handler import private_oidc_exception
+
+                        cache_projection: Final = private_oidc_exception(exc, request, api_key)
+                        if cache_projection is exc:
+                            raise
+                        raise cache_projection from None
                 # Key-cache entries are written only after the proxy validated a
                 # virtual key or the master key, but via_virtual_key is exclude=True
                 # so serialization drops it; restore it at this trusted boundary.
@@ -2240,16 +2252,27 @@ async def user_api_key_auth_builder(
 
             try:
                 with tracer.trace("litellm.proxy.auth.get_key_object_from_db"):
-                    valid_token = IdentityStore.key_from_principal(
-                        await IdentityStore(
-                            prisma_client,
-                            user_api_key_cache,
-                            parent_otel_span=parent_otel_span,
-                            proxy_logging_obj=proxy_logging_obj,
-                        ).resolve(hashed_token=api_key)
-                    )
+                    try:
+                        valid_token = IdentityStore.key_from_principal(  # rebind-ok: preserve legacy database-token selection
+                            await IdentityStore(
+                                prisma_client,
+                                user_api_key_cache,
+                                parent_otel_span=parent_otel_span,
+                                proxy_logging_obj=proxy_logging_obj,
+                            ).resolve(hashed_token=api_key)
+                        )
+                    except Exception as exc:  # noqa: BLE001  # sanitize private session failures before tracing records them
+                        from litellm.proxy.auth.auth_exception_handler import private_oidc_exception
+
+                        database_projection: Final = private_oidc_exception(exc, request, api_key)
+                        if database_projection is exc:
+                            raise
+                        raise database_projection from None
             except ProxyException as e:
-                if e.code == 401 or e.code == "401":
+                from litellm.proxy.auth.auth_exception_handler import private_oidc_exception
+
+                public_projection: Final = private_oidc_exception(e, request, api_key)
+                if e.code in (401, "401") and public_projection is e:
                     e.message = f"Authentication Error, Invalid proxy server token passed. Received API Key = {abbreviated_api_key}, Key Hash (Token) ={api_key}. Unable to find token in cache or `LiteLLM_VerificationTokenTable`"
                 raise e
             # update end-user params on valid token
@@ -3555,7 +3578,7 @@ async def user_api_key_auth(
         spend_counter_batch_scope(_spend_counter_redis_cache()),
     ):
         try:
-            user_api_key_auth_obj: Final = await user_api_key_auth_builder(
+            built_auth: Final = await user_api_key_auth_builder(
                 request=request,
                 api_key=api_key,
                 azure_api_key_header=azure_api_key_header,
@@ -3564,6 +3587,11 @@ async def user_api_key_auth(
                 azure_apim_header=azure_apim_header,
                 request_data=request_data,
                 custom_litellm_key_header=custom_litellm_key_header,
+            )
+            from litellm.proxy.retail.oidc_sessions import fresh_oidc_session, oidc_request_key
+
+            user_api_key_auth_obj: Final = await fresh_oidc_session(
+                built_auth, oidc_request_key(request, api_key), route, request.method,
             )
         except Exception:
             # The body was read first, so a caller who sent both a malformed body and

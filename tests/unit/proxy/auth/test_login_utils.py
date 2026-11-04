@@ -21,6 +21,24 @@ if TYPE_CHECKING:
     from litellm.proxy.auth.login_throttle import LoginThrottle
 
 
+def test_explicit_native_session_expiry_caps_the_ui_wrapper() -> None:
+    import jwt
+
+    from litellm.proxy.auth.login_utils import LoginResult, create_ui_token_object, encode_ui_session_jwt
+
+    expires: Final = datetime(2000, 1, 1, tzinfo=timezone.utc)
+    login: Final = LoginResult(
+        user_id="fixture-user", key="sk-fixture-key", user_email=None, user_role="internal_user",
+        login_method="sso", password_reset_required=False,
+    )
+    payload: Final = create_ui_token_object(login, {}, False)
+    signing_key: Final = "fixture-long-enough-signing-material-for-hs256"
+    encoded: Final = encode_ui_session_jwt(payload, signing_key, expires_at=expires)
+    decoded: Final = jwt.decode(encoded, signing_key, algorithms=["HS256"], options={"verify_exp": False})
+    assert decoded["exp"] == int(expires.timestamp())
+    assert decoded["key"] == login.key and decoded["login_method"] == "sso"
+
+
 def _unlimited_throttle():
     """A throttle wired to real in-memory stores with limits no test can reach."""
     from litellm.caching.in_memory_cache import InMemoryCache

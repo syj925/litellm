@@ -1,5 +1,7 @@
 import asyncio
 import json
+from collections.abc import Mapping
+from typing import Final
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -34,6 +36,7 @@ from litellm.proxy._types import (
     ProxyErrorTypes,
     ProxyException,
     UserAPIKeyAuth,
+    hash_token,
 )
 from litellm.proxy.auth.auth_exception_handler import UserAPIKeyAuthExceptionHandler, _as_proxy_exception
 from litellm.proxy.auth.model_access_denied import ModelAccessDeniedHTTPException
@@ -1160,3 +1163,96 @@ def test_as_proxy_exception_keeps_jwt_scope_denial_message_shape():
 
     assert converted.to_dict() == plain.to_dict()
     assert converted.internal_message == denial.internal_message
+
+
+class _FailureTelemetry:
+    def __init__(self, replacement: Exception | None = None) -> None:
+        self.replacement = replacement
+        self.error = ""
+        self.key: str | None = None
+        self.token: str | None = None
+        self.metadata: object = None
+        self.data: Mapping[str, object] = {}
+
+    async def post_call_failure_hook(
+        self, *, request_data: Mapping[str, object], original_exception: Exception,
+        user_api_key_dict: UserAPIKeyAuth, error_type: ProxyErrorTypes, route: str,
+    ) -> Exception | None:
+        self.error = str(original_exception)
+        self.key = user_api_key_dict.api_key
+        self.token = user_api_key_dict.token
+        self.metadata = user_api_key_dict.metadata
+        self.data = request_data
+        return self.replacement
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("retained", [False, True])
+async def test_oidc_missing_key_errors_are_private_in_response_logs_and_callback(
+    retained: bool, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    from litellm.proxy import proxy_server
+
+    raw: Final = "sk-retail-oidc-ui-fixture-private-session"
+    derived: Final = hash_token(raw)
+    scope: Final = {
+        "type": "http", "method": "GET", "path": "/user/info", "headers": [],
+        **({"retail_oidc_credential": raw} if retained else {}),
+    }
+    request: Final = Request(scope)
+    original: Final = ProxyException(
+        message=f"key={derived} not found; raw={raw}", type=ProxyErrorTypes.token_not_found_in_db,
+        param=derived, code=401,
+    )
+    sink: Final = _FailureTelemetry(HTTPException(403, f"unsafe replacement {derived}"))
+    monkeypatch.setattr(proxy_server, "proxy_logging_obj", sink)
+    monkeypatch.setattr(litellm, "log_client_error_tracebacks", True)
+    with caplog.at_level("WARNING", logger="LiteLLM Proxy"), pytest.raises(ProxyException) as error:
+        await UserAPIKeyAuthExceptionHandler.handle_authentication_error(
+            original, request, {"key": raw}, "/user/info", None, derived if retained else raw,
+            resolved_identity=UserAPIKeyAuth(api_key=derived, token=derived, metadata={"private": derived}),
+        )
+    assert str(error.value.code) == "401"
+    assert sink.key is None and sink.token is None and sink.metadata == {} and sink.data == {}
+    for private in (raw, derived):
+        assert private not in str(error.value.to_dict())
+        assert private not in sink.error
+        assert private not in caplog.text
+    assert all(record.exc_info is None or record.exc_info is False for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_oidc_db_failure_never_receives_native_fail_open_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from litellm.proxy import proxy_server
+
+    sink: Final = _FailureTelemetry()
+    monkeypatch.setattr(proxy_server, "proxy_logging_obj", sink)
+    monkeypatch.setattr(proxy_server, "general_settings", {"allow_requests_on_db_unavailable": True})
+    request: Final = Request({"type": "http", "method": "GET", "path": "/user/info", "headers": []})
+    with pytest.raises(ProxyException) as error:
+        await UserAPIKeyAuthExceptionHandler.handle_authentication_error(
+            httpx.ConnectError("fixture-private-transport"), request, {}, "/user/info", None,
+            "sk-retail-oidc-ui-fixture-outage",
+        )
+    assert str(error.value.code) == "503"
+    assert "fixture-private-transport" not in sink.error
+    assert sink.key is None and sink.token is None
+
+
+@pytest.mark.asyncio
+async def test_ordinary_key_error_projection_keeps_native_diagnostics(monkeypatch: pytest.MonkeyPatch) -> None:
+    from litellm.proxy import proxy_server
+
+    sink: Final = _FailureTelemetry()
+    monkeypatch.setattr(proxy_server, "proxy_logging_obj", sink)
+    monkeypatch.setattr(proxy_server, "general_settings", {"allow_requests_on_db_unavailable": False})
+    request: Final = Request({"type": "http", "method": "GET", "path": "/user/info", "headers": []})
+    original: Final = ProxyException(
+        message="fixture-ordinary-native-diagnostic", type=ProxyErrorTypes.auth_error, param=None, code=403,
+    )
+    with pytest.raises(ProxyException) as error:
+        await UserAPIKeyAuthExceptionHandler.handle_authentication_error(
+            original, request, {}, "/user/info", None, "sk-fixture-ordinary",
+        )
+    assert error.value is original
+    assert sink.error == str(original)

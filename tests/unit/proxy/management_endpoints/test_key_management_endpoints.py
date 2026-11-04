@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 
+
 import inspect
 
 from litellm.proxy._types import (
@@ -21248,3 +21249,36 @@ async def test_rotate_master_key_reencrypts_guardrail_params(monkeypatch):
         "guardrail": "bedrock",
         "aws_secret_access_key": "aws-secret",
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key,metadata", [
+    ("sk-retail-oidc-ui-fixture-reserved", {}),
+    ("sk-fixture-ordinary", {"login_method": "retail_oidc"}),
+])
+async def test_generic_key_generation_cannot_create_oidc_session_credentials(
+    key: str, metadata: Mapping[str, str],
+) -> None:
+    from litellm.proxy.management_endpoints.key_management_endpoints import generate_key_helper_fn
+
+    with pytest.raises(HTTPException) as error:
+        await generate_key_helper_fn(request_type="key", key=key, metadata=dict(metadata))
+    assert error.value.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("data", [
+    UpdateKeyRequest(key="sk-fixture", metadata=None, team_id="fixture-team"),
+    RegenerateKeyRequest(metadata=None, team_id="fixture-team"),
+])
+async def test_explicit_null_reserved_metadata_is_rejected_before_account_policy_normalization(
+    data: UpdateKeyRequest | RegenerateKeyRequest,
+) -> None:
+    existing: Final = LiteLLM_VerificationToken(
+        token="fixture-token-hash", team_id="fixture-team", metadata={"service_account_id": "fixture-service"},
+    )
+    with pytest.raises(HTTPException) as error:
+        await prepare_key_update_data(data=data, existing_key_row=existing)
+    assert error.value.status_code == 400
+    assert data.metadata is None
+    assert existing.metadata == {"service_account_id": "fixture-service"}

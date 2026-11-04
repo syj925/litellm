@@ -155,7 +155,10 @@ async def _session_key_is_live(session_key: str | None) -> bool:
         proxy_logging_obj,
         user_api_key_cache,
     )
+    from litellm.proxy.retail.oidc_sessions import oidc_raw_key
 
+    if oidc_raw_key(session_key):
+        return False
     if session_key is None:
         # Older cookies predating the ``key`` claim: nothing to resolve.
         return True
@@ -185,7 +188,9 @@ async def get_authenticated_browser_user_id(request: Request) -> str | None:
     from litellm.proxy.proxy_server import prisma_client, proxy_logging_obj, user_api_key_cache
 
     user_id, session_key = _session_identity_from_cookie(request)
-    if not user_id or not session_key or prisma_client is None:
+    from litellm.proxy.retail.oidc_sessions import oidc_raw_key
+
+    if not user_id or not session_key or prisma_client is None or oidc_raw_key(session_key):
         return None
     try:
         auth: Final = (

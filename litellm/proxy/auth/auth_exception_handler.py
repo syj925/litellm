@@ -2,11 +2,13 @@
 Handles Authentication Errors
 """
 
+import asyncio
 import logging
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Final
 
 from fastapi import HTTPException, Request, status
+from typing_extensions import Never
 
 import litellm
 from litellm._logging import verbose_proxy_logger, verbose_proxy_stdout_logger
@@ -124,6 +126,51 @@ def _identity_log_suffix(resolved_identity: UserAPIKeyAuth | None) -> str:
     return f"\nKey Identity: {known}" if known else ""
 
 
+def _private_session_error_code(error: Exception) -> int:
+    if PrismaDBExceptionHandler.is_database_service_unavailable_error(error):
+        return status.HTTP_503_SERVICE_UNAVAILABLE
+    code: Final = (
+        error.status_code if isinstance(error, HTTPException)
+        else error.code if isinstance(error, ProxyException) else 401
+    )
+    return int(str(code)) if str(code) in {"401", "403", "429", "503"} else status.HTTP_401_UNAUTHORIZED
+
+
+def private_oidc_exception(error: Exception, request: Request, api_key: str) -> Exception:
+    from litellm.proxy.retail.oidc_sessions import oidc_raw_key, oidc_request_key
+
+    if not oidc_raw_key(oidc_request_key(request, api_key)):
+        return error
+    return ProxyException(
+        message="This sign-in session is unavailable", type=ProxyErrorTypes.auth_error,
+        param=None, code=_private_session_error_code(error),
+    )
+
+
+async def _reject_private_session(error: Exception, route: str, parent_span: object) -> Never:
+    from litellm.proxy.proxy_server import proxy_logging_obj
+
+    code: Final = _private_session_error_code(error)
+    projected: Final = ProxyException(
+        message="This sign-in session is unavailable", type=ProxyErrorTypes.auth_error, param=None, code=code,
+    )
+    verbose_proxy_logger.log(
+        logging.ERROR if code == 503 else logging.WARNING,
+        "Control-plane sign-in session authentication rejected (status=%s)", code, exc_info=False,
+    )
+    identity: Final = UserAPIKeyAuth(parent_otel_span=parent_span, request_route=normalize_request_route(route))
+    callback: Final = asyncio.create_task(proxy_logging_obj.post_call_failure_hook(
+        request_data={}, original_exception=projected, user_api_key_dict=identity,
+        error_type=ProxyErrorTypes.auth_error, route=route,
+    ))
+    try:
+        async with asyncio.timeout(1):
+            await callback
+    except Exception:  # noqa: BLE001  # optional telemetry must never replace the private authentication projection
+        verbose_proxy_logger.warning("Control-plane sign-in rejection telemetry was unavailable", exc_info=False)
+    raise projected from None
+
+
 class UserAPIKeyAuthExceptionHandler:
     @staticmethod
     async def handle_authentication_error(
@@ -153,6 +200,9 @@ class UserAPIKeyAuthExceptionHandler:
             general_settings,
             proxy_logging_obj,
         )
+        projected: Final = private_oidc_exception(e, request, api_key)
+        if projected is not e:
+            await _reject_private_session(projected, route, parent_otel_span)
 
         if (
             PrismaDBExceptionHandler.should_allow_request_on_db_unavailable()
