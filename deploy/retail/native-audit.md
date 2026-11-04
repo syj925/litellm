@@ -69,3 +69,5 @@ outbox 只保存服务端验证的操作者、受控动作、受影响数量、�
 原生充值、改价、渠道 CRUD、账号 CRUD、旧 `/key/regenerate` 等其他入口尚未因此获得事务桥接，全部拒绝访问尝试也未纳入。自有操作审计与原生商业 Audit Logs 的许可判断分开，不更改许可门禁
 
 本页描述实现合同和运维边界，真实多 worker 验收、性能及部署状态由相应批次记录补充，不把三类接线扩大为全部原生功能验收
+
+R11 的 [自有 OIDC](oidc-sign-in.md) 在同一 outbox 另外接入 `native_identity.configured`、`native_identity.signed_in`。原有三类动作和恢复语义保留；兼容迁移只扩展动作 CHECK，不改写旧事件。全部 API 与桥接 worker 升级后才能启用 OIDC，不能让只认识三类动作的旧 worker 接到新事件。

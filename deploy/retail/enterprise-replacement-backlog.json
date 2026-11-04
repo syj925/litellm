@@ -369,7 +369,7 @@
       "id": "ID-SSO",
       "phase": "R3",
       "title": "独立企业 SSO 和安全诊断",
-      "status": "deferred",
+      "status": "validated_scoped_locally",
       "depends_on": [
         "ORG-02",
         "AUD-01"
@@ -379,9 +379,18 @@
         "用户绑定、停用、撤销和会话范围明确",
         "诊断不显示 token 或敏感 claims"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "5c03e495bbe94f38b34f1a22149f5b58a67e9a0d",
+      "validation_evidence": [
+        "validation/r11-2026-11-04.json",
+        "oidc-sign-in.md"
+      ],
+      "deployment_status": "local_active_feature_disabled",
+      "implementation_notes": "R11仅固定issuer、最多128显式既有账号绑定、code/nonce/S256/RS256的控制台登录；三角色双worker、撤销恢复、日志脱敏和原生事务审计已本地验收。主本地默认关闭且无真实IdP/绑定；不变更原生商业门禁。",
+      "remaining_scope": [
+        "真实企业IdP接入验收",
+        "多issuer、SAML、自动建号和组同步",
+        "大规模登录容量验证"
+      ]
     },
     {
       "id": "ID-API",

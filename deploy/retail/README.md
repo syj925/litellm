@@ -16,11 +16,15 @@
 
 [操作审计异步外投递](audit-delivery.md) 说明服务器预设目标、签名、队列上限、重试、丢弃、配置变化与脱敏范围
 
-[原生事务审计桥](native-audit.md) 说明自有轮换、自助改密和 logout 三类接线、原生 outbox、跨库幂等桥接、容量与失败恢复；其他原生 CRUD 仍未覆盖
+[原生事务审计桥](native-audit.md) 说明自有轮换、自助改密、logout 及 OIDC 配置/签入接线、原生 outbox、跨库幂等桥接、容量与失败恢复；其他原生 CRUD 仍未覆盖
 
 [服务端托管模型密钥](managed-secrets.md) 说明 Vault KV v2 固定引用、后台刷新与硬 TTL、OpenAI Chat 适配、拒绝覆盖和默认关闭边界；本地 main 未配置真实 Vault
 
 [账号模型自然月续窗](monthly-budgets.md) 说明完整自然月、未来金额版本、当前窗口冻结、明确停止及停机缺窗保护
+
+[自有 OIDC 控制台登录](oidc-sign-in.md) 说明固定 issuer、显式已有账号绑定、同站多 worker、管理会话撤销及默认关闭的接入方式
+
+[OIDC 控制台验收记录](validation/r11-2026-11-04.md) 保存协议、原生事务、跨 worker、恢复不复活、日志脱敏及真实浏览器回调的本地证据
 
 [自然月预算验收记录](validation/r10-2026-11-04.md) 保存完整月续窗、停机恢复、跨 Key/资源池共享额度、实际三角色页面和有限数据库对照的本地证据
 
