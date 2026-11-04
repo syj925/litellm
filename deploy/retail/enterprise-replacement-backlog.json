@@ -116,7 +116,7 @@
       ],
       "deployment_status": "local_active_not_production",
       "implementation_notes": "自有组织、报表、分类、消费额度及外投递控制的领域写入具备同事务不可修改事件；R9 新增自有Key轮换、自助改密和logout三类原生同事务outbox及跨库幂等桥，保留原发生时间，默认关闭，使用运维合同见native-audit.md，R9真实双worker、队列满回滚和源事件幂等已验收，本地已启用。其他原生充值、价格、渠道、账号CRUD和旧Key管理入口、全部拒绝尝试仍未覆盖；原生商业Audit Logs许可门禁不变",
-      "latest_validation_commit": "4b8570bcae99305a54e92b8d4e3850fca464753f"
+      "latest_validation_commit": "bce21cd559fb64a22d8a8e8b0d992697c5419a87"
     },
     {
       "id": "ORG-01",
@@ -274,7 +274,7 @@
       ],
       "deployment_status": "local_active_not_production",
       "implementation_notes": "显式账号组织选择、不可变接纳归属、管理员实时概览和固定CSV持久任务已在本地验证；新增逐成员显式View/可选export的委派财务独立门户与安全投影，旧授权任务及操作键不因重新授权复活，三类报表合计资源和额度；R8接口、真实双worker与实际浏览器验收已完成，本地已启用；个人钱包仍权威，无历史推断回填；共享钱包仍未实现",
-      "latest_validation_commit": "8bcfbe48e3796780493c5c7b85a6828c4214a43c"
+      "latest_validation_commit": "bce21cd559fb64a22d8a8e8b0d992697c5419a87"
     },
     {
       "id": "CTRL-01",
@@ -440,7 +440,8 @@
         "validation/r9-2026-11-04.json"
       ],
       "deployment_status": "implemented_and_isolated_validated_main_disabled",
-      "implementation_notes": "R9 首版为server JSON固定refs与环境token、后台预热刷新及硬TTL/拒绝销毁；仅Router openai/ Chat同步、异步和显式部署调用，最终每attempt副本注key并绕过旧SDKclient；非Chat、非openai及客户端路由覆盖拒绝，关闭prefix拒绝且无环境fallback。main未配置真实Vault，最终R9验收另记；团队配置UI、其他秘密后端/KMS、Vault登录续租及原生商业集成仍未覆盖"
+      "implementation_notes": "R9 首版为server JSON固定refs与环境token、后台预热刷新及硬TTL/拒绝销毁；仅Router openai/ Chat同步、异步和显式部署调用，最终每attempt副本注key并绕过旧SDKclient；非Chat、非openai及客户端路由覆盖拒绝，关闭prefix拒绝且无环境fallback。main未配置真实Vault，最终R9验收另记；团队配置UI、其他秘密后端/KMS、Vault登录续租及原生商业集成仍未覆盖",
+      "latest_validation_commit": "bce21cd559fb64a22d8a8e8b0d992697c5419a87"
     },
     {
       "id": "SPEC-BYOK",

@@ -1,0 +1,1064 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-04",
+  "scope": "AUD-01 native transactional audit bridge, ID-SECRET scoped Vault KV2, viewer UI permissions",
+  "implementation_commit": "bce21cd559fb64a22d8a8e8b0d992697c5419a87",
+  "baseline_commit": "e55c8e41e7147345785bddf5dda8d01fe71e1278",
+  "status": "validated_scoped_locally",
+  "production_changed": false,
+  "capacity_certification": false,
+  "test_counts": {
+    "backend_unit": 217,
+    "postgres_api": 109,
+    "local_http": 8,
+    "frontend": 127,
+    "total": 461
+  },
+  "test_groups": [
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 76,
+      "files": [
+        "tests/unit/router_utils/test_managed_credential_errors.py",
+        "tests/unit/proxy/retail/test_control_plane_flags.py",
+        "tests/unit/proxy/retail/test_operation_events.py",
+        "tests/unit/proxy/retail/test_billing.py"
+      ]
+    },
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 9,
+      "files": [
+        "tests/unit/test_router/test_router.py",
+        "-k",
+        "managed_credentials or caller_cannot_turn"
+      ]
+    },
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 37,
+      "files": [
+        "tests/unit/proxy/retail/test_native_audit_store.py",
+        "tests/unit/proxy/retail/test_key_rotation.py"
+      ]
+    },
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 29,
+      "files": [
+        "tests/unit/proxy/management_endpoints/test_password_endpoints.py",
+        "tests/unit/proxy/management_endpoints/test_session_endpoints.py"
+      ]
+    },
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 66,
+      "files": [
+        "tests/unit/proxy/retail/test_secret_config.py",
+        "tests/unit/proxy/retail/test_secret_cache.py",
+        "tests/unit/proxy/retail/test_secret_provider.py",
+        "tests/unit/proxy/retail/test_custom_secret_adapter.py"
+      ]
+    },
+    {
+      "suite": "postgres",
+      "exit_code": 0,
+      "passed": 77,
+      "files": [
+        "tests/integration/database/test_retail_organizations.py",
+        "tests/integration/database/test_retail_audit_delivery.py",
+        "tests/integration/database/test_retail_delegated_finance_api.py"
+      ]
+    },
+    {
+      "suite": "postgres",
+      "exit_code": 0,
+      "passed": 19,
+      "files": [
+        "tests/integration/database/test_retail_native_audit.py"
+      ]
+    },
+    {
+      "suite": "postgres",
+      "exit_code": 0,
+      "passed": 13,
+      "files": [
+        "tests/integration/database/test_retail_native_session_transactions.py"
+      ]
+    },
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 8,
+      "files": [
+        "tests/integration/routing/test_retail_managed_secrets.py"
+      ]
+    }
+  ],
+  "frontend_groups": {
+    "existing_components": 69,
+    "detail_and_management": 55,
+    "real_jwt_users": 3
+  },
+  "sampled_mutations": {
+    "killed": 22,
+    "sampled": 22,
+    "whole_repository_claim": false
+  },
+  "quality": {
+    "python_scoped": {
+      "baseline": "e55c8e41e7147345785bddf5dda8d01fe71e1278",
+      "scoped_files": [
+        "litellm/proxy/management_endpoints/password_endpoints.py",
+        "litellm/proxy/management_endpoints/session_endpoints.py",
+        "litellm/proxy/retail/api.py",
+        "litellm/proxy/retail/billing.py",
+        "litellm/proxy/retail/control_plane.py",
+        "litellm/proxy/retail/control_plane_flags.py",
+        "litellm/proxy/retail/custom_secret_adapter.py",
+        "litellm/proxy/retail/key_rotation.py",
+        "litellm/proxy/retail/native_audit_store.py",
+        "litellm/proxy/retail/native_audit_worker.py",
+        "litellm/proxy/retail/native_session_transactions.py",
+        "litellm/proxy/retail/operation_events.py",
+        "litellm/proxy/retail/secret_cache.py",
+        "litellm/proxy/retail/secret_config.py",
+        "litellm/proxy/retail/secret_provider.py",
+        "litellm/router.py",
+        "litellm/router_utils/managed_credential_errors.py",
+        "tests/integration/database/test_retail_native_audit.py",
+        "tests/integration/database/test_retail_native_session_transactions.py",
+        "tests/integration/routing/test_retail_managed_secrets.py",
+        "tests/unit/proxy/management_endpoints/test_password_endpoints.py",
+        "tests/unit/proxy/management_endpoints/test_session_endpoints.py",
+        "tests/unit/proxy/retail/test_control_plane_flags.py",
+        "tests/unit/proxy/retail/test_custom_secret_adapter.py",
+        "tests/unit/proxy/retail/test_native_audit_store.py",
+        "tests/unit/proxy/retail/test_secret_cache.py",
+        "tests/unit/proxy/retail/test_secret_config.py",
+        "tests/unit/proxy/retail/test_secret_provider.py",
+        "tests/unit/router_utils/test_managed_credential_errors.py",
+        "tests/unit/test_router/test_router.py"
+      ],
+      "checks": [
+        {
+          "file": "litellm/proxy/management_endpoints/password_endpoints.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/management_endpoints/password_endpoints.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/management_endpoints/password_endpoints.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/management_endpoints/session_endpoints.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 1,
+          "current_findings": 1,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/management_endpoints/session_endpoints.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 2,
+          "current_findings": 2,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/management_endpoints/session_endpoints.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/api.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 5,
+          "current_findings": 5,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/api.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 49,
+          "current_findings": 49,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/api.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/billing.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 3,
+          "current_findings": 3,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/billing.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 15,
+          "current_findings": 15,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/billing.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane_flags.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane_flags.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane_flags.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/custom_secret_adapter.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/custom_secret_adapter.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/custom_secret_adapter.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/key_rotation.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/key_rotation.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/key_rotation.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/native_audit_store.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/native_audit_store.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/native_audit_store.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/native_audit_worker.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/native_audit_worker.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/native_audit_worker.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/native_session_transactions.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/native_session_transactions.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/native_session_transactions.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/operation_events.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/operation_events.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/operation_events.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/secret_cache.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/secret_cache.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/secret_cache.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/secret_config.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/secret_config.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/secret_config.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/secret_provider.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/secret_provider.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/secret_provider.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/router.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 456,
+          "current_findings": 456,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/router.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 953,
+          "current_findings": 953,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/router.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 13,
+          "current_findings": 13,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/router_utils/managed_credential_errors.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/router_utils/managed_credential_errors.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/router_utils/managed_credential_errors.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/database/test_retail_native_audit.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/database/test_retail_native_audit.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/database/test_retail_native_audit.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/database/test_retail_native_session_transactions.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/database/test_retail_native_session_transactions.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/database/test_retail_native_session_transactions.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/routing/test_retail_managed_secrets.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/routing/test_retail_managed_secrets.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/routing/test_retail_managed_secrets.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/management_endpoints/test_password_endpoints.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 25,
+          "current_findings": 25,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/management_endpoints/test_password_endpoints.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 31,
+          "current_findings": 31,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/management_endpoints/test_password_endpoints.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/management_endpoints/test_session_endpoints.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 15,
+          "current_findings": 15,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/management_endpoints/test_session_endpoints.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 35,
+          "current_findings": 35,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/management_endpoints/test_session_endpoints.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_control_plane_flags.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_control_plane_flags.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_control_plane_flags.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_custom_secret_adapter.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_custom_secret_adapter.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_custom_secret_adapter.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_native_audit_store.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_native_audit_store.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_native_audit_store.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_secret_cache.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_secret_cache.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_secret_cache.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_secret_config.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_secret_config.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_secret_config.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_secret_provider.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_secret_provider.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_secret_provider.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/router_utils/test_managed_credential_errors.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/router_utils/test_managed_credential_errors.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/router_utils/test_managed_credential_errors.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/test_router/test_router.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 1504,
+          "current_findings": 1504,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/test_router/test_router.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 2256,
+          "current_findings": 2256,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/test_router/test_router.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 50,
+          "current_findings": 50,
+          "rule_growth": {},
+          "changed_line_findings": []
+        }
+      ],
+      "passed": true
+    },
+    "official_openapi": true,
+    "webpack_build": true,
+    "production_typescript": true,
+    "frontend_strict_new_files": true,
+    "legacy_users_eslint_warnings": 16,
+    "new_eslint_warnings": 0,
+    "design_detector_findings": 0,
+    "full_repository_typecheck_run": false,
+    "full_frontend_suite_run": false
+  },
+  "native_managed_secret_observations": [
+    {
+      "name": "schema_clone",
+      "source_rows_copied": 0,
+      "schema_bytes": 223059
+    },
+    {
+      "name": "runtime",
+      "worker_count": 2,
+      "cpus": 2,
+      "memory_gib": 2,
+      "native_audit_enabled": true
+    },
+    {
+      "name": "initial_credentials",
+      "workers": 2,
+      "matched_version": 1
+    },
+    {
+      "name": "credential_rotation",
+      "workers": 2,
+      "matched_version": 2
+    },
+    {
+      "name": "burst_memory_reads",
+      "requests": 100,
+      "all_success": true,
+      "elapsed_seconds": 1.169,
+      "vault_reads": 0,
+      "background_refresh_bound": 12,
+      "worker_count": 2
+    },
+    {
+      "name": "continuation_runtime",
+      "worker_count": 2,
+      "source_changed": false,
+      "fixture_fallback_config_updated": true
+    },
+    {
+      "name": "routing_overrides",
+      "rejected_fields": 6,
+      "api_base_status": 401,
+      "other_status": 400,
+      "upstream_calls": 0,
+      "pre_admission_or_reservation_released": true
+    },
+    {
+      "name": "revocation",
+      "workers": 2,
+      "status": 503,
+      "upstream_calls": 0,
+      "no_additional_charge": true,
+      "wallet_reserved": "0"
+    },
+    {
+      "name": "provider_outage_expiry",
+      "workers": 2,
+      "status": 503,
+      "upstream_calls": 0,
+      "no_additional_charge": true,
+      "wallet_reserved": "0"
+    },
+    {
+      "name": "fallback_credential_isolation",
+      "attempts": 3,
+      "lanes": [
+        "a",
+        "b",
+        "plain"
+      ],
+      "all_correct_credential": true,
+      "scope": "administrator-exempt native Router, resource pool constraints unchanged"
+    },
+    {
+      "name": "isolated_probe_cleanup",
+      "original_pool_setting_restored": true,
+      "owned_fake_pending_released": true
+    },
+    {
+      "name": "privacy",
+      "secret_marker_hits": 0,
+      "provider_url_hits": 0,
+      "unauthorized_upstream_calls": 0
+    },
+    {
+      "name": "late_preflight_after_dispatch",
+      "upstream_attempts": 1,
+      "final_status": 503,
+      "reservation_remains_pending": true,
+      "no_automatic_refund_of_uncertain_attempt": true,
+      "diagnostic_reason": "prior_deployment_dispatch",
+      "scope": "synthetic team owned key, explicit legacy/no-pool"
+    }
+  ],
+  "native_auth": {
+    "passed": true,
+    "synthetic_only": true,
+    "native_password_transaction": true,
+    "current_session_kept": true,
+    "other_session_rejected_on_two_workers": [
+      401,
+      401
+    ],
+    "ordinary_api_key_kept_on_password_change": true,
+    "native_deleted_token_archive": {
+      "rows": 1,
+      "by_owner": true,
+      "timestamp": true
+    },
+    "native_key_rotation_once": true,
+    "rotated_old_key_rejected_on_two_workers": [
+      401,
+      401
+    ],
+    "logout_rejected_on_two_workers": [
+      401,
+      401
+    ],
+    "queue_full_password_change_rolled_back": true,
+    "forced_reset_password_recovery": true,
+    "native_event_counts": {
+      "native_key.rotated": 1,
+      "native_password.changed": 2,
+      "native_session.revoked": 3
+    },
+    "audit_no_keys_hashes_or_passwords": true,
+    "production_changed": false
+  },
+  "browser": {
+    "passed": true,
+    "isolatedFixture": true,
+    "viewerRealJwtReadOnly": true,
+    "viewerRowMenuOnlyCopy": true,
+    "viewerDetailsNoWriteControls": true,
+    "adminWriteControlsVisible": true,
+    "nativeViewerLogoutAudited": true,
+    "nativeDetailMetadataOnly": true,
+    "adminAndViewerLoggedOut": true,
+    "screenshots": [
+      "r9-users-viewer-menu.jpg",
+      "r9-user-detail-viewer.jpg",
+      "r9-users-admin.jpg",
+      "r9-native-session-audit.jpg",
+      "r9-native-audit-detail.jpg"
+    ]
+  },
+  "activation": {
+    "local_active": true,
+    "production_changed": false,
+    "capacity_certification": false,
+    "financial_table_count": 17,
+    "native_identity_table_count": 3,
+    "financial_and_native_fingerprint_unchanged": true,
+    "native_audit_row_counts": {
+      "retail_native_audit_settings": 0,
+      "retail_native_audit_outbox": 0
+    },
+    "native_audit_enabled": true,
+    "managed_secrets_enabled": false,
+    "real_vault_configured": false,
+    "two_workers": true,
+    "audit_paused": true,
+    "audit_target_configured": false,
+    "source_overlays_match": true,
+    "overlay_mount_count": 45,
+    "overlay_file_count": 1058,
+    "ui_overlay_files": 911
+  },
+  "limitations": [
+    "Only three native operations have transaction audit bridge",
+    "Managed secrets support routed OpenAI-compatible Chat only; real Vault remains unconfigured",
+    "100 local fixed-response calls are a functional sample, not a throughput certification",
+    "Native audit adds a lazy two-connection retail audit pool per worker",
+    "No production deployment or external paid model calls",
+    "Other enterprise replacement tasks remain open"
+  ],
+  "staged_secret_review": {
+    "implementation_files": 49,
+    "validation_files": 2,
+    "matches": 0
+  },
+  "managed_snapshot_boundary": "Chosen attempts retain their read-time credential snapshot during later routing checks or compaction"
+}
