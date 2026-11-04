@@ -110,11 +110,12 @@
         "retail-management.md",
         "validation/r2-2026-11-04.json",
         "validation/r3-2026-11-04.json",
-        "validation/r4-2026-11-04.json"
+        "validation/r4-2026-11-04.json",
+        "validation/r5-2026-11-04.json"
       ],
       "deployment_status": "local_active_not_production",
-      "implementation_notes": "组织、报表、业务标签、消费额度及提前续接管理的领域写入具备同事务不可修改事件；原生跨库操作及全部拒绝尝试不在覆盖范围",
-      "latest_validation_commit": "51d8e1cb49431ccd95dcc93a52e8254c8d0966d8"
+      "implementation_notes": "自有组织、报表、分类、消费额度及外投递控制的领域写入具备同事务不可修改事件；允许的事件可另建元数据外投递意图，溢出缺口有计数；原生跨库操作和全部拒绝尝试仍未覆盖",
+      "latest_validation_commit": "4b8570bcae99305a54e92b8d4e3850fca464753f"
     },
     {
       "id": "ORG-01",
@@ -328,7 +329,7 @@
       "id": "CTRL-04",
       "phase": "R2",
       "title": "独立日志目标与异步通知及品牌模板",
-      "status": "deferred",
+      "status": "validated_scoped_locally",
       "depends_on": [
         "AUD-01"
       ],
@@ -337,9 +338,13 @@
         "SMTP/云日志失败不阻塞转发",
         "通知和日志内容脱敏"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "4b8570bcae99305a54e92b8d4e3850fca464753f",
+      "validation_evidence": [
+        "validation/r5-2026-11-04.json",
+        "audit-delivery.md"
+      ],
+      "deployment_status": "local_active_not_production",
+      "implementation_notes": "服务器预设单目标的操作审计元数据外投递、同事务有界意图、租约重试、管理员状态和受控丢弃已验证；本地仅启用入口，未配置真实接收端，外发暂停；推理日志、SMTP、阈值通知和品牌模板未实现"
     },
     {
       "id": "ID-SSO",
@@ -2092,5 +2097,5 @@
   },
   "runtime_scope": "local_only",
   "production_changed": false,
-  "validation_record": "validation/r4-2026-11-04.json"
+  "validation_record": "validation/r5-2026-11-04.json"
 }

@@ -1,0 +1,493 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-04",
+  "scope": "CTRL-04 operator configured asynchronous operation audit metadata delivery",
+  "implementation_commit": "4b8570bcae99305a54e92b8d4e3850fca464753f",
+  "baseline_commit": "6edde7a720e6bd66978f8857da5600540c558779",
+  "status": "validated_scoped_locally",
+  "local_active": true,
+  "external_delivery_status": "not_configured_and_paused",
+  "production_changed": false,
+  "test_counts": {
+    "backend_unit_unique": 309,
+    "postgres_unique": 84,
+    "ui_unique": 118,
+    "unique_total": 511
+  },
+  "backend_groups": [
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 237,
+      "files": [
+        "tests/unit/proxy/retail/test_operation_events.py",
+        "tests/unit/proxy/retail/test_store.py",
+        "tests/unit/proxy/retail/test_settlement_stream.py",
+        "tests/unit/proxy/retail/test_control_plane_access.py",
+        "tests/unit/proxy/retail/test_control_plane_http.py",
+        "tests/unit/proxy/retail/test_budget_management.py",
+        "tests/unit/proxy/retail/test_organization_store.py",
+        "tests/unit/proxy/retail/test_report_store.py",
+        "tests/unit/proxy/retail/test_object_metadata_store.py"
+      ]
+    },
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 72,
+      "files": [
+        "tests/unit/proxy/retail/test_audit_delivery_config.py",
+        "tests/unit/proxy/retail/test_control_plane_flags.py",
+        "tests/unit/proxy/retail/test_audit_delivery_worker.py",
+        "tests/unit/proxy/retail/test_audit_delivery.py"
+      ]
+    },
+    {
+      "suite": "postgres",
+      "exit_code": 0,
+      "passed": 24,
+      "files": [
+        "tests/integration/database/test_retail_audit_delivery.py"
+      ]
+    },
+    {
+      "result": "passed_after_fixture_repair",
+      "unique_passed": 60,
+      "initial_passed": 59,
+      "repaired_case_passed": 1,
+      "initial_fault": "Audit table drop blocked by new outbox foreign key; test now rejects INSERT with fixture trigger",
+      "original_rollback_assertion_retained": true,
+      "files": [
+        "tests/integration/database/test_retail_organizations.py",
+        "tests/integration/database/test_retail_reports.py",
+        "tests/integration/database/test_retail_budget_management.py"
+      ],
+      "repair_selection": [
+        "tests/integration/database/test_retail_reports.py::test_audit_failure_cannot_leave_successful_job_or_partial_snapshot"
+      ]
+    }
+  ],
+  "ui": {
+    "scope": "operator configured asynchronous audit delivery administration UI",
+    "status": "source_frozen",
+    "tests": {
+      "delivery_logic_unit": 26,
+      "delivery_component_integration": 20,
+      "dashboard_access_regression": 59,
+      "management_regression": 13,
+      "unique_total": 118,
+      "files": [
+        "src/utils/dashboardAccess.test.ts",
+        "src/components/retail/audit-delivery/deliveryState.test.ts",
+        "src/components/retail/management/RetailManagement.integration.test.tsx",
+        "src/components/retail/audit-delivery/AuditDelivery.integration.test.tsx"
+      ],
+      "json_report": "r5-ui-test-results.json",
+      "raw_log": "r5-ui-tests-final.log"
+    },
+    "production_types": {
+      "exit_code": 0,
+      "log": "r5-ui-types.log"
+    },
+    "lint": {
+      "changed_feature_modules_exit_code": 0,
+      "warnings": 0,
+      "log": "r5-ui-eslint.log",
+      "legacy_api_baseline": "r5-ui-api-lint-baseline.json",
+      "whole_repository_clean_claimed": false
+    },
+    "design_detector": [],
+    "mutation": {
+      "mutation": "ignore receiver and job configuration matching for manual retry",
+      "exit_code": 1,
+      "killed": true,
+      "source_sha256_before": "b9a988d6ba4c90faaff425728ffac3aeed2b48aaa4e2c2a334419d314dfb6654",
+      "source_sha256_after": "b9a988d6ba4c90faaff425728ffac3aeed2b48aaa4e2c2a334419d314dfb6654",
+      "source_restored": true
+    },
+    "api_schema_hand_edited": false,
+    "browser": "owned by root, not accessed by UI agent",
+    "capabilities": [
+      "writable admin page and operation audit link",
+      "server configured destination only, no addresses or secret entry",
+      "pause, enable, failed retry, confirmed discard with current versions",
+      "same key uncertain retry and conflict reload",
+      "old configuration and expired work cannot be retried",
+      "queue overflow gaps visibly distinguished from local audit loss",
+      "URL state and bounded page",
+      "cached data hidden on access failure",
+      "compact summary and collapsed detailed scope"
+    ],
+    "limitations": [
+      "no sidebar entry added",
+      "no endpoint or signing secret configuration in browser",
+      "no SMTP, brand templates or request-log mirroring implied",
+      "UI test fixtures are synthetic, native browser verification belongs to root"
+    ]
+  },
+  "native_http": {
+    "result": "passed",
+    "source_rows_copied": 0,
+    "no_external_model_calls": true,
+    "observations": [
+      {
+        "name": "schema_clone",
+        "schema_bytes": 196578,
+        "source_rows_copied": 0
+      },
+      {
+        "name": "runtime",
+        "worker_count": 2,
+        "retail_billing_enabled": true
+      },
+      {
+        "name": "outage_isolation",
+        "receiver_mode": "503",
+        "delivery_attempts": 1,
+        "inference_status": 200,
+        "inference_sample_ms": 24.574,
+        "concurrency_target": 2
+      },
+      {
+        "name": "signed_retry",
+        "stable_delivery_id": true,
+        "receiver_verified_all": true,
+        "private_payload_keys_only": true,
+        "pause_stopped_new_intents": true,
+        "receiver_calls": 2
+      },
+      {
+        "name": "redirect_and_manual_retry",
+        "redirects_followed": 0,
+        "failed_then_retried": true,
+        "stable_id_preserved": true
+      },
+      {
+        "name": "unbuffered_response",
+        "delivery_completed_before_receiver_finished_body": true
+      },
+      {
+        "name": "slow_endpoint_and_discard",
+        "inference_status": 200,
+        "stale_version_status": 409,
+        "pending_discarded": true
+      },
+      {
+        "name": "throttle",
+        "huge_retry_after_did_not_suspend_unboundedly": true
+      },
+      {
+        "name": "privacy",
+        "ordinary_status": 401,
+        "unknown_status": 404,
+        "invalid_status": 422,
+        "no_target_or_secret_or_payload_in_response": true
+      }
+    ]
+  },
+  "fresh_authority": {
+    "result": "passed",
+    "original_admin_read_write_status": 200,
+    "revocation": {
+      "internal_user": {
+        "same_cached_session_read_status": 401,
+        "same_key_write_replay_status": 401,
+        "private": true
+      },
+      "proxy_admin_viewer": {
+        "same_cached_session_read_status": 403,
+        "same_key_write_replay_status": 403,
+        "private": true
+      }
+    },
+    "qa_admin_restored": true,
+    "source_account_data_copied": false
+  },
+  "actual_cookie_isolation": {
+    "result": "passed",
+    "updated_worker_count": 2,
+    "signed_metadata_deliveries": 2,
+    "receiver_cookie_not_forwarded": true,
+    "receiver_verification_passed": true,
+    "no_existing_account_or_external_service_used": true
+  },
+  "browser": {
+    "result": "passed",
+    "scope": "isolated native runtime, synthetic accounts only",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "sessionIsolation": "localhost fixture hostname separate from main 127.0.0.1 gateway; old synthetic session cleared",
+    "admin": {
+      "nativeLogin": true,
+      "auditPageLink": true,
+      "pauseAndEnableThroughUI": true,
+      "failedFilter": true,
+      "failedRetryThroughUIReachedDelivered": true,
+      "discardDialogCancelPreservedWork": true,
+      "confirmedDiscardThroughUI": true,
+      "finalPaused": true,
+      "noTargetSecretOrPayloadDisplayed": true
+    },
+    "ordinary": {
+      "nativeLogin": true,
+      "directRouteDenied": true,
+      "auditDeliveryLinks": 0,
+      "managementButtons": 0,
+      "queueDataVisible": false
+    },
+    "screenshots": [
+      "outputs/r5-audit-delivery-admin.jpg",
+      "outputs/r5-audit-delivery-denied.jpg"
+    ],
+    "mobileVisualAcceptance": false,
+    "completedAt": "2026-11-04T08:31:09.055Z"
+  },
+  "activation": {
+    "local_active": true,
+    "production_changed": false,
+    "financial_fingerprint_unchanged": true,
+    "initial_financial_baseline_unchanged": true,
+    "source_overlays_match": true,
+    "overlay_file_count": 119
+  },
+  "live_http": {
+    "production_changed": false,
+    "paid_model_requests": false,
+    "policies_created_on_existing_accounts": false,
+    "feature_enabled": true,
+    "audit_delivery": {
+      "feature_enabled": true,
+      "status": 200,
+      "destination_configured": false,
+      "enabled": false,
+      "retained_count": 0,
+      "operator_setup_required": true,
+      "anonymous_status": 401,
+      "enable_without_target_status": 422,
+      "safe_unknown_input_status": 422,
+      "empty_queue_status": 200
+    },
+    "admin_routes": {
+      "budgets": {
+        "status": 200,
+        "rows": 0,
+        "private": true
+      },
+      "models": {
+        "status": 200,
+        "rows": 25,
+        "private": true
+      }
+    },
+    "anonymous_status": 401,
+    "safe_validation_status": 422,
+    "unknown_budget_status": 404,
+    "unknown_successor_status": 404,
+    "successor_safe_validation_status": 422,
+    "healthy_workers": 2,
+    "page_status": {
+      "/health/readiness": 200,
+      "/health/liveliness": 200,
+      "/ui/wallet/": 200,
+      "/ui/wallet-admin/": 200,
+      "/ui/business-labels/": 200,
+      "/ui/operation-audit/": 200,
+      "/ui/audit-delivery/": 200
+    },
+    "existing_account_budget_policy_count": 0,
+    "completed": true
+  },
+  "final_checks": {
+    "financial_fingerprint_unchanged": true,
+    "reserve_settle_release_ast_unchanged": true,
+    "budget_accounting_source_unchanged": true,
+    "live_secret_matches": 0,
+    "files_checked": 33,
+    "local_target_environment_configured": false,
+    "production_changed": false,
+    "capacity_certification": false
+  },
+  "cleanup": {
+    "all_owned_qa_containers_removed": true,
+    "owned_native_database_dropped": true,
+    "owned_ephemeral_postgres_removed": true,
+    "owned_qa_networks_removed": true,
+    "local_gateway_retained": true,
+    "production_changed": false
+  },
+  "manual_mutations": {
+    "store": {
+      "manual_mutants": [
+        {
+          "mutation": "stale-ack",
+          "test": "test_expired_lease_reclaim_rejects_the_old_owner_token",
+          "exit_code": 1,
+          "killed": true
+        },
+        {
+          "mutation": "global-capacity",
+          "test": "test_two_worker_stores_share_a_global_two_delivery_lease_limit",
+          "exit_code": 1,
+          "killed": true
+        },
+        {
+          "mutation": "private-actor",
+          "test": "test_event_and_frozen_minimal_envelope_commit_together",
+          "exit_code": 1,
+          "killed": true
+        }
+      ],
+      "killed": 3,
+      "total": 3,
+      "shared_source_unchanged": true
+    },
+    "runtime": {
+      "mutants": [
+        {
+          "mutant": "follow-redirect",
+          "selection": "failure_statuses_never_follow_redirects",
+          "exit_code": 1,
+          "killed": true
+        },
+        {
+          "mutant": "wrong-signed-bytes",
+          "selection": "sent_bytes_are_signed",
+          "exit_code": 1,
+          "killed": true
+        },
+        {
+          "mutant": "read-response-body",
+          "selection": "all_success_statuses_close_without_reading",
+          "exit_code": 1,
+          "killed": true
+        },
+        {
+          "mutant": "send-client-cookie",
+          "selection": "receiver_cookies_are_neither_sent",
+          "exit_code": 1,
+          "killed": true
+        },
+        {
+          "mutant": "retain-receiver-cookie",
+          "selection": "receiver_cookies_are_neither_sent",
+          "exit_code": 1,
+          "killed": true
+        }
+      ],
+      "total": 5,
+      "all_killed": true,
+      "source_sha256_before": "3f6ac92b89663c7a4335a03886a6a2073983cd0ef09f569237ea902192b7c3e5",
+      "source_sha256_after": "3f6ac92b89663c7a4335a03886a6a2073983cd0ef09f569237ea902192b7c3e5",
+      "shared_source_unchanged": true
+    },
+    "ui": {
+      "mutation": "ignore receiver and job configuration matching for manual retry",
+      "exit_code": 1,
+      "killed": true,
+      "source_sha256_before": "b9a988d6ba4c90faaff425728ffac3aeed2b48aaa4e2c2a334419d314dfb6654",
+      "source_sha256_after": "b9a988d6ba4c90faaff425728ffac3aeed2b48aaa4e2c2a334419d314dfb6654",
+      "source_restored": true
+    },
+    "sampled_mutants": 9,
+    "all_killed": true,
+    "full_repository_mutation_coverage_claimed": false
+  },
+  "checks": {
+    "generated_api_schema": true,
+    "final_webpack_production_build": true,
+    "production_types": true,
+    "scoped_python_ruff_type_discipline_test_quality": true,
+    "scoped_ui_lint_zero_warnings": true,
+    "final_retention_copy_lint": true,
+    "design_detector": [],
+    "whole_repository_checks_claimed": false
+  },
+  "source_sha256": {
+    "deploy/retail/compose.override.yaml": "9a4affa504af6fceb0d8bd4cad251baaf91b4aee3616b4d313ea6d40aac62269",
+    "litellm/proxy/retail/api.py": "b6a76651e11bfca09a1d512263436ee142b3b074b2109f28a5dcd2213a3e2102",
+    "litellm/proxy/retail/audit_delivery.py": "892721c931a532212d22ad41c6f07b24725559a4ec05caec2906a87a5db0014c",
+    "litellm/proxy/retail/audit_delivery_config.py": "b7d74136020da1d7096450969ebb98419d3566366fa2c16124e51575ee8f0a73",
+    "litellm/proxy/retail/audit_delivery_schema.sql": "8f591dbaed759a8b5b9094c5bfcd163b7bfeac1531c3911e1d10ae19aa1cd478",
+    "litellm/proxy/retail/audit_delivery_store.py": "af32fd8f95a51e9122f478a4edfd689d85f3c487dd34b8471c73160dffe13712",
+    "litellm/proxy/retail/audit_delivery_worker.py": "3f6ac92b89663c7a4335a03886a6a2073983cd0ef09f569237ea902192b7c3e5",
+    "litellm/proxy/retail/control_plane.py": "82d806e06d8e083c611c768d4037351a82cfe2f6064ac8a860fa337b99fbd3f4",
+    "litellm/proxy/retail/control_plane_flags.py": "994774ce53f4b077ed889bf0e85435b48e456710a5b4dd99205e5b429d5445f8",
+    "litellm/proxy/retail/operation_events.py": "0e965072ac1ef946baeeefbfef80c9ddd2d290a059db679c00bbaa156bc68a85",
+    "litellm/proxy/retail/store.py": "56d66d6fb9aa53ea10650cd0058b380b0efdf769b09b38b4d717e59f80040ea6",
+    "tests/integration/database/test_retail_audit_delivery.py": "1d1095d46cf65d9adc11abde7b5338053917f4e5662b4ec14c5b8a17d5692afe",
+    "tests/integration/database/test_retail_reports.py": "7ce284a38f6d620952c245a74a1d3f6c39dbe2ef426a2a909cf95c3512486e20",
+    "tests/unit/proxy/retail/test_audit_delivery.py": "3035e2885c4820eafba715d79eb557fdea7657106b25ddd447a1b3849f7f8c2e",
+    "tests/unit/proxy/retail/test_audit_delivery_config.py": "37af378f34b949426bcb42b80c9779b864121671fa5f8608a2d2dbd2864f36f6",
+    "tests/unit/proxy/retail/test_audit_delivery_worker.py": "750cbfa67c3613281bdaea38a999d6c0854f0a357a2110c4a43e89719d6c3e97",
+    "tests/unit/proxy/retail/test_control_plane_flags.py": "1ce95d2fe177b876eab2f63fdd323659302d8b59a168c8bdd561efa3760ae73e",
+    "ui/litellm-dashboard/src/app/(dashboard)/audit-delivery/page.tsx": "041b85c46df5f341780abff2a86cd5275621bfe2f1094dcd7935925c8502ca0e",
+    "ui/litellm-dashboard/src/components/retail/api.ts": "5cfcc012b0069b1a78260a2b815d4951808c1bee7ff7c55ba67f6e5d7e381a59",
+    "ui/litellm-dashboard/src/components/retail/audit-delivery/AuditDelivery.integration.test.tsx": "b8bb29a4320a8473116d3bca8c9ac0293c489697fbbc7a932da77e1dd64c57e8",
+    "ui/litellm-dashboard/src/components/retail/audit-delivery/DeliveryStatus.tsx": "0a217fe6759ff5166eb7a63b5cd5020941a2e6a18beea27222c59084566368d6",
+    "ui/litellm-dashboard/src/components/retail/audit-delivery/DeliveryTable.tsx": "f3f913ff8627027eb58bfb955c8574fca2d9321729acedacea67861c66f2b16f",
+    "ui/litellm-dashboard/src/components/retail/audit-delivery/RetailAuditDeliveryPanel.tsx": "86657d676bec94c7a64f73b61547a9fabee857454b2538be2478df83eddf35b9",
+    "ui/litellm-dashboard/src/components/retail/audit-delivery/deliveryState.test.ts": "0271de8a0fda4d278f56e513d6c0bc1c6b15b42eacba8bd773547366b8fcfcfc",
+    "ui/litellm-dashboard/src/components/retail/audit-delivery/deliveryState.ts": "b9a988d6ba4c90faaff425728ffac3aeed2b48aaa4e2c2a334419d314dfb6654",
+    "ui/litellm-dashboard/src/components/retail/audit-delivery/types.ts": "6c4eb3012d757fda6f6b5f2a23954062d666c8ce6a3466c2187e800157370c51",
+    "ui/litellm-dashboard/src/components/retail/audit/RetailOperationAuditPanel.tsx": "21b88b3698ec70515be67bcd234009f69bbb841ddbef18b0d9d20944ce538c12",
+    "ui/litellm-dashboard/src/components/retail/audit/eventLabels.ts": "9bd824bbb3301751dda04619911f201bd99bbb14a3ed2eb7d407937c4973244f",
+    "ui/litellm-dashboard/src/components/retail/management/ManagementShared.tsx": "b4ac5b8930599f5a84097ab1ac4635e11da6a944bc7053d28045b6d326f6cd5a",
+    "ui/litellm-dashboard/src/lib/http/schema.d.ts": "700a39b63cd9eeb55047352fea4085e39b6fcea946f5f2605dcda5286f493365",
+    "ui/litellm-dashboard/src/utils/dashboardAccess.test.ts": "6b1bd997d4632a807c6f0253396008183740ee5d1c196896b10f371084d67eca",
+    "ui/litellm-dashboard/src/utils/dashboardAccess.ts": "7a8337d4110e316d6c78aaed5ebb557be6309931e4515db35f4fcbe333fb857c"
+  },
+  "commands": {
+    "unit_files": [
+      "tests/unit/proxy/retail/test_operation_events.py",
+      "tests/unit/proxy/retail/test_store.py",
+      "tests/unit/proxy/retail/test_settlement_stream.py",
+      "tests/unit/proxy/retail/test_control_plane_access.py",
+      "tests/unit/proxy/retail/test_control_plane_http.py",
+      "tests/unit/proxy/retail/test_budget_management.py",
+      "tests/unit/proxy/retail/test_organization_store.py",
+      "tests/unit/proxy/retail/test_report_store.py",
+      "tests/unit/proxy/retail/test_object_metadata_store.py",
+      "tests/unit/proxy/retail/test_audit_delivery_config.py",
+      "tests/unit/proxy/retail/test_control_plane_flags.py",
+      "tests/unit/proxy/retail/test_audit_delivery_worker.py",
+      "tests/unit/proxy/retail/test_audit_delivery.py"
+    ],
+    "new_postgres": [
+      "tests/integration/database/test_retail_audit_delivery.py"
+    ],
+    "related_postgres": [
+      "tests/integration/database/test_retail_organizations.py",
+      "tests/integration/database/test_retail_reports.py",
+      "tests/integration/database/test_retail_budget_management.py"
+    ],
+    "repaired_postgres_selection": [
+      "tests/integration/database/test_retail_reports.py::test_audit_failure_cannot_leave_successful_job_or_partial_snapshot"
+    ],
+    "ui_files": [
+      "src/utils/dashboardAccess.test.ts",
+      "src/components/retail/audit-delivery/deliveryState.test.ts",
+      "src/components/retail/management/RetailManagement.integration.test.tsx",
+      "src/components/retail/audit-delivery/AuditDelivery.integration.test.tsx"
+    ],
+    "api": "npm.cmd run gen:api with RETAIL_PORTAL_ENABLED=true",
+    "build": "npm.cmd run build -- --webpack"
+  },
+  "protocol_source": {
+    "url": "https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md",
+    "version": "1.0.0",
+    "verified_on": "2026-11-04"
+  },
+  "limitations": [
+    "only supported operation audit metadata; no request log or wallet charge mirror",
+    "single operator configured endpoint; no browser URL or secret entry",
+    "no SMTP, threshold email or brand templates",
+    "bounded capacity may skip external intents while local audit persists",
+    "receiver deduplication needed; no exactly-once or guaranteed arrival",
+    "cleanup eligibility is not a strict retention maximum while worker/configuration unavailable",
+    "pause cannot recall in-flight bytes",
+    "configuration rotation cannot silently retarget outstanding jobs",
+    "no production deployment, capacity certification or mobile visual acceptance"
+  ]
+}
