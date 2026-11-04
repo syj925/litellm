@@ -445,7 +445,8 @@ class WalletStore:
             self._initialized = True
 
     async def initialize_control_plane(self) -> None:
-        from .control_plane_flags import operation_audit_enabled, organizations_enabled
+        from .control_plane_flags import object_metadata_enabled, operation_audit_enabled, organizations_enabled
+        from .object_metadata_store import initialize_schema as initialize_object_metadata
         from .operation_events import initialize_schema as initialize_audit
         from .organization_store import initialize_schema as initialize_organizations
 
@@ -459,6 +460,8 @@ class WalletStore:
                 await initialize_audit(connection)
                 if organizations_enabled():
                     await initialize_organizations(connection)
+                if object_metadata_enabled():
+                    await initialize_object_metadata(connection)
             self._control_plane_initialized = True
 
     async def get_wallet(self, user_id: str, create: bool = False) -> dict[str, JsonValue]:

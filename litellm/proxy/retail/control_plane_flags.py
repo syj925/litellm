@@ -17,3 +17,7 @@ def organization_delegation_enabled() -> bool:
 
 def report_export_enabled() -> bool:
     return operation_audit_enabled() and os.environ.get("RETAIL_REPORT_EXPORT_ENABLED", "false").lower() == "true"
+
+
+def object_metadata_enabled() -> bool:
+    return operation_audit_enabled() and os.environ.get("RETAIL_OBJECT_METADATA_ENABLED", "false").lower() == "true"

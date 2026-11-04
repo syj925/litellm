@@ -139,6 +139,7 @@ export interface MenuVisibilityContext {
   retailOrganizationsEnabled?: boolean;
   retailReportsEnabled?: boolean;
   retailAuditEnabled?: boolean;
+  retailObjectMetadataEnabled?: boolean;
 }
 
 const adminPageVisibility = (item: MenuItem, context: MenuVisibilityContext, isAdmin: boolean): boolean | null => {
@@ -181,6 +182,7 @@ const pageIsDisabledForInternalUsers = (
 const menuItemIsVisible = (item: MenuItem, context: MenuVisibilityContext, isAdmin: boolean): boolean => {
   if (item.key === "reports" && context.retailReportsEnabled !== true) return false;
   if (item.key === "operation-audit" && context.retailAuditEnabled !== true) return false;
+  if (item.key === "business-labels" && context.retailObjectMetadataEnabled !== true) return false;
   if (item.children && item.children.length === 0) return false;
   if (!item.children && !canAccessDashboardRoute(item.route ?? item.page, context)) return false;
   if (item.key === "llm-playground" && context.isViewOnly) return false;
@@ -419,6 +421,13 @@ const menuGroups: MenuGroup[] = [
         icon: <ScrollText {...ICON} />,
         roles: ["Admin", "proxy_admin"],
       },
+      {
+        key: "business-labels",
+        page: "business-labels",
+        label: "Business labels",
+        icon: <Tags {...ICON} />,
+        roles: ["Admin", "proxy_admin"],
+      },
     ],
   },
   {
@@ -614,6 +623,8 @@ const Sidebar_: React.FC<SidebarProps> = ({
   const retailOrganizationsEnabled = managementConfig.data?.organization_management_enabled === true;
   const retailReportsEnabled = managementConfig.data?.report_export_enabled === true;
   const retailAuditEnabled = managementConfig.data?.operation_audit_enabled === true;
+  const retailObjectMetadataEnabled =
+    !managementConfig.error && managementConfig.data?.object_metadata_enabled === true;
 
   const baseUrl = getProxyBaseUrl();
   const version = healthData?.litellm_version;
@@ -654,6 +665,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
       retailOrganizationsEnabled,
       retailReportsEnabled,
       retailAuditEnabled,
+      retailObjectMetadataEnabled,
     };
     return visibleMenuGroups(menuGroups, context);
   }, [
@@ -670,6 +682,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
     retailOrganizationsEnabled,
     retailReportsEnabled,
     retailAuditEnabled,
+    retailObjectMetadataEnabled,
   ]);
 
   const toggleGroup = (key: string) => {

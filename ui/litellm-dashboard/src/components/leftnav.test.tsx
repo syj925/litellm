@@ -134,6 +134,28 @@ const teamMemberAuthorization = {
 };
 
 describe("Sidebar (leftnav)", () => {
+  it.each([
+    ["Admin", false, true, true],
+    ["proxy_admin", false, true, true],
+    ["Admin", false, false, false],
+    ["Admin", true, true, false],
+    ["proxy_admin_viewer", false, true, false],
+    ["Internal User", false, true, false],
+    ["Org Admin", false, true, false],
+  ] as const)(
+    "shows Business labels for %s, viewer=%s and enabled=%s only when permitted",
+    (userRole, isViewOnly, enabled, expected) => {
+      const context = {
+        userRole,
+        isViewOnly,
+        isOrgAdmin: userRole === "Org Admin",
+        isTeamAdmin: false,
+        retailObjectMetadataEnabled: enabled,
+      };
+      const groups = visibleMenuGroups(menuGroups, context);
+      expect(groups.flatMap((group) => group.items).some((item) => item.page === "business-labels")).toBe(expected);
+    },
+  );
   beforeEach(() => {
     for (const userId of ["test-user-id", "org-admin-user-id"]) {
       testQueryClient.setQueryData(["retail", "management-config", userId], {

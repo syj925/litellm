@@ -580,7 +580,12 @@ def _model_price_view(card: _StoredModelPrice) -> dict[str, JsonValue]:
 
 @router.get("/config")
 async def config() -> dict[str, JsonValue]:
-    from .control_plane_flags import operation_audit_enabled, organizations_enabled, report_export_enabled
+    from .control_plane_flags import (
+        object_metadata_enabled,
+        operation_audit_enabled,
+        organizations_enabled,
+        report_export_enabled,
+    )
 
     return {
         "registration_enabled": registration_enabled(),
@@ -590,6 +595,7 @@ async def config() -> dict[str, JsonValue]:
         "operation_audit_enabled": operation_audit_enabled(),
         "organization_management_enabled": organizations_enabled(),
         "report_export_enabled": report_export_enabled(),
+        "object_metadata_enabled": object_metadata_enabled(),
     }
 
 

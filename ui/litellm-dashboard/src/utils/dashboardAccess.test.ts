@@ -33,6 +33,7 @@ describe("dashboard role boundaries", () => {
     "resource-pools",
     "wallet-admin",
     "model-pricing",
+    "business-labels",
     "agents",
     "workflows",
     "memory",
@@ -88,7 +89,7 @@ describe("dashboard role boundaries", () => {
     expect(canUseAdminControlPlane({ userRole: "proxy_admin_viewer", isViewOnly: false })).toBe(false);
     expect(canAccessDashboardRoute("moyai", { ...customer, userRole: "Admin", isViewOnly: true })).toBe(false);
   });
-  it.each(["channels", "channel-details", "resource-pools", "wallet-admin", "model-pricing"])(
+  it.each(["channels", "channel-details", "resource-pools", "wallet-admin", "model-pricing", "business-labels"])(
     "does not expose %s to a proxy viewer",
     (page) => {
       expect(canAccessDashboardRoute(page, { ...customer, userRole: "proxy_admin_viewer" })).toBe(false);

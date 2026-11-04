@@ -14870,6 +14870,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/object-metadata/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Targets */
+        get: operations["targets_retail_admin_object_metadata_targets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/object-metadata/{kind}/{reference_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Object Metadata */
+        get: operations["object_metadata_retail_admin_object_metadata__kind___reference_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Object Metadata */
+        patch: operations["update_object_metadata_retail_admin_object_metadata__kind___reference_id__patch"];
+        trace?: never;
+    };
     "/retail/admin/operation-events": {
         parameters: {
             query?: never;
@@ -40717,6 +40752,13 @@ export interface components {
             source: "models_dev" | "openrouter" | "deployment" | "litellm";
             /** Url */
             url?: string | null;
+        };
+        /** MetadataUpdate */
+        MetadataUpdate: {
+            /** Expected Version */
+            expected_version: number;
+            /** Tags */
+            tags: string[];
         };
         /** MetricWithMetadata */
         MetricWithMetadata: {
@@ -75006,6 +75048,116 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ModelPriceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    targets_retail_admin_object_metadata_targets_get: {
+        parameters: {
+            query: {
+                kind: "key" | "team" | "organization" | "model";
+                q?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    object_metadata_retail_admin_object_metadata__kind___reference_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "key" | "team" | "organization" | "model";
+                reference_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_object_metadata_retail_admin_object_metadata__kind___reference_id__patch: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                kind: "key" | "team" | "organization" | "model";
+                reference_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetadataUpdate"];
             };
         };
         responses: {

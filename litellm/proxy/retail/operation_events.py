@@ -23,10 +23,24 @@ _ALLOWED_ACTIONS: Final = frozenset(
         "report.created",
         "report.completed",
         "report.failed",
+        "object_metadata.updated",
     )
 )
 _ALLOWED_FIELDS: Final = frozenset(
-    ("name", "enabled", "role", "user_id", "start", "end", "currency", "row_count", "format", "state")
+    (
+        "name",
+        "enabled",
+        "role",
+        "user_id",
+        "start",
+        "end",
+        "currency",
+        "row_count",
+        "format",
+        "state",
+        "kind",
+        "tag_count",
+    )
 )
 
 
@@ -117,7 +131,12 @@ async def append_operation_event(
     request_digest: str,
     response: Mapping[str, JsonValue],
 ) -> None:
-    if action not in _ALLOWED_ACTIONS or resource_type not in ("organization", "organization_member", "report"):
+    if action not in _ALLOWED_ACTIONS or resource_type not in (
+        "organization",
+        "organization_member",
+        "report",
+        "object_metadata",
+    ):
         raise ValueError("Unsupported audit event type")
     await connection.execute(
         """INSERT INTO retail_operation_events

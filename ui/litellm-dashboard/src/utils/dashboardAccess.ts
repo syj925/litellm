@@ -43,7 +43,12 @@ const pageSettingKeys: Record<string, string> = {
   "model-catalog": "models",
 };
 const retailAdminPages = new Set([
-  "channels", "channel-details", "resource-pools", "wallet-admin", "model-pricing",
+  "channels",
+  "channel-details",
+  "resource-pools",
+  "wallet-admin",
+  "model-pricing",
+  "business-labels",
 ]);
 
 export const isProxyDashboardRole = (role: string): boolean => proxyRoles.has(roleKey(role));

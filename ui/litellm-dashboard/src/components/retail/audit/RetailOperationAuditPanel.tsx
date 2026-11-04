@@ -31,6 +31,7 @@ import {
 } from "../management/ManagementShared";
 import { beijingTimeInput, managementInterval } from "../management/time";
 import type { RetailOrganization } from "../organizations/types";
+import AuditOrganizationSearch from "./AuditOrganizationSearch";
 
 interface OperationEvent {
   id: string;
@@ -53,8 +54,11 @@ const auditParsers = {
   start: managementTextParser,
   end: managementTextParser,
   page: managementPageParser,
+  scope_query: managementTextParser,
+  scope_page: managementPageParser,
 };
-type AuditFilters = { organization: string; action: string; actor: string; start: string; end: string; page: number };
+type AppliedAuditFilters = { organization: string; action: string; actor: string; start: string; end: string };
+type AuditFilters = AppliedAuditFilters & { page: number; scope_query: string; scope_page: number };
 const inputClass = "h-9 w-full rounded-md border border-input bg-background px-3 text-sm";
 const eventLabels: Record<string, string> = {
   "organization.created": "Organization created",
@@ -64,6 +68,7 @@ const eventLabels: Record<string, string> = {
   "report.created": "Report requested",
   "report.completed": "Report completed",
   "report.failed": "Report failed",
+  "object_metadata.updated": "Business labels updated",
 };
 
 function AuditFiltersForm({
@@ -75,7 +80,7 @@ function AuditFiltersForm({
   filters: AuditFilters;
   admin: boolean;
   organizations: RetailOrganization[];
-  onApply: (filters: Omit<AuditFilters, "page">) => void;
+  onApply: (filters: AppliedAuditFilters) => void;
 }) {
   const formId = useId();
   const [organization, setOrganization] = useState(filters.organization);
@@ -262,9 +267,17 @@ function useOperationAudit(filters: AuditFilters) {
   const { accessToken, userId, userRole, isViewOnly } = useAuthorized();
   const admin = isProxyAdminRole(userRole) && !isViewOnly;
   const scopeOptions = {
-    queryKey: ["retail", "organizations", userId, "audit-scope"],
+    queryKey: ["retail", "organizations", userId, "audit-scope", filters.scope_query, filters.scope_page],
     queryFn: ({ signal }: { signal: AbortSignal }) =>
-      retailRequest<PageResult<RetailOrganization>>("/organizations?limit=100&offset=0", accessToken, { signal }),
+      retailRequest<PageResult<RetailOrganization>>(
+        managementQuery("/organizations", {
+          q: filters.scope_query,
+          limit: managementPageSize,
+          offset: (filters.scope_page - 1) * managementPageSize,
+        }),
+        accessToken,
+        { signal },
+      ),
     enabled: Boolean(accessToken) && !admin,
     retry: false,
   };
@@ -369,14 +382,90 @@ function OperationEvents({
   );
 }
 
+function scopeDescription(allowed: number, total: number): string {
+  if (total === 0) return "No associated organizations match your search. Try another name.";
+  if (allowed === 0) return "No organizations on this page grant audit access. Search by name or choose another page.";
+  return "Select an organization you administer and apply the filters to view its recorded operations.";
+}
+
+function AuditScopePanel({
+  admin,
+  organizations,
+  allowed,
+  scoped,
+  filters,
+  onSearch,
+  onPage,
+  onApply,
+}: {
+  admin: boolean;
+  organizations: UseQueryResult<PageResult<RetailOrganization>, Error>;
+  allowed: RetailOrganization[];
+  scoped: RetailOrganization | undefined;
+  filters: AuditFilters;
+  onSearch: (query: string) => void;
+  onPage: (page: number) => void;
+  onApply: (filters: AppliedAuditFilters) => void;
+}) {
+  const showFilters = admin || (organizations.data && !organizations.error);
+  const scopeLoaded = organizations.data && !organizations.error;
+  const chooseScope = !admin && scopeLoaded && !scoped;
+  return (
+    <>
+      {!admin && (
+        <AuditOrganizationSearch
+          query={filters.scope_query}
+          page={filters.scope_page}
+          total={organizations.error ? 0 : organizations.data?.total ?? 0}
+          fetching={organizations.isFetching}
+          hasResults={Boolean(organizations.data && !organizations.error)}
+          onSearch={onSearch}
+          onPage={onPage}
+        />
+      )}
+      {!admin && organizations.error && (
+        <ManagementError title="Unable to load your organizations" error={organizations.error} />
+      )}
+      {!admin && organizations.isPending && (
+        <LoadingState description="Loading authorized gateway data." title="Loading your audit scope" />
+      )}
+      {showFilters && (
+        <AuditFiltersForm
+          key={JSON.stringify(filters)}
+          filters={filters}
+          admin={admin}
+          organizations={allowed}
+          onApply={onApply}
+        />
+      )}
+      {chooseScope && (
+        <StateMessage
+          role="status"
+          icon={<ClipboardList className="size-5" />}
+          title="Choose an authorized organization"
+          description={scopeDescription(allowed.length, organizations.data?.total ?? 0)}
+        />
+      )}
+    </>
+  );
+}
+
 function OperationAuditWorkspace() {
   const [filters, setFilters] = useQueryStates(auditParsers);
   const [selected, setSelected] = useState<OperationEvent | null>(null);
   const { admin, organizations, allowed, scoped, mayRead, events } = useOperationAudit(filters);
-  const showFilters = admin || (organizations.data && !organizations.error);
-  const scopeLoaded = organizations.data && !organizations.error;
-  const chooseScope = !admin && scopeLoaded && !scoped;
-  const showDetails = selected && mayRead && !events.error;
+  const detailsInScope = admin || selected?.organization_id === scoped?.id;
+  const validDetails = selected && mayRead && !events.error;
+  const showDetails = validDetails && detailsInScope;
+  const changeScopeSearch = (query: string) => {
+    setSelected(null);
+    const next = { scope_query: query, scope_page: 1, organization: "", page: 1 };
+    void setFilters(next);
+  };
+  const changeScopePage = (page: number) => {
+    setSelected(null);
+    void setFilters({ scope_page: page, organization: "", page: 1 });
+  };
 
   return (
     <>
@@ -395,33 +484,19 @@ function OperationAuditWorkspace() {
           Refresh events
         </Button>
       </div>
-      {!admin && organizations.error && (
-        <ManagementError title="Unable to load your organizations" error={organizations.error} />
-      )}
-      {!admin && organizations.isPending && (
-        <LoadingState description="Loading authorized gateway data." title="Loading your audit scope" />
-      )}
-      {showFilters && (
-        <AuditFiltersForm
-          key={JSON.stringify(filters)}
-          filters={filters}
-          admin={admin}
-          organizations={allowed}
-          onApply={(next) => void setFilters({ ...next, page: 1 })}
-        />
-      )}
-      {chooseScope && (
-        <StateMessage
-          role="status"
-          icon={<ClipboardList className="size-5" />}
-          title="Choose an authorized organization"
-          description={
-            allowed.length
-              ? "Select an organization you administer and apply the filters to view its recorded operations."
-              : "Your memberships do not grant access to organization audit events."
-          }
-        />
-      )}
+      <AuditScopePanel
+        admin={admin}
+        organizations={organizations}
+        allowed={allowed}
+        scoped={scoped}
+        filters={filters}
+        onSearch={changeScopeSearch}
+        onPage={changeScopePage}
+        onApply={(next) => {
+          setSelected(null);
+          void setFilters({ ...next, page: 1 });
+        }}
+      />
       {mayRead && (
         <OperationEvents
           events={events}
