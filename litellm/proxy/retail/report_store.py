@@ -4,7 +4,7 @@ import hashlib
 import io
 import json
 import re
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -363,6 +363,10 @@ class ReportStore:
                     await connection.execute(
                         Path(__file__).with_name("report_schema.sql").read_text(encoding="utf-8"), prepare=False
                     )
+                    await connection.execute(
+                        Path(__file__).with_name("organization_report_schema.sql").read_text(encoding="utf-8"),
+                        prepare=False,
+                    )
                 self._initialized = True
 
     async def close(self) -> None:
@@ -370,11 +374,18 @@ class ReportStore:
         self._render_executor.shutdown(wait=False, cancel_futures=True)
 
     async def render(self, rows: Sequence[object]) -> tuple[bytes, str]:
+        return await self.render_with(rows, render_artifact)
+
+    async def render_with(
+        self,
+        rows: Sequence[object],
+        renderer: Callable[[Sequence[object], ReportLimits], tuple[bytes, str]],
+    ) -> tuple[bytes, str]:
         await self._render_slots.acquire()
         try:
             pending: Final = asyncio.get_running_loop().run_in_executor(
                 self._render_executor,
-                render_artifact,
+                renderer,
                 rows,
                 self.limits,
             )
@@ -433,7 +444,7 @@ class ReportStore:
             if clock is None:
                 raise ReportError("report_unavailable", 503)
             validate_window(window, clock.value, self.limits)
-            await self._snapshot_admission(connection, creator_id)
+            await self.snapshot_admission(connection, creator_id)
             wallet: Final = await _one(
                 connection, "SELECT count(*) AS total FROM retail_wallets WHERE user_id=%s", (account_id,), _CountRow
             )
@@ -544,18 +555,23 @@ class ReportStore:
             )
             return job.public()
 
-    async def _snapshot_admission(self, connection: psycopg.AsyncConnection, creator_id: str) -> None:
+    async def snapshot_admission(self, connection: psycopg.AsyncConnection, creator_id: str) -> None:
         actor: Final = await _one(
             connection,
-            """SELECT count(*) AS total FROM retail_report_jobs
-            WHERE creator_id=%s AND created_at>now()-interval '1 day'""",
-            (creator_id,),
+            """SELECT
+            (SELECT count(*) FROM retail_report_jobs WHERE creator_id=%s AND created_at>now()-interval '1 day') +
+            (SELECT count(*) FROM retail_organization_report_jobs
+              WHERE creator_id=%s AND created_at>now()-interval '1 day') AS total""",
+            (creator_id, creator_id),
             _CountRow,
         )
         pending: Final = await _one(
             connection,
-            """SELECT count(*) AS total FROM retail_report_jobs
-            WHERE state IN ('queued','processing') AND expires_at>now()""",
+            """SELECT
+            (SELECT count(*) FROM retail_report_jobs
+              WHERE state IN ('queued','processing') AND expires_at>now()) +
+            (SELECT count(*) FROM retail_organization_report_jobs
+              WHERE state IN ('queued','processing') AND expires_at>now()) AS total""",
             (),
             _CountRow,
         )
@@ -633,15 +649,7 @@ class ReportStore:
 
     async def claim(self, owner: str) -> ReportClaim | None:
         async with self.transaction() as connection:
-            await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('retail:report:claim',0))")
-            active: Final = await _one(
-                connection,
-                """SELECT count(*) AS total FROM retail_report_jobs
-                WHERE state='processing' AND lease_until>now() AND expires_at>now()""",
-                (),
-                _CountRow,
-            )
-            if active is None or active.total >= self.limits.worker_concurrency:
+            if not await self.claim_admission(connection):
                 return None
             return await _one(
                 connection,
@@ -655,6 +663,20 @@ class ReportStore:
                 (self.limits.max_attempts, owner, self.limits.lease_seconds),
                 ReportClaim,
             )
+
+    async def claim_admission(self, connection: psycopg.AsyncConnection) -> bool:
+        await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('retail:report:claim',0))")
+        active: Final = await _one(
+            connection,
+            """SELECT
+            (SELECT count(*) FROM retail_report_jobs
+              WHERE state='processing' AND lease_until>now() AND expires_at>now()) +
+            (SELECT count(*) FROM retail_organization_report_jobs
+              WHERE state='processing' AND lease_until>now() AND expires_at>now()) AS total""",
+            (),
+            _CountRow,
+        )
+        return active is not None and active.total < self.limits.worker_concurrency
 
     async def build(self, claim: ReportClaim) -> bool:
         async with self.transaction() as connection:

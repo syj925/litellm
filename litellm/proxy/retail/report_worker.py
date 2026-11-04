@@ -4,7 +4,8 @@ from uuid import uuid4
 
 from litellm._logging import verbose_proxy_logger
 
-from .control_plane_flags import report_export_enabled
+from .control_plane_flags import organization_finance_enabled, report_export_enabled
+from .organization_report_store import OrganizationReportStore
 from .report_store import ReportError, ReportStore, get_report_store
 from .store import WalletStore
 
@@ -12,6 +13,8 @@ from .store import WalletStore
 class ReportWorker:
     def __init__(self, store: ReportStore) -> None:
         self.store = store
+        self.organization_store = OrganizationReportStore(store)
+        self._organizations_first = False
         self.owner = str(uuid4())
         self._closing = False
         self._wake = asyncio.Event()
@@ -27,17 +30,24 @@ class ReportWorker:
         if not report_export_enabled():
             return 0
         await self.store.expire()
-        claim: Final = await self.store.claim(self.owner)
-        if claim is None:
-            return 0
-        try:
-            async with asyncio.timeout(20):
-                await self.store.build(claim)
-        except ReportError as exc:
-            await self.store.retry(claim, exc.code)
-        except Exception:  # noqa: BLE001  # failed generation keeps its private, fixed snapshot durably retryable
-            await self.store.retry(claim)
-        return 1
+        await self.organization_store.expire()
+        selected: Final[tuple[ReportStore | OrganizationReportStore, ...]] = (
+            (self.organization_store, self.store) if self._organizations_first else (self.store, self.organization_store)
+        ) if organization_finance_enabled() else (self.store,)
+        self._organizations_first = not self._organizations_first
+        for storage in selected:
+            claim: Final = await storage.claim(self.owner)
+            if claim is None:
+                continue
+            try:
+                async with asyncio.timeout(20):
+                    await storage.build(claim)
+            except ReportError as exc:
+                await storage.retry(claim, exc.code)
+            except Exception:  # noqa: BLE001  # fixed private snapshots remain retryable on generation failures
+                await storage.retry(claim)
+            return 1
+        return 0
 
     async def _run(self) -> None:
         while not self._closing:
@@ -61,12 +71,12 @@ class ReportWorker:
             except TimeoutError:
                 self._task.cancel()
                 await asyncio.gather(self._task, return_exceptions=True)
-        try:
-            await self.store.release_claims(self.owner)
-        except Exception as exc:  # noqa: BLE001  # expired durable leases recover without making optional shutdown fail
-            verbose_proxy_logger.warning("Retail report shutdown release deferred (%s)", type(exc).__name__)
-        finally:
-            await self.store.close()
+        for storage in (self.store, self.organization_store):
+            try:
+                await storage.release_claims(self.owner)
+            except Exception as exc:  # noqa: BLE001  # expired leases recover independently of optional shutdown
+                verbose_proxy_logger.warning("Retail report shutdown release deferred (%s)", type(exc).__name__)
+        await self.store.close()
 
 
 class _WorkerLifecycle:

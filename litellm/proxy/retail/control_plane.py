@@ -14,6 +14,7 @@ from .coordination_guard import close_coordination_guard, start_coordination_gua
 from .model_budgets import router as model_budgets_router
 from .object_metadata import router as object_metadata_router
 from .organization_finance import router as organization_finance_router
+from .organization_reports import router as organization_reports_router
 from .organizations import router as organizations_router
 from .report_worker import close_report_worker, start_report_worker
 from .reports import router as reports_router
@@ -60,3 +61,4 @@ router.include_router(object_metadata_router)
 router.include_router(model_budgets_router)
 router.include_router(audit_delivery_router)
 router.include_router(organization_finance_router)
+router.include_router(organization_reports_router)

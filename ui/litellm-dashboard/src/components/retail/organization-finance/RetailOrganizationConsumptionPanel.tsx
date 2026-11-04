@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Building2, RefreshCw } from "lucide-react";
-import { useQueryStates } from "nuqs";
+import { useQueryState, useQueryStates } from "nuqs";
 import { useCallback, useId, useState, type FormEvent } from "react";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { Page } from "@/components/shared/Page";
@@ -18,6 +18,8 @@ import ConsumptionResults from "./ConsumptionResults";
 import { consumptionParsers, consumptionWindow, financeAccessLost } from "./financeInput";
 import { FinanceError } from "./FinanceShared";
 import OrganizationPicker from "./OrganizationPicker";
+import { organizationExportPageParser } from "./organizationReportInput";
+import OrganizationReportTasks from "./OrganizationReportTasks";
 import type { OrganizationChoice, OrganizationConsumption } from "./types";
 
 function selectedOrganization(id: string, report: OrganizationConsumption | undefined): OrganizationChoice | undefined {
@@ -90,6 +92,7 @@ function WindowForm({
 
 function ConsumptionWorkspace({ accessToken, actorId }: { accessToken: string; actorId: string | null }) {
   const [filters, setFilters] = useQueryStates(consumptionParsers);
+  const [, setExportPage] = useQueryState("export_page", organizationExportPageParser);
   const [defaultWindow] = useState(() => {
     const end = new Date(Math.floor(Date.now() / 60_000) * 60_000);
     return { start: new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000), end };
@@ -135,6 +138,10 @@ function ConsumptionWorkspace({ accessToken, actorId }: { accessToken: string; a
     const result = filters.organization && !windowError ? await report.refetch() : null;
     if (!result?.error) setAuthorityLost(false);
   };
+  const changeOrganization = (organization: string) => {
+    void setFilters({ organization: organization || null, page: 1 });
+    void setExportPage(null);
+  };
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -166,7 +173,7 @@ function ConsumptionWorkspace({ accessToken, actorId }: { accessToken: string; a
               actorId={actorId}
               value={filters.organization}
               current={selectedOrganization(filters.organization, visible)}
-              onSelect={(organization) => void setFilters({ organization: organization || null, page: 1 })}
+              onSelect={changeOrganization}
               onUnavailable={unavailable}
             />
             <div className="space-y-3">
@@ -194,12 +201,19 @@ function ConsumptionWorkspace({ accessToken, actorId }: { accessToken: string; a
           )}
           {loadingReport && <p role="status">Loading organization consumption…</p>}
           {report.error && <FinanceError error={report.error} context="consumption" />}
-          {visible && (
+          {filters.organization && (
             <ConsumptionResults
               report={visible}
               page={filters.page}
               loading={report.isFetching}
               onPage={(page) => void setFilters({ page })}
+              beforeRequests={
+                <OrganizationReportTasks
+                  organizationId={filters.organization}
+                  preview={visible}
+                  previewLoading={report.isFetching}
+                />
+              }
             />
           )}
         </>
