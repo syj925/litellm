@@ -266,11 +266,13 @@
         "validation/r7-2026-11-04.json",
         "validation/r7-2026-11-04.md",
         "organization-reports.md",
-        "delegated-finance.md"
+        "delegated-finance.md",
+        "validation/r8-2026-11-04.json",
+        "validation/r8-2026-11-04.md"
       ],
       "deployment_status": "local_active_not_production",
-      "implementation_notes": "显式账号组织选择、不可变接纳归属、管理员实时概览和固定CSV持久任务已在本地验证；新增逐成员显式View/可选export的委派财务独立门户与安全投影，旧授权任务及操作键不因重新授权复活，三类报表合计资源和额度；R8最终验收由独立记录给出；个人钱包仍权威，无历史推断回填；共享钱包仍未实现",
-      "latest_validation_commit": "b5abd8f5fac3257532d6eab96025fd8142af3f29"
+      "implementation_notes": "显式账号组织选择、不可变接纳归属、管理员实时概览和固定CSV持久任务已在本地验证；新增逐成员显式View/可选export的委派财务独立门户与安全投影，旧授权任务及操作键不因重新授权复活，三类报表合计资源和额度；R8接口、真实双worker与实际浏览器验收已完成，本地已启用；个人钱包仍权威，无历史推断回填；共享钱包仍未实现",
+      "latest_validation_commit": "8bcfbe48e3796780493c5c7b85a6828c4214a43c"
     },
     {
       "id": "CTRL-01",
@@ -2110,5 +2112,5 @@
   },
   "runtime_scope": "local_only",
   "production_changed": false,
-  "validation_record": "validation/r7-2026-11-04.json"
+  "validation_record": "validation/r8-2026-11-04.json"
 }

@@ -1,0 +1,1298 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-04",
+  "scope": "REP-03 explicit delegated organization finance",
+  "implementation_commit": "8bcfbe48e3796780493c5c7b85a6828c4214a43c",
+  "baseline_commit": "f0c48862b5f0f388e3659f6327646627efbc6697",
+  "status": "validated_scoped_locally",
+  "production_changed": false,
+  "capacity_certification": false,
+  "test_counts": {
+    "backend_unit": 1228,
+    "postgres_api": 130,
+    "frontend": 281,
+    "total": 1639
+  },
+  "test_groups": [
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 1042,
+      "files": [
+        "tests/unit/proxy/auth/test_route_checks.py",
+        "tests/unit/proxy/retail/test_control_plane_flags.py",
+        "tests/unit/proxy/retail/test_control_plane_access.py"
+      ]
+    },
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 106,
+      "files": [
+        "tests/unit/proxy/retail/test_report_store.py",
+        "tests/unit/proxy/retail/test_organization_reports.py",
+        "tests/unit/proxy/retail/test_organization_store.py",
+        "tests/unit/proxy/retail/test_organization_finance_store.py"
+      ]
+    },
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 39,
+      "files": [
+        "tests/unit/proxy/retail/test_finance_grants.py",
+        "tests/unit/proxy/retail/test_delegated_report_store.py",
+        "tests/unit/proxy/retail/test_organization_store.py"
+      ]
+    },
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 51,
+      "files": [
+        "tests/unit/proxy/retail/test_delegated_finance.py",
+        "tests/unit/proxy/retail/test_delegated_finance_store.py",
+        "tests/unit/proxy/retail/test_operation_events.py"
+      ]
+    },
+    {
+      "suite": "postgres",
+      "exit_code": 0,
+      "passed": 55,
+      "files": [
+        "tests/integration/database/test_retail_reports.py",
+        "tests/integration/database/test_retail_organization_report_store.py",
+        "tests/integration/database/test_retail_audit_delivery.py"
+      ]
+    },
+    {
+      "suite": "postgres",
+      "exit_code": 0,
+      "passed": 34,
+      "files": [
+        "tests/integration/database/test_retail_finance_grants.py",
+        "tests/integration/database/test_retail_organizations.py"
+      ]
+    },
+    {
+      "suite": "postgres",
+      "exit_code": 0,
+      "passed": 41,
+      "files": [
+        "tests/integration/database/test_retail_delegated_finance_api.py"
+      ]
+    }
+  ],
+  "deduplication": {
+    "overlapping_unit_tests": 10,
+    "overlap_file": "test_organization_store.py",
+    "postgres_groups_disjoint": true,
+    "frontend_files": [
+      "src/components/retail/organization-finance/organizationReportInput.test.ts",
+      "src/components/retail/organization-finance/OrganizationReports.integration.test.tsx",
+      "src/components/retail/organization-finance/financeInput.test.ts",
+      "src/utils/dashboardAccess.test.ts",
+      "src/components/retail/organization-finance/OrganizationFinance.integration.test.tsx",
+      "src/components/retail/management/RetailManagement.integration.test.tsx",
+      "src/components/retail/model-budgets/ModelBudgets.integration.test.tsx",
+      "src/components/retail/organization-finance/delegated/input.test.ts",
+      "src/components/retail/organization-finance/delegated/DelegatedFinance.integration.test.tsx",
+      "src/components/retail/organization-finance/delegated/CustomerFinance.integration.test.tsx",
+      "src/utils/roles.test.ts"
+    ],
+    "frontend_final_log": "work/org-delegation-customer-ui-tests.txt",
+    "frontend_previous_214_plus_67": {
+      "new_role_and_customer_cases": 4,
+      "existing_role_regressions": 63
+    }
+  },
+  "quality": {
+    "python_scoped": {
+      "baseline": "f0c48862b5f0f388e3659f6327646627efbc6697",
+      "scoped_files": [
+        "litellm/proxy/auth/route_checks.py",
+        "litellm/proxy/retail/api.py",
+        "litellm/proxy/retail/control_plane.py",
+        "litellm/proxy/retail/control_plane_access.py",
+        "litellm/proxy/retail/control_plane_flags.py",
+        "litellm/proxy/retail/delegated_finance.py",
+        "litellm/proxy/retail/delegated_finance_store.py",
+        "litellm/proxy/retail/delegated_report_csv.py",
+        "litellm/proxy/retail/delegated_report_store.py",
+        "litellm/proxy/retail/finance_grants.py",
+        "litellm/proxy/retail/operation_events.py",
+        "litellm/proxy/retail/organization_store.py",
+        "litellm/proxy/retail/report_store.py",
+        "litellm/proxy/retail/report_worker.py",
+        "tests/integration/database/test_retail_delegated_finance_api.py",
+        "tests/integration/database/test_retail_finance_grants.py",
+        "tests/unit/proxy/auth/test_route_checks.py",
+        "tests/unit/proxy/retail/test_control_plane_access.py",
+        "tests/unit/proxy/retail/test_control_plane_flags.py",
+        "tests/unit/proxy/retail/test_delegated_finance.py",
+        "tests/unit/proxy/retail/test_delegated_finance_store.py",
+        "tests/unit/proxy/retail/test_delegated_report_store.py",
+        "tests/unit/proxy/retail/test_finance_grants.py"
+      ],
+      "checks": [
+        {
+          "file": "litellm/proxy/auth/route_checks.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 23,
+          "current_findings": 23,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/auth/route_checks.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 11,
+          "current_findings": 11,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/auth/route_checks.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/api.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 5,
+          "current_findings": 5,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/api.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 49,
+          "current_findings": 49,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/api.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane_access.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane_access.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane_access.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane_flags.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane_flags.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/control_plane_flags.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/delegated_finance.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/delegated_finance.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/delegated_finance.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/delegated_finance_store.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/delegated_finance_store.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/delegated_finance_store.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/delegated_report_csv.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/delegated_report_csv.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/delegated_report_csv.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/delegated_report_store.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/delegated_report_store.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/delegated_report_store.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/finance_grants.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/finance_grants.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/finance_grants.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/operation_events.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/operation_events.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/operation_events.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/organization_store.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/organization_store.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/organization_store.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/report_store.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/report_store.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/report_store.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/report_worker.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/report_worker.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "litellm/proxy/retail/report_worker.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/database/test_retail_delegated_finance_api.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/database/test_retail_delegated_finance_api.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/database/test_retail_delegated_finance_api.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/database/test_retail_finance_grants.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/database/test_retail_finance_grants.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/integration/database/test_retail_finance_grants.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/auth/test_route_checks.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 275,
+          "current_findings": 275,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/auth/test_route_checks.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 309,
+          "current_findings": 309,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/auth/test_route_checks.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 30,
+          "current_findings": 30,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_control_plane_access.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_control_plane_access.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_control_plane_access.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_control_plane_flags.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_control_plane_flags.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_control_plane_flags.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_delegated_finance.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_delegated_finance.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_delegated_finance.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_delegated_finance_store.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_delegated_finance_store.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_delegated_finance_store.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_delegated_report_store.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_delegated_report_store.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_delegated_report_store.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_finance_grants.py",
+          "checker": "ruff-strict",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_finance_grants.py",
+          "checker": "check_type_discipline",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        },
+        {
+          "file": "tests/unit/proxy/retail/test_finance_grants.py",
+          "checker": "check_test_quality",
+          "existing_base_findings": 0,
+          "current_findings": 0,
+          "rule_growth": {},
+          "changed_line_findings": []
+        }
+      ],
+      "passed": true
+    },
+    "frontend_eslint": "passed",
+    "frontend_design_detector": [],
+    "official_openapi_generation": "npm.cmd run gen:api",
+    "production_build": "npm.cmd run build -- --webpack",
+    "production_typescript": "node node_modules/typescript/lib/tsc.js --project tsconfig.production.json --noEmit",
+    "whole_repository_gates_and_full_frontend_suite_run": false
+  },
+  "mutations": {
+    "sampled_total": 13,
+    "killed_total": 13,
+    "core": {
+      "sampled_mutations": 5,
+      "killed": 5,
+      "working_sources_unchanged": true,
+      "results": [
+        {
+          "mutation": "old-job-epoch-readable",
+          "test": "tests/integration/database/test_retail_finance_grants.py::test_revoke_regrant_cannot_resurrect_cached_job_range_or_replay_old_key",
+          "exit_code": 1,
+          "killed": true
+        },
+        {
+          "mutation": "membership-restores-grant",
+          "test": "tests/integration/database/test_retail_finance_grants.py::test_eligibility_break_then_restore_requires_explicit_reapproval_and_never_revives_old_jobs[member_disabled]",
+          "exit_code": 1,
+          "killed": true
+        },
+        {
+          "mutation": "org-reenable-restores-grant",
+          "test": "tests/integration/database/test_retail_finance_grants.py::test_eligibility_break_then_restore_requires_explicit_reapproval_and_never_revives_old_jobs[organization_disabled]",
+          "exit_code": 1,
+          "killed": true
+        },
+        {
+          "mutation": "coerced-grant-permission",
+          "test": "tests/unit/proxy/retail/test_finance_grants.py::test_finance_grants_accept_only_real_boolean_permissions",
+          "exit_code": 1,
+          "killed": true
+        },
+        {
+          "mutation": "unescaped-csv-model",
+          "test": "tests/unit/proxy/retail/test_delegated_report_store.py::test_delegated_model_names_cannot_execute_as_spreadsheet_formulas",
+          "exit_code": 1,
+          "killed": true
+        }
+      ]
+    },
+    "api": {
+      "total": 7,
+      "killed": 7,
+      "source_untouched": true,
+      "items": [
+        {
+          "mutant": "writable-actor-bypass",
+          "killed": true,
+          "exit_code": 1,
+          "test": "tests/integration/database/test_retail_delegated_finance_api.py::test_cached_actor_is_freshly_checked_even_for_existing_jobs_and_replays"
+        },
+        {
+          "mutant": "viewer-target-grant",
+          "killed": true,
+          "exit_code": 1,
+          "test": "tests/integration/database/test_retail_delegated_finance_api.py::test_admin_may_revoke_inactive_or_demoted_target_but_cannot_grant_native_viewer"
+        },
+        {
+          "mutant": "nonportal-actor-bypass",
+          "killed": true,
+          "exit_code": 1,
+          "test": "tests/integration/database/test_retail_delegated_finance_api.py::test_cached_actor_is_freshly_checked_even_for_existing_jobs_and_replays"
+        },
+        {
+          "mutant": "nonportal-target-grant",
+          "killed": true,
+          "exit_code": 1,
+          "test": "tests/integration/database/test_retail_delegated_finance_api.py::test_native_nonportal_target_is_rejected_before_a_grant_is_created"
+        },
+        {
+          "mutant": "scope-filter-ignored",
+          "killed": true,
+          "exit_code": 1,
+          "test": "tests/integration/database/test_retail_delegated_finance_api.py::test_scope_id_filter_is_batched_exact_private_and_has_filtered_total"
+        },
+        {
+          "mutant": "live-limit-bypass",
+          "killed": true,
+          "exit_code": 1,
+          "test": "tests/integration/database/test_retail_delegated_finance_api.py::test_delegated_live_cohort_overflow_rejects_a_partial_summary"
+        },
+        {
+          "mutant": "unknown-charge-zero",
+          "killed": true,
+          "exit_code": 1,
+          "test": "tests/unit/proxy/retail/test_delegated_finance_store.py::test_unsettled_delegated_rows_show_missing_charge_instead_of_zero"
+        }
+      ]
+    },
+    "frontend": {
+      "sampled": 1,
+      "killed": 1,
+      "mutation": "delete view capability guard",
+      "evidence": "work/org-delegation-ui-mutation.txt"
+    },
+    "whole_repository_mutation_coverage": false
+  },
+  "native": {
+    "scope": "isolated native two-worker delegated organization finance",
+    "database": "r8_org_http_6168229d",
+    "runtime": "codex-retail-r8-native-proxy-6168229d",
+    "redis": "codex-retail-r8-native-redis-6168229d",
+    "source_rows_copied": 0,
+    "native_schema_only": true,
+    "no_external_model_calls": true,
+    "local_mock_response_only": true,
+    "observations": [
+      {
+        "name": "schema_clone",
+        "schema_bytes": 213763,
+        "source_rows_copied": 0
+      },
+      {
+        "name": "runtime",
+        "worker_count": 2,
+        "retail_billing_enabled": true
+      },
+      {
+        "name": "explicit_selection",
+        "approved_memberships": 2,
+        "implicit_assignment": false,
+        "prior_two_charges_unattributed": true,
+        "eligible_picker_paginated": true,
+        "same_operation_replayed": true,
+        "stale_version_status": 409
+      },
+      {
+        "name": "cross_worker_capture",
+        "requests": 8,
+        "http200": 8,
+        "workers": 2,
+        "keys": 2,
+        "pools": 2,
+        "all_attributed_to_A": true,
+        "whole_cohort_total_not_page_only": true
+      },
+      {
+        "name": "late_binding",
+        "held_A_request_kept_A_after_move_B": true,
+        "actual_late_charge_usd": "0.020000000",
+        "A_accepted": 9,
+        "B_accepted": 3,
+        "prior_snapshot_versions_preserved": true
+      },
+      {
+        "name": "lifecycle",
+        "clear_future_unattributed": true,
+        "disabled_membership_future_unattributed": true,
+        "disabled_organization_future_unattributed": true,
+        "personal_calls_kept_working": true,
+        "historical_disabled_org_readable_to_admin": true,
+        "old_snapshots_unchanged": true
+      },
+      {
+        "name": "privacy",
+        "ordinary_and_delegated_finance_denied": true,
+        "delegated_member_directory_still_allowed": true,
+        "unknown_status": 404,
+        "invalid_status": 422,
+        "own_wallet_no_internal_snapshot": true
+      },
+      {
+        "name": "fixed_organization_export",
+        "http202": true,
+        "fixed_rows": 10,
+        "pending_snapshot_kept_blank_after_late_settlement": true,
+        "fresh_export_includes_late_charge": true,
+        "same_key_same_snapshot": true,
+        "conflicting_key_status": 409,
+        "range_status": 206,
+        "invalid_range_status": 416,
+        "ordinary_and_delegated_denied": true,
+        "different_creator_and_org_status": 404,
+        "disabled_org_download_status": 404,
+        "renamed_org_does_not_change_snapshot": true,
+        "lost_lease_restart_same_bytes": true,
+        "csv_sha256": "68d667221752636bbae5f2a4ad779bae3243823defb368760e22166019b5c66a",
+        "parallel_model_calls": 16,
+        "parallel_model_http200": 16
+      },
+      {
+        "name": "delegated_finance",
+        "explicit_view_required": true,
+        "view_only_export_denied": true,
+        "scopes_batch_filtered": true,
+        "redacted_live_and_csv": true,
+        "csv_rows": 26,
+        "range_status": 206,
+        "old_admin_artifact_status": 404,
+        "regrant_old_job_status": 404,
+        "regrant_old_operation_status": 409,
+        "rename_and_other_member_change_preserve_grant": true,
+        "member_disable_reenable_requires_reapproval": true,
+        "organization_disable_reenable_requires_reapproval": true,
+        "native_readonly_current_session_denied": true,
+        "blocked_session_denied_on_two_workers": true,
+        "grant_db_timeout_status": 503,
+        "model_during_grant_db_lock_status": 200,
+        "limited_inference_key_denied": true,
+        "admin_only_grant_marker_not_delegated": true,
+        "csv_sha256": "efe6e4500609f0ad6c8b5d512627b58d1eab3bdb15e72f31efdd0d35421db959"
+      }
+    ],
+    "result": "passed",
+    "cleanup": {
+      "runtime_removed": true,
+      "redis_removed": true,
+      "fixture_database_dropped": true,
+      "qa_postgres_removed": true,
+      "qa_networks_removed": true,
+      "qa_browser_logged_out_and_closed": true,
+      "unrelated_containers_untouched": true,
+      "production_changed": false
+    }
+  },
+  "final_native_authority": {
+    "result": "passed",
+    "final_source_restarted": true,
+    "safe_live": true,
+    "safe_csv": true,
+    "range_status": 206,
+    "revoked_old_epoch_status": 404,
+    "native_role_checks": {
+      "same_principal_admin_artifact_hidden_after_demotion": true,
+      "org_admin": {
+        "cached_access_status": 401,
+        "target_grant_status": 404,
+        "grant_unchanged": true
+      },
+      "team": {
+        "cached_access_status": 401,
+        "target_grant_status": 404,
+        "grant_unchanged": true
+      }
+    },
+    "qa_role_restored": true,
+    "external_model_calls": 0,
+    "production_writes": 0
+  },
+  "browser": {
+    "passed": true,
+    "synthetic_only": true,
+    "view_only_hides_exports": true,
+    "only_granted_organization_link": true,
+    "grant_history_disclosure_verified": true,
+    "customer_native_role": "customer",
+    "customer_ui_role": "App User",
+    "reapproval_old_exports_not_listed": true,
+    "created_report_id": "2d55ed94-c153-4cc2-8b1c-98c6ac3f05d5",
+    "ready": true,
+    "accepted_requests": 27,
+    "finalized_usd": "0.04125",
+    "authenticated_download_clicked": true,
+    "ungranted_user_shows_no_finance_access": true,
+    "screenshots": [
+      "r8-finance-grant.jpg",
+      "r8-delegated-view-only.jpg",
+      "r8-delegated-snapshot.jpg",
+      "r8-delegated-customer-exports.jpg",
+      "r8-finance-access-denied.jpg"
+    ]
+  },
+  "csv": {
+    "passed": true,
+    "report_matches_browser": true,
+    "status": 200,
+    "range_status": 206,
+    "previous_grant_epoch_status": 404,
+    "rows": 27,
+    "columns": [
+      "sequence",
+      "model",
+      "captured_at_utc",
+      "captured_at_beijing",
+      "state",
+      "settled_nanos",
+      "settled_usd"
+    ],
+    "raw_user_and_request_ids_absent": true,
+    "sha256": "1465c4d2f403a74cd1dd506a2b8aeeb64e536357e5c4cf5ec24acc76b56c8afb"
+  },
+  "local_activation": {
+    "local_active": true,
+    "production_changed": false,
+    "capacity_certification": false,
+    "financial_table_count": 13,
+    "financial_fingerprint_unchanged": true,
+    "initial_financial_baseline_unchanged": false,
+    "preexisting_report_expired_before_activation": true,
+    "other_12_initial_table_fingerprints_unchanged": true,
+    "new_finance_row_counts": {
+      "retail_organization_finance_grants": 0,
+      "retail_finance_organization_generations": 0,
+      "retail_delegated_report_jobs": 0,
+      "retail_delegated_report_rows": 0
+    },
+    "org_finance_delegation_enabled": true,
+    "two_workers": true,
+    "audit_paused": true,
+    "audit_target_configured": false,
+    "audit_secret_configured": false,
+    "source_overlays_match": true,
+    "overlay_mount_count": 42,
+    "overlay_file_count": 1047,
+    "ui_overlay_files": 911,
+    "source_sha256": {
+      "litellm/proxy/management_endpoints/key_management_endpoints.py": "97f6d07d176f037984b3de5fd2ffceaabc1521a32befd1e4186f2ff85eb167d3",
+      "litellm/proxy/common_request_processing.py": "ad16d8403a55d575713e774cdee6117b45e3d46c5ed5c384b4fed106daa7261a",
+      "litellm/responses/litellm_completion_transformation/transformation.py": "1f0d5efaa6fb04dc95e043d7108831d657d6da22c5257a2e8141f7b0ffd17282",
+      "litellm/litellm_core_utils/litellm_logging.py": "f671ec92edd2d896b935abdbbad12a0d881cf3ea67093b420f742bc7e0a68973",
+      "litellm/proxy/auth/route_checks.py": "a86f6e1265db627d48af725a65793a8e64c7bdc9faa66716d2c5dd30a2990eb0",
+      "litellm/litellm_core_utils/streaming_handler.py": "16b5cbec3f09e42fc1185c95f5ee4a7f3cefcaee0f2a2e23e4328ea40bdf30ba",
+      "litellm/integrations/otel/runtime.py": "a4194dc62bed5fb6f875bf62de6eea8874c7a38be92a47e6abbcc901500667b3",
+      "litellm/proxy/common_utils/user_api_key_cache.py": "c992d454ff860830bac9744f90a26ce46c34053754722be2c141f61612bdc240",
+      "litellm/llms/anthropic/pass_through/adapters/transformation.py": "5fdd5c475e96c442f113b57173cb8951fcdef478b5b8c04703c4b61a367b57b4",
+      "litellm/llms/custom_httpx/http_handler.py": "8b63d9d39984d9faa8941571229461c242437bf45a06da5e8601283f9363c700",
+      "litellm/main.py": "26d883a41844f51a6173a30ed180a702d9d432e03683d3e5ce1b190846f0dba1",
+      "litellm/litellm_core_utils/logging_worker.py": "302db8516e9174ed1718a29ce0b1f56737182fd435a2f74623c4072484961850",
+      "litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py": "0b19422ea9b372f6d97eed993380d2c43750a1f978b4a10cb8ac0bb9376ae50a",
+      "litellm/proxy/proxy_server.py": "c77c43d988804f20a533e55fb9e41687dd2a489162b0fce6bd9dbc665d33adb0",
+      "litellm/proxy/common_utils/http_parsing_utils.py": "5cb69f91c8b8e7316c2ffbe8c3498ed8ac19a3b9ffa4b34c24887076fbaff6f6",
+      "litellm/proxy/utils.py": "48a537dead2055f3cbfb312b171da2c1c5e2998f62a08afcfed4c56452e01de1",
+      "litellm/litellm_core_utils/streaming_chunk_builder_utils.py": "8a1ca7ecf5c32fbd34067b1d74f4b52937126511d0ef104b6ed0479b48b01dbc",
+      "litellm/llms/anthropic/pass_through/messages/transformation.py": "4bae056cf89b9b98856a7170cd3e9be47451d3722242c1290ad2013fc02f036d",
+      "litellm/llms/anthropic/common_utils.py": "98e6265eec5d36a6961f8eae0c485bd87ecae9e96b6ca80ad0e77129ed2cc221",
+      "litellm/llms/openai/common_utils.py": "c11264332d620591efd7bf196761e0001ca03f1a04b475f97abc76d9605b9d9c",
+      "litellm/types/llms/anthropic.py": "4fdf7ba1721bd77059c5e88a9752f2cffe58a17df3e7777eddaf0683ed742a9d",
+      "litellm/proxy/retail/admission.py": "0b868e54dec6e1744ee9e3a4e16af6bb185ffbfaac4d01e9901e9cc3b2d16916",
+      "litellm/proxy/retail/api.py": "fee5ad2e9e6171bd770d380fe34c1958df7f3e36730f97baf5474eafadd930c8",
+      "litellm/proxy/retail/audit_delivery.py": "892721c931a532212d22ad41c6f07b24725559a4ec05caec2906a87a5db0014c",
+      "litellm/proxy/retail/audit_delivery_config.py": "b7d74136020da1d7096450969ebb98419d3566366fa2c16124e51575ee8f0a73",
+      "litellm/proxy/retail/audit_delivery_schema.sql": "7e4bf416ae4ae9bc6ffbee597027fb3539245e9b2e209713c3ddef8ca1e04455",
+      "litellm/proxy/retail/audit_delivery_store.py": "af32fd8f95a51e9122f478a4edfd689d85f3c487dd34b8471c73160dffe13712",
+      "litellm/proxy/retail/audit_delivery_worker.py": "3f6ac92b89663c7a4335a03886a6a2073983cd0ef09f569237ea902192b7c3e5",
+      "litellm/proxy/retail/billing.py": "cd150f5603dbb827cf094758376e6fb7403b605ebe208d00e99d225851bbe5a7",
+      "litellm/proxy/retail/budget_accounting.py": "ee41c4d1209a3597df1d0071cdf82a2491f8a239dd81fc1bc74d21ea2cd34268",
+      "litellm/proxy/retail/budget_management.py": "fac0215dc2b13a0fd03d029c15cc78e3c5a8160a177d6f55f684c2a14ff2b8a8",
+      "litellm/proxy/retail/budget_management_schema.sql": "12d2ae5b59f62fb1a56463fd868422db17bc0bdfbddb240b8356b4d6ebe0fc2a",
+      "litellm/proxy/retail/budget_schema.sql": "f905e4d615033f47f3f5db2327a64b63fb7b508aa5e4df7541293854cc2d5ebc",
+      "litellm/proxy/retail/cache_observations.py": "dfef62b1b65b86b79478c0b11a956c79e4b0eb9fce09f7420c476da5d93bd77c",
+      "litellm/proxy/retail/cache_usage.py": "5ef5e2ec2b00630a634ac3b951775403bfafcc3b2b7d4dfa6f702ce4188454dc",
+      "litellm/proxy/retail/cache_usage_metrics.py": "0903d878a2cc82321aacc87ed71c213fb8ad5d5777993651a9d215512a072b87",
+      "litellm/proxy/retail/catalog.py": "cdc91674b19bb06a13a95009c42d6a6bcbf0c63cebbe8de0c5b152868bc5f5f2",
+      "litellm/proxy/retail/catalog_enrichment.py": "2b023ec8693251cd54cfecbf08d975e9621f9b4525247d80b9d86d924fad947e",
+      "litellm/proxy/retail/catalog_expression.py": "5c082a0f470457c02689fd7b6c666d3d9bf761092242cec433480f8db5bb3570",
+      "litellm/proxy/retail/catalog_image_expression.py": "fb39aecdebffb66a6d6cf9aa170c46feb2f9e3b9abd6ef1f65fcaca26b810161",
+      "litellm/proxy/retail/catalog_pricing_metadata.py": "8b290c229b8af83472fd63d0e82fa128ab80217fb1d6389344d42405f355590d",
+      "litellm/proxy/retail/catalog_sources.py": "bb8076f7750f28119d98325261412d60fbf4eab0053c208bacd5525034baa97a",
+      "litellm/proxy/retail/catalog_source_data.py": "f78d137e49eb1b1153f4f6faa73407a23fe55cd0d1a059a010857cb81f724ab9",
+      "litellm/proxy/retail/catalog_verified_rules.py": "228022c1d074bb345175cea47e5492dea7bbd95076578263548466823fca3d7a",
+      "litellm/proxy/retail/channels.py": "c3e1ec6226e1d93c81b9e2b0d0533c9eaf984e57eb224dbedb15d9b41efb96a1",
+      "litellm/proxy/retail/channel_connection.py": "69b773f19de27f5365554a0c243dd2e2a56069cc2c23c899674d75259504bc80",
+      "litellm/proxy/retail/channel_metrics.py": "db5fc54c481acde28a181d66349a34ec7aea2400d6a8caf0cd538c73ffd98578",
+      "litellm/proxy/retail/channel_store.py": "4836fd712b3cf10468f17dd96dd04cd67a6ea33e0fcae6453ddc834131fea4da",
+      "litellm/proxy/retail/control_plane.py": "1f991e2d1cdc5fbd6f22e74fe31e8d37a61853ecfb75d42329561b2e94f9eae3",
+      "litellm/proxy/retail/control_plane_access.py": "3000d7718b17d23f428c1fe66e9616b6b24da36accc3cfa9b3f9de5cab75a874",
+      "litellm/proxy/retail/control_plane_flags.py": "e1a76238172b52cf7df439e6448c06aa4065035815a27bfa910108d3f65de7f3",
+      "litellm/proxy/retail/control_plane_http.py": "cdfbf501a952df6f464c7b01618f2077a99f0e90ee3a3e9a0a237b2ebd043e4b",
+      "litellm/proxy/retail/control_plane_schema.py": "6850f8f5dec4a952fdabddf2d5f450f051dab91021dcf9ddbc900e0b1fee56c8",
+      "litellm/proxy/retail/coordination_guard.py": "26bc861135696e34333655cd06b559ca6fbc314ed68e58f7528af6523950bfe0",
+      "litellm/proxy/retail/customer_access.py": "8b00e34262339615ae754dfce72beed3a00235e2e8875ed449e3c6d01642bb8f",
+      "litellm/proxy/retail/customer_logs.py": "6c635d0f2810bc64cb2be69f8bd58ea0919f58e16bcacf1354ed8453d7824081",
+      "litellm/proxy/retail/customer_response_middleware.py": "07f4c908e6d6dcd07a67dd362ea88131564bc031badeca5017259873f46f1ab7",
+      "litellm/proxy/retail/customer_response_privacy.py": "30dd492735f4f4f2001cc5fbf4e8683396d5487d20d6113bd8f9fcb79dadf777",
+      "litellm/proxy/retail/database.py": "f37ab5596ed20709ff2d2d89cc806dfe310b0e48766cbf4753eeeb929a5c8eaa",
+      "litellm/proxy/retail/delegated_finance.py": "643afa8142de19bb360bff53a41bf02b4f28afdb7e0602d2cd3b96e86a9138b3",
+      "litellm/proxy/retail/delegated_finance_store.py": "24243291658063f6d43cf5dfb3349dfdc1681c5f660648e56c309658c3263d06",
+      "litellm/proxy/retail/delegated_report_csv.py": "eb1e1594841006d9a8fe035ac2842fdf1d6e2e689090ef9b112077d96d4da741",
+      "litellm/proxy/retail/delegated_report_schema.sql": "ea9547ff37c5e47d80cdd06d31cb1ede34050521fc8e2c55dce09a91ec672eb2",
+      "litellm/proxy/retail/delegated_report_store.py": "af8c8cd470069d9a2ab2a28bf670bcf31edb1cc73529b8ca10b182e71b8bbcf8",
+      "litellm/proxy/retail/expression_billing.py": "d7944b4b1d9b17362ef59aab280ffc0be1b66fec988d1d3a8ffc7217828e6348",
+      "litellm/proxy/retail/expression_display.py": "030f97cabe2c25a6234d0e8c1bb0acb5776dbaf31413fe6c147730d4ab17e45a",
+      "litellm/proxy/retail/expression_parser.py": "c45c889f6d46eb7888f1c4249ccb9ddd2903ca08709819ec718575e7b2e33db0",
+      "litellm/proxy/retail/expression_pricing.py": "9e06feaea64f88223d248498ff5593fada2dd34d663ea184aa10350ce87677d8",
+      "litellm/proxy/retail/expression_usage.py": "661998eb3c224983cfb81494923a2908f0cc347af43ffb9a91fe614177077ae1",
+      "litellm/proxy/retail/finance_grants.py": "b04184d9bb5d7f52b6579b6a6261fb74b7794d1abbb10011fe026c809495697b",
+      "litellm/proxy/retail/finance_grants_schema.sql": "a196a6704707a1da6daccbd822faa415d5deaf89d5f1155e7f77f52f398e7371",
+      "litellm/proxy/retail/key_policy.py": "9a8de852583b6ad437b1b82e850c59889a80afcfd2935283f1dd8d37d23b2021",
+      "litellm/proxy/retail/key_rotation.py": "a23e0f0f629883970b65fb4748fe815081f724e887f7cfedd27c681728f61d57",
+      "litellm/proxy/retail/models.py": "d9daff4d0c4815b4b49af4ef355b8f8585a11252a88ccdceeea3b05137bb91c5",
+      "litellm/proxy/retail/model_budgets.py": "7db673eb4ae3bb706fd77300990104ce6292879426306cad8cbb1d8e57a494b8",
+      "litellm/proxy/retail/model_discovery.py": "7807fed8bbd7a6d10c32acecfa112245c46aceeab46458453e79e7747f878307",
+      "litellm/proxy/retail/model_metrics.py": "d29766d28a13870c1ba687ceb67f48c314ec44589090d7fce7ecb1e58d4adecb",
+      "litellm/proxy/retail/model_observations.py": "b0453a38dee029e640e3fae39f1fcb9c1a9fc526c3908e5919683dc7fb59f292",
+      "litellm/proxy/retail/model_price_catalog.py": "2c3ac5ca1c596fd74412dd5747e0c871adf429d37c1bfa1cdae4b77560967258",
+      "litellm/proxy/retail/object_metadata.py": "4b2d27cf499865ef642be52c8abcce92ccd8f2df7afb394b88c4548ea320b5e5",
+      "litellm/proxy/retail/object_metadata_schema.sql": "66afeb6e6c0803f8aec696d9825bbd21bd84fae35c4b0041ae6b0ea09edd5e23",
+      "litellm/proxy/retail/object_metadata_store.py": "f3c6d46a67fc45dfd6460ce694f09262e092a05ea9ae7ab17ee65ab823bedfca",
+      "litellm/proxy/retail/object_metadata_targets.py": "12a961fc9b70fe648a7cab108edb591d279a664693d58fc10371022dc7162c75",
+      "litellm/proxy/retail/operation_events.py": "49bc1f7f44618847268412eca449e4e4cd07f0b1a0c5b7878734c9382d366fa7",
+      "litellm/proxy/retail/operation_events_schema.sql": "ed908405c2fbe558b307e23fb9237ddf496938c2060db424b2dd592c278cdccd",
+      "litellm/proxy/retail/organizations.py": "bacb4c9257004faa51b9f08cadac3ea6503c8a94d125bd7e8eae2b511a57ac20",
+      "litellm/proxy/retail/organization_attribution.py": "ab696bab7195e192e35c8518b836736041efc354d38f48067179d66c407bc0f7",
+      "litellm/proxy/retail/organization_attribution_schema.sql": "60e8fb47ea8f79d0eb31a32bf57e9b5e757e88b638bd96b82c2297ebdd1e361e",
+      "litellm/proxy/retail/organization_consumption.py": "bda96191f2a51920d9c7834dc1bf77b5005d07efc093ffd2bee59491b93cc23f",
+      "litellm/proxy/retail/organization_finance.py": "5a1a0d3f8bf67c826fb371ae73619d68ab4b42afd33b30b451894d68d5b00873",
+      "litellm/proxy/retail/organization_finance_store.py": "ddb042a48962a85e14f5af3b7f837c05210dcef686118ecc3d526a7555a6202b",
+      "litellm/proxy/retail/organization_reports.py": "4cdfa084cde24e9c814f7c64d4ebebb130def005816b811b39a348fb1ce56d97",
+      "litellm/proxy/retail/organization_report_csv.py": "e5ec2045aaa7c1acb94c5b5f628337e6d7a6371ed4eba62dc97d82b8214270d4",
+      "litellm/proxy/retail/organization_report_schema.sql": "1a548f277e5b77d64b775d3a671e50842102b8a4e34d3a4429b62aac5e8366e2",
+      "litellm/proxy/retail/organization_report_store.py": "20e1a9a580075e73aeee48e06d3e49cad94f8e773619b557c36d2f307aff2b1d",
+      "litellm/proxy/retail/organization_schema.sql": "a590bcb79d50f449fb457dd5ad51c5eb486a55bd0b57bf466c8d0091da47f6e5",
+      "litellm/proxy/retail/organization_store.py": "b84f68dd15ef0156b9055a522dcb2c986a23f86e9a2234cd2f273685bdea7123",
+      "litellm/proxy/retail/pools.py": "cf94351e08be54066f3cada1b959a3fd0396f9fced80b8cc570b404737508868",
+      "litellm/proxy/retail/pool_pricing.py": "f7ee37bc1e7a21128525fab7a813025bc581f227abc09c1703112994dab9da6f",
+      "litellm/proxy/retail/pool_routing.py": "4b1d10074f301913491c22edfecc4843323872728dee8dc3f83862331509249c",
+      "litellm/proxy/retail/pool_store.py": "7c7d90b35bd5ecfb403b0ed62e9643aa961eb0d778d2b1628636c3e107d8368c",
+      "litellm/proxy/retail/pricing.py": "2ca4e5f9755deb398183bd7fd18c92eb0c75c4a50eabb173998b67553e0acc10",
+      "litellm/proxy/retail/reports.py": "0df31667f7c58d74b3917a0e42702283c724dc6f76b3ecf21a8f050657e2bf62",
+      "litellm/proxy/retail/report_schema.sql": "59c9f89358b80c1a3283f614370b18387e02cfd0967b8bff0620978b3ab876cf",
+      "litellm/proxy/retail/report_store.py": "2d0760072696ba16f13583ee1102faa2dfe20f1bb88b45c8800447fa260236e9",
+      "litellm/proxy/retail/report_worker.py": "3a8e7a2ee49c7058c38d9778ea73318f0c1848eea16cf0d559a0af4b216b692c",
+      "litellm/proxy/retail/request_body_limit.py": "3cf8a5f974ec8399d277fb9a05bdc1affd788abf8fa0e8c37d1238a3caa889f1",
+      "litellm/proxy/retail/request_tracing.py": "7bd9fa0d25defd16b8a6058db35085b9dc7f03972aedd06b2338e5d225f86376",
+      "litellm/proxy/retail/schema.sql": "c426fb8d73dcd06c9445358ad924063dc25906b1b4c03847b7b266d529094a04",
+      "litellm/proxy/retail/settlement_store.py": "360b229344278073b3f060c7b324c223c2f4a528687a7fca052570f952f671ee",
+      "litellm/proxy/retail/settlement_stream.py": "ef9ef198f436b0387deca1c37002dabed9dc8f29e1e18bfe240e58ea4e10d37e",
+      "litellm/proxy/retail/settlement_worker.py": "18fc1401412d7e6187f7c006c41c5811261aaf3e1f6da1c19a71c95f0de48ae9",
+      "litellm/proxy/retail/store.py": "f2a671653bdfd87e6a86f2733c8f537eede815fee259e8477ac13e3a0b30e720",
+      "litellm/proxy/retail/trace_middleware.py": "48ddf385bf1d96ccdbc091e0dbc51467bb258676e76aa22aba26b5d22f5305c3",
+      "litellm/proxy/retail/trace_store.py": "eb6b13478fedef444124db82fd49ddc9e640b10c470511aa2e5fc0dbb236b581",
+      "litellm/proxy/retail/trace_writer.py": "e0d8b579a93fb83f226e5229f93ce7d07d1f6fd3c235df0a6f139bc5154115f8",
+      "litellm/proxy/retail/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "litellm/proxy/_types.py": "8912c2b995027de7f3748160d41d5b39b5085c5d94f7c527a120711a22e18028",
+      "litellm/proxy/management_endpoints/daily_activity_routes.py": "a0e5d341df21d04c7631773dea485cac51e5ad06ed65e53ee315680810373f95",
+      "litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py": "be7d73e005d78c816f063e71f7734330863cc56cc7f9f19179f2fe5de68bf663",
+      "litellm/proxy/management_endpoints/internal_user_endpoints.py": "7ee1ce633bf02e5f0b793f0c4f1a466cffeb0100c25d9736f08aac3c1baa51af",
+      "litellm/litellm_core_utils/request_trace_transport.py": "a9d064c7896418dd44465a6d55b1882c450baa6c385ebb867a8e3f6dbf58cca1",
+      "deploy/retail/config.yaml": "ecef93a2c2d16fbfbdb9a6b64417b78dffe3d2bc0a9c55da7b1e0895e43d1c2f",
+      "litellm/proxy/spend_tracking/spend_tracking_utils.py": "34325be71ee531873c0c5fd78a144723b28c8e5d09f68f97abcde2cb621761ba",
+      "litellm/types/llms/anthropic_messages/anthropic_response.py": "12f860b5ec5c799ee901e58c5ed354e7eedc3e5fc93bfd1ffe8a87cfc041ac29",
+      "litellm/router.py": "b7005a81360cd77702b8cb4de461106852c12910a578b333ae6f5248ee520a6a",
+      "litellm/types/utils.py": "604a0154410a0fdc9db7715fe7a4d76c62a0e5f251e4bab6ddb11e91f3181cb7",
+      "litellm/integrations/custom_logger.py": "6f1fa44c1ef7cc38dde69f8a0c39c4e0a99c4aecff44cd232b1d374ac97f076a",
+      "litellm/proxy/spend_tracking/spend_management_endpoints.py": "e5cb57098a84f15c729a1f660846b227db52bd3c6b4cfbb5a53f20234e68126e",
+      "litellm/litellm_core_utils/llm_cost_calc/utils.py": "1e921493e8ee844a1e55b149c254f6ddb02067d67e891fd08fe241ca796410ec",
+      "litellm/llms/anthropic/chat/handler.py": "ffe175587d4600cdbebcf477c1d4c52e338263dce2676699091ee4495f108ae4",
+      "litellm/responses/utils.py": "a3a35ba7a9afe4680771b0093088ddd45a44a9377e7ff5fd029f0e022a396751",
+      "litellm/cost_calculator.py": "cb2d8fade830d080d4a222f758db0b41409a5d63c0ee134648aa713308bfbfd0",
+      "litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py": "b4cbc50762923d2f2beabe32ae7ce008ca8bb0003451b68b35f3d10a28329ea8",
+      "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py": "ce7d37e4c5d3d364e24fe0fd54dff2ae1955e35e4cd897563d47b7965630e009",
+      "litellm/utils.py": "0901696f1b48b91d7535c2d351f637949e75f99a19c62a94d5f6f711c59740dd"
+    },
+    "ui_manifest_sha256": "0fd8f0268a2e502185409401396080e7a3460d7457397719b07ae26231c60fad"
+  },
+  "local_http": {
+    "public_statuses": {
+      "/health/readiness": 200,
+      "/health/liveliness": 200,
+      "/ui/welcome/": 200,
+      "/ui/organization-finance/": 200
+    },
+    "unauthenticated_private_statuses": {
+      "/retail/admin/runtime": 401,
+      "/retail/organization-finance/organizations": 401,
+      "/retail/organizations/00000000-0000-0000-0000-000000000000/finance/access": 401
+    },
+    "explicit_scopes_for_admin_without_grant": 0,
+    "delegation_flag": true,
+    "real_grants_created": 0,
+    "real_reports_created": 0,
+    "production_changed": false
+  },
+  "preactivation_report_expiry": {
+    "changed_table": "retail_report_jobs",
+    "row_count_unchanged": true,
+    "original_baseline_time": "2026-11-04T10:53:22.607937+00:00",
+    "current_expiry_projection": [
+      {
+        "state": "expired",
+        "created_at": "2026-11-03T11:25:35.950554+00:00",
+        "expires_at": "2026-11-04T11:25:35.950554+00:00",
+        "artifact_bytes": 0,
+        "artifact_absent": true
+      },
+      {
+        "state": "ready",
+        "created_at": "2026-11-03T11:54:35.679779+00:00",
+        "expires_at": "2026-11-04T11:54:35.679779+00:00",
+        "artifact_bytes": 129,
+        "artifact_absent": false
+      }
+    ],
+    "other_12_table_fingerprints_unchanged": true,
+    "read_only_prior_ready_projection_hash_matches_original": true,
+    "interpretation": "Existing report metadata expired under the already-running report worker; original whole-row hash is not claimed unchanged",
+    "source_rows_modified_by_task": false,
+    "production_changed": false
+  },
+  "financial_and_secret_checks": {
+    "baseline": "f0c48862",
+    "baseline_commit": "f0c48862b5f0f388e3659f6327646627efbc6697",
+    "reserve_settle_release_ast_unchanged": true,
+    "billing_and_budget_ast_unchanged": true,
+    "billing_and_budget_git_text_unchanged": true,
+    "billing_and_budget_raw_bytes_unchanged": false,
+    "line_ending_only_difference_count": 1,
+    "stable_source_sha256": {
+      "litellm/proxy/retail/billing.py": "cd150f5603dbb827cf094758376e6fb7403b605ebe208d00e99d225851bbe5a7",
+      "litellm/proxy/retail/budget_accounting.py": "ee41c4d1209a3597df1d0071cdf82a2491f8a239dd81fc1bc74d21ea2cd34268"
+    },
+    "live_secret_matches": 0,
+    "secret_values_checked": 6,
+    "files_checked": 58,
+    "production_changed": false,
+    "capacity_certification": false
+  },
+  "staged_checks": {
+    "staged_file_count": 58,
+    "live_secret_matches": 0,
+    "staged_diff_check": true,
+    "files": [
+      "deploy/retail/README.md",
+      "deploy/retail/compose.override.yaml",
+      "deploy/retail/delegated-finance.md",
+      "deploy/retail/enterprise-replacement-backlog.json",
+      "deploy/retail/enterprise-replacement-plan.md",
+      "deploy/retail/organization-consumption.md",
+      "deploy/retail/organization-reports.md",
+      "deploy/retail/retail-management.md",
+      "litellm/proxy/auth/route_checks.py",
+      "litellm/proxy/retail/api.py",
+      "litellm/proxy/retail/audit_delivery_schema.sql",
+      "litellm/proxy/retail/control_plane.py",
+      "litellm/proxy/retail/control_plane_access.py",
+      "litellm/proxy/retail/control_plane_flags.py",
+      "litellm/proxy/retail/delegated_finance.py",
+      "litellm/proxy/retail/delegated_finance_store.py",
+      "litellm/proxy/retail/delegated_report_csv.py",
+      "litellm/proxy/retail/delegated_report_schema.sql",
+      "litellm/proxy/retail/delegated_report_store.py",
+      "litellm/proxy/retail/finance_grants.py",
+      "litellm/proxy/retail/finance_grants_schema.sql",
+      "litellm/proxy/retail/operation_events.py",
+      "litellm/proxy/retail/organization_store.py",
+      "litellm/proxy/retail/report_store.py",
+      "litellm/proxy/retail/report_worker.py",
+      "tests/integration/database/test_retail_delegated_finance_api.py",
+      "tests/integration/database/test_retail_finance_grants.py",
+      "tests/unit/proxy/auth/test_route_checks.py",
+      "tests/unit/proxy/retail/test_control_plane_access.py",
+      "tests/unit/proxy/retail/test_control_plane_flags.py",
+      "tests/unit/proxy/retail/test_delegated_finance.py",
+      "tests/unit/proxy/retail/test_delegated_finance_store.py",
+      "tests/unit/proxy/retail/test_delegated_report_store.py",
+      "tests/unit/proxy/retail/test_finance_grants.py",
+      "ui/litellm-dashboard/src/app/(dashboard)/organization-finance/page.tsx",
+      "ui/litellm-dashboard/src/components/retail/api.ts",
+      "ui/litellm-dashboard/src/components/retail/organization-finance/delegated/CustomerFinance.integration.test.tsx",
+      "ui/litellm-dashboard/src/components/retail/organization-finance/delegated/DelegatedFinance.integration.test.tsx",
+      "ui/litellm-dashboard/src/components/retail/organization-finance/delegated/DelegatedFinancePanel.tsx",
+      "ui/litellm-dashboard/src/components/retail/organization-finance/delegated/DelegatedReportDetails.tsx",
+      "ui/litellm-dashboard/src/components/retail/organization-finance/delegated/DelegatedReports.tsx",
+      "ui/litellm-dashboard/src/components/retail/organization-finance/delegated/DelegatedResults.tsx",
+      "ui/litellm-dashboard/src/components/retail/organization-finance/delegated/DelegatedShared.tsx",
+      "ui/litellm-dashboard/src/components/retail/organization-finance/delegated/DelegatedWindow.tsx",
+      "ui/litellm-dashboard/src/components/retail/organization-finance/delegated/FinanceGrantDialog.tsx",
+      "ui/litellm-dashboard/src/components/retail/organization-finance/delegated/download.ts",
+      "ui/litellm-dashboard/src/components/retail/organization-finance/delegated/input.test.ts",
+      "ui/litellm-dashboard/src/components/retail/organization-finance/delegated/input.ts",
+      "ui/litellm-dashboard/src/components/retail/organization-finance/delegated/types.ts",
+      "ui/litellm-dashboard/src/components/retail/organization-finance/organizationReportInput.ts",
+      "ui/litellm-dashboard/src/components/retail/organizations/OrganizationMembers.tsx",
+      "ui/litellm-dashboard/src/components/retail/organizations/RetailOrganizationsPanel.tsx",
+      "ui/litellm-dashboard/src/components/retail/organizations/types.ts",
+      "ui/litellm-dashboard/src/lib/http/schema.d.ts",
+      "ui/litellm-dashboard/src/utils/dashboardAccess.test.ts",
+      "ui/litellm-dashboard/src/utils/dashboardAccess.ts",
+      "ui/litellm-dashboard/src/utils/roles.test.ts",
+      "ui/litellm-dashboard/src/utils/roles.ts"
+    ]
+  },
+  "cleanup": {
+    "runtime_removed": true,
+    "redis_removed": true,
+    "fixture_database_dropped": true,
+    "qa_postgres_removed": true,
+    "qa_networks_removed": true,
+    "qa_browser_logged_out_and_closed": true,
+    "unrelated_containers_untouched": true,
+    "production_changed": false
+  },
+  "artifact_sha256": {
+    "r8-finance-grant.jpg": "6e65fb8c752b95912ccaaca0de1d225b303cde2a4c59a78daa43257e1495b304",
+    "r8-delegated-view-only.jpg": "fd780a673d67878ae96c99f6271296430a96cb90ffa0128e59041ce7c4e6185f",
+    "r8-delegated-snapshot.jpg": "99e839ebb0ac1635cd925c6c326fead9a60f8f8da1a0c10778212fa7d931d109",
+    "r8-delegated-customer-exports.jpg": "4e760743e0f92e3ae7945db83d9d0e9edd22e4d6175543ea24cda7394296df3d",
+    "r8-finance-access-denied.jpg": "022529f6f78edb81001fec892e90c0d21343dbee6d37b8c41343a1ad7b833733",
+    "r8-delegated-finance-snapshot.csv": "1465c4d2f403a74cd1dd506a2b8aeeb64e536357e5c4cf5ec24acc76b56c8afb"
+  },
+  "limitations": [
+    "Shared organization wallet is not implemented",
+    "No production deployment, paid upstream model calls, or real webhook delivery",
+    "No SSO/SCIM/external secrets provisioning in this batch",
+    "Native nonportal organization/team roles are not bridged into finance access",
+    "A downloaded copy cannot be recalled by revocation",
+    "No production capacity or mobile visual certification"
+  ]
+}
