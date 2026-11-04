@@ -71,6 +71,8 @@ _PROXY_ADMIN_VIEW_ONLY_BLOCKED_KEY_SUFFIXES: Final = ("/regenerate", "/reset_spe
 
 _AUTH_ENFORCED_PASS_THROUGH_ROUTE_GROUPS: Final = frozenset(("openai_routes", "llm_api_routes"))
 _RETAIL_ORGANIZATION_METHOD_ROUTES: Final = (
+    ("GET", "/retail/monthly-budgets"),
+    ("GET", "/retail/monthly-budgets/{monthly_id}"),
     ("GET", "/retail/organizations"),
     ("GET", "/retail/organizations/{organization_id}"),
     ("GET", "/retail/organizations/{organization_id}/members"),

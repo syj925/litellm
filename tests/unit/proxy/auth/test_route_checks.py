@@ -149,6 +149,36 @@ def test_personal_model_budgets_are_dashboard_readonly_and_not_a_customer_key_ma
     assert api_denied.value.status_code == 403
 
 
+@pytest.mark.parametrize("role", (LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY, LitellmUserRoles.CUSTOMER))
+@pytest.mark.parametrize("route", ("/retail/monthly-budgets", "/retail/monthly-budgets/fixture-plan"))
+def test_monthly_budget_personal_get_is_a_dashboard_read_and_not_an_inference_key_grant(
+    role: LitellmUserRoles, route: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from litellm.constants import UI_SESSION_TOKEN_TEAM_ID
+
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    session: Final = UserAPIKeyAuth(user_role=role, user_id="owner", team_id=UI_SESSION_TOKEN_TEAM_ID)
+    request: Final = Request({"type": "http", "method": "GET", "path": route, "headers": []})
+    assert RouteChecks.is_virtual_key_allowed_to_call_route(route, session, request) is True
+    assert RouteChecks.non_proxy_admin_allowed_routes_check(None, role, route, request, session, {}) is None
+    inference_key: Final = session.model_copy(update={"team_id": None})
+    with pytest.raises(HTTPException) as denied:
+        RouteChecks.is_virtual_key_allowed_to_call_route(route, inference_key, request)
+    assert denied.value.status_code == 403
+
+
+@pytest.mark.parametrize("role", (LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY, LitellmUserRoles.CUSTOMER))
+@pytest.mark.parametrize("method", ("POST", "PATCH", "DELETE"))
+@pytest.mark.parametrize("route", ("/retail/monthly-budgets", "/retail/monthly-budgets/fixture-plan", "/retail/admin/users/owner/monthly-budgets"))
+def test_monthly_budget_dashboard_read_carveout_never_grants_budget_writes(
+    role: LitellmUserRoles, method: str, route: str,
+) -> None:
+    request: Final = Request({"type": "http", "method": method, "path": route, "headers": []})
+    session: Final = UserAPIKeyAuth(user_role=role, user_id="owner")
+    with pytest.raises(Exception):
+        RouteChecks.non_proxy_admin_allowed_routes_check(None, role, route, request, session, {})
+
+
 @pytest.mark.parametrize("route", ("/key/generate", "/key/list", "/retail/wallet", "/user/info"))
 @pytest.mark.parametrize("allowed_routes", ([], ["management_routes"], ["*"], ["info_routes"]))
 def test_retail_legacy_api_keys_cannot_act_as_dashboard_sessions(
