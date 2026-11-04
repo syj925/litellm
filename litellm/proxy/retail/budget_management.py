@@ -140,6 +140,7 @@ class ModelBudgetView(BaseModel):
     accounted_at: datetime | None
     predecessor_id: UUID | None
     successor_id: UUID | None
+    recurrence_id: UUID | None = None
     state: Literal["scheduled", "active", "disabled", "expired"]
 
 
@@ -155,6 +156,7 @@ class AdminModelBudgetView(ModelBudgetView):
 class _Policy(BudgetPolicyRow):
     observed_at: datetime
     successor_id: UUID | None = None
+    recurrence_id: UUID | None = None
 
 
 class _Count(BaseModel):
@@ -176,6 +178,7 @@ _POLICY_COLUMNS: Final = "p.*,clock_timestamp() AS observed_at"
 _POLICY_SELECT_COLUMNS: Final = (
     _POLICY_COLUMNS
     + ",(SELECT c.id FROM retail_model_budget_policies c WHERE c.predecessor_id=p.id AND c.user_id=p.user_id) AS successor_id"
+    + ",(SELECT o.recurrence_id FROM retail_model_budget_occurrences o WHERE o.policy_id=p.id) AS recurrence_id"
 )
 
 
@@ -205,6 +208,7 @@ def budget_view(row: _Policy, *, admin: bool) -> Mapping[str, JsonValue]:
         accounted_at=row.accounted_at,
         predecessor_id=row.predecessor_id,
         successor_id=row.successor_id,
+        recurrence_id=row.recurrence_id,
         state=state,
     )
     if not admin:
@@ -468,6 +472,9 @@ class BudgetManagementStore:
             )
             if previous is None:
                 raise HTTPException(404, "The requested budget is unavailable")
+            monthly: Final = await _one(connection, "SELECT count(*) AS total FROM retail_model_budget_occurrences WHERE policy_id=%s", (budget_id,), _Count)
+            if monthly and monthly.total:
+                raise HTTPException(409, "Change this monthly window through its renewal plan")
             replay: Final = await self._replay(connection, actor, key, action, digest)
             if replay is not None:
                 return replay
@@ -534,6 +541,9 @@ class BudgetManagementStore:
                 )
                 if previous is None:
                     raise HTTPException(404, "The requested budget is unavailable")
+                monthly: Final = await _one(connection, "SELECT count(*) AS total FROM retail_model_budget_occurrences WHERE policy_id=%s", (budget_id,), _Count)
+                if monthly and monthly.total:
+                    raise HTTPException(409, "Change this monthly window through its renewal plan")
                 replay: Final = await self._replay(connection, actor, key, action, digest)
                 if replay is not None:
                     return replay

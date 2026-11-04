@@ -56,12 +56,13 @@ DECLARE
 BEGIN
     IF NEW.action NOT IN ('organization.created','organization.updated','organization.member_associated',
         'organization.member_updated','report.created','report.completed','report.failed','object_metadata.updated',
-        'model_budget.created','model_budget.updated','model_budget.scheduled','billing_organization.updated',
+        'model_budget.created','model_budget.updated','model_budget.scheduled',
+        'monthly_budget.created','monthly_budget.updated','monthly_budget.stopped','billing_organization.updated',
         'organization_report.created','organization_report.completed','organization_report.failed',
         'finance_grant.updated','delegated_report.created','delegated_report.completed','delegated_report.failed',
         'native_key.rotated','native_password.changed','native_session.revoked')
       OR NEW.resource_type NOT IN
-        ('organization','organization_member','report','object_metadata','model_budget','billing_organization',
+        ('organization','organization_member','report','object_metadata','model_budget','monthly_budget','billing_organization',
          'organization_report','finance_grant','delegated_report','native_operation')
       OR NEW.id !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN
         RETURN NEW;

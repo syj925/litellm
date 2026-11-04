@@ -216,6 +216,7 @@ def test_successor_projection_has_half_open_state_boundaries_and_preserves_own_l
         "accounted_at": None,
         "predecessor_id": str(UUID(int=1)),
         "successor_id": str(UUID(int=3)),
+        "recurrence_id": None,
         "state": state,
     }
 
