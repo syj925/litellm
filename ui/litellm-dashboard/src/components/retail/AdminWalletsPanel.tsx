@@ -47,6 +47,8 @@ import ModelDiscountEditor, { DiscountScope } from "./ModelDiscounts";
 import PoolAccessEditor from "./pools/PoolAccessEditor";
 import AdminModelBudgetsDialog from "./model-budgets/AdminModelBudgetsDialog";
 import { useModelBudgetConfiguration } from "./model-budgets/BudgetShared";
+import BillingOrganizationDialog from "./organization-finance/BillingOrganizationDialog";
+import { organizationFinanceEnabled } from "./organization-finance/FinanceShared";
 
 interface CreditForm {
   user_id: string;
@@ -81,6 +83,7 @@ export default function AdminWalletsPanel() {
   const [discountScope, setDiscountScope] = useState<DiscountScope | null>(null);
   const [poolAccessUser, setPoolAccessUser] = useState<string | null>(null);
   const [budgetUser, setBudgetUser] = useState<string | null>(null);
+  const [billingOrganizationUser, setBillingOrganizationUser] = useState<string | null>(null);
   const page = Math.max(1, filters.page);
 
   const wallets = useQuery({
@@ -192,6 +195,8 @@ export default function AdminWalletsPanel() {
   const total = wallets.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const showModelBudgets = Boolean(budgetUser) && isAdmin && !wallets.error;
+  const financeEnabled = organizationFinanceEnabled(budgetConfig.data, budgetConfig.error, isAdmin && isAuthorized);
+  const showBillingOrganization = financeEnabled && !wallets.error;
 
   return (
     <div className="flex flex-col gap-6 p-6 lg:p-8">
@@ -353,6 +358,16 @@ export default function AdminWalletsPanel() {
                           onClick={() => setBudgetUser(wallet.user_id)}
                         >
                           Model budgets
+                        </Button>
+                      )}
+                      {financeEnabled && (
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          aria-label={`Billing organization for customer ${wallet.user_id}`}
+                          onClick={() => setBillingOrganizationUser(wallet.user_id)}
+                        >
+                          Billing organization
                         </Button>
                       )}
                       <Button
@@ -699,6 +714,9 @@ export default function AdminWalletsPanel() {
       )}
       {showModelBudgets && budgetUser && (
         <AdminModelBudgetsDialog userId={budgetUser} onClose={() => setBudgetUser(null)} />
+      )}
+      {showBillingOrganization && billingOrganizationUser && (
+        <BillingOrganizationDialog userId={billingOrganizationUser} onClose={() => setBillingOrganizationUser(null)} />
       )}
     </div>
   );

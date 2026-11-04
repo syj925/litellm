@@ -70,6 +70,14 @@ _PROXY_ADMIN_VIEW_ONLY_BLOCKED_ROUTES: Final = frozenset(
 _PROXY_ADMIN_VIEW_ONLY_BLOCKED_KEY_SUFFIXES: Final = ("/regenerate", "/reset_spend")
 
 _AUTH_ENFORCED_PASS_THROUGH_ROUTE_GROUPS: Final = frozenset(("openai_routes", "llm_api_routes"))
+_RETAIL_ORGANIZATION_METHOD_ROUTES: Final = (
+    ("GET", "/retail/organizations"),
+    ("GET", "/retail/organizations/{organization_id}"),
+    ("GET", "/retail/organizations/{organization_id}/members"),
+    ("GET", "/retail/organizations/{organization_id}/operation-events"),
+    ("POST", "/retail/organizations/{organization_id}/members"),
+    ("PATCH", "/retail/organizations/{organization_id}/members/{user_id}"),
+)
 
 
 class RouteChecks:
@@ -357,7 +365,11 @@ class RouteChecks:
             elif route == "/team/info":
                 pass  # handled by function itself
         elif (
-            route in LiteLLMRoutes.global_spend_tracking_routes.value
+            _user_role in {
+                LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY, LitellmUserRoles.CUSTOMER,
+            }
+            and RouteChecks._is_retail_organization_route(route, request)
+            or route in LiteLLMRoutes.global_spend_tracking_routes.value
             and getattr(valid_token, "permissions", None) is not None
             and "get_spend_routes" in getattr(valid_token, "permissions", [])
         ):
@@ -424,6 +436,14 @@ class RouteChecks:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"user not allowed to access this route. Route={route} is an admin only route",
                 )
+
+    @staticmethod
+    def _is_retail_organization_route(route: str, request: Request) -> bool:
+        method: Final = RouteChecks.get_request_method(request)
+        return any(
+            method == allowed_method and RouteChecks._route_matches_pattern(route, pattern)
+            for allowed_method, pattern in _RETAIL_ORGANIZATION_METHOD_ROUTES
+        )
 
     @staticmethod
     def is_llm_api_route(route: str) -> bool:

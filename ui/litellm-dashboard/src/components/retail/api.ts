@@ -114,6 +114,7 @@ export interface RetailConfig {
   object_metadata_enabled?: boolean;
   model_budgets_enabled?: boolean;
   audit_delivery_enabled?: boolean;
+  org_finance_enabled?: boolean;
 }
 
 export class RetailRequestError extends Error {

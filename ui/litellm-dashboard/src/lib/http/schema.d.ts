@@ -15027,6 +15027,23 @@ export interface paths {
         patch: operations["update_organization_retail_admin_organizations__organization_id__patch"];
         trace?: never;
     };
+    "/retail/admin/organizations/{organization_id}/consumption": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Organization Consumption */
+        get: operations["organization_consumption_retail_admin_organizations__organization_id__consumption_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/plans": {
         parameters: {
             query?: never;
@@ -15314,6 +15331,41 @@ export interface paths {
         };
         /** Admin Runtime */
         get: operations["admin_runtime_retail_admin_runtime_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/users/{user_id}/billing-organization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Billing Organization */
+        get: operations["billing_organization_retail_admin_users__user_id__billing_organization_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Billing Organization */
+        patch: operations["update_billing_organization_retail_admin_users__user_id__billing_organization_patch"];
+        trace?: never;
+    };
+    "/retail/admin/users/{user_id}/billing-organization/organizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Billing Organization Choices */
+        get: operations["billing_organization_choices_retail_admin_users__user_id__billing_organization_organizations_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -28865,6 +28917,39 @@ export interface components {
             /** Version */
             version?: string | null;
         };
+        /** BillingOrganizationUpdate */
+        BillingOrganizationUpdate: {
+            /** Expected Version */
+            expected_version: number;
+            /** Organization Id */
+            organization_id: string | null;
+        };
+        /** BillingOrganizationView */
+        BillingOrganizationView: {
+            /** Effective */
+            effective: boolean;
+            /** Membership Enabled */
+            membership_enabled: boolean | null;
+            /** Organization Enabled */
+            organization_enabled: boolean | null;
+            /** Organization Id */
+            organization_id: string | null;
+            /** Organization Name */
+            organization_name: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "unassigned" | "active" | "organization_disabled" | "membership_inactive";
+            /** Updated At */
+            updated_at: string | null;
+            /** Updated By */
+            updated_by: string | null;
+            /** User Id */
+            user_id: string;
+            /** Version */
+            version: number;
+        };
         /** BindingsRequest */
         BindingsRequest: {
             /** Bindings */
@@ -34196,6 +34281,28 @@ export interface components {
              * @constant
              */
             type?: "message";
+        };
+        /** EligibleBillingOrganization */
+        EligibleBillingOrganization: {
+            /** Id */
+            id: string;
+            /** Membership Version */
+            membership_version: number;
+            /** Name */
+            name: string;
+            /** Organization Version */
+            organization_version: number;
+        };
+        /** EligibleBillingOrganizations */
+        EligibleBillingOrganizations: {
+            /** Items */
+            items: components["schemas"]["EligibleBillingOrganization"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
         };
         /**
          * EmailEvent
@@ -43107,6 +43214,105 @@ export interface components {
             updated_organization_memberships: components["schemas"]["LiteLLM_OrganizationMembershipTable"][];
             /** Updated Users */
             updated_users: components["schemas"]["LiteLLM_UserTable"][];
+        };
+        /** OrganizationConsumption */
+        OrganizationConsumption: {
+            /**
+             * Axis
+             * @default admission
+             * @constant
+             */
+            axis: "admission";
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** Items */
+            items: components["schemas"]["OrganizationConsumptionItem"][];
+            /** Limit */
+            limit: number;
+            /**
+             * Live
+             * @default true
+             * @constant
+             */
+            live: true;
+            /**
+             * Max Requests
+             * @default 10000
+             * @constant
+             */
+            max_requests: 10000;
+            /** Offset */
+            offset: number;
+            /** Organization Enabled */
+            organization_enabled: boolean;
+            /** Organization Id */
+            organization_id: string;
+            /** Organization Name */
+            organization_name: string;
+            /** Partial */
+            partial: boolean;
+            /**
+             * Snapshot At
+             * Format: date-time
+             */
+            snapshot_at: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            summary: components["schemas"]["OrganizationConsumptionSummary"];
+            /** Total */
+            total: number;
+        };
+        /** OrganizationConsumptionItem */
+        OrganizationConsumptionItem: {
+            /** Assignment Version */
+            assignment_version: number;
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /** Membership Version */
+            membership_version: number;
+            /** Model */
+            model: string;
+            /** Organization Version */
+            organization_version: number;
+            /** Request Id */
+            request_id: string;
+            /** Settled Usd */
+            settled_usd: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "settled" | "released" | "pending" | "unknown" | "conflict";
+            /** User Id */
+            user_id: string;
+        };
+        /** OrganizationConsumptionSummary */
+        OrganizationConsumptionSummary: {
+            /** Accepted Requests */
+            accepted_requests: number;
+            /** Conflict Requests */
+            conflict_requests: number;
+            /** Pending Requests */
+            pending_requests: number;
+            /** Released Requests */
+            released_requests: number;
+            /** Settled Nanos */
+            settled_nanos: string;
+            /** Settled Requests */
+            settled_requests: number;
+            /** Settled Usd */
+            settled_usd: string;
+            /** Unknown Requests */
+            unknown_requests: number;
         };
         /** OrganizationCreate */
         OrganizationCreate: {
@@ -75864,6 +76070,42 @@ export interface operations {
             };
         };
     };
+    organization_consumption_retail_admin_organizations__organization_id__consumption_get: {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationConsumption"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_plan_retail_admin_plans_post: {
         parameters: {
             query?: never;
@@ -76594,6 +76836,109 @@ export interface operations {
                     "application/json": {
                         [key: string]: components["schemas"]["JsonValue"];
                     };
+                };
+            };
+        };
+    };
+    billing_organization_retail_admin_users__user_id__billing_organization_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingOrganizationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_billing_organization_retail_admin_users__user_id__billing_organization_patch: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingOrganizationUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingOrganizationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    billing_organization_choices_retail_admin_users__user_id__billing_organization_organizations_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EligibleBillingOrganizations"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

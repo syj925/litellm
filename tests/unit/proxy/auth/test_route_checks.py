@@ -20,6 +20,95 @@ from litellm.proxy.auth.route_checks import RouteChecks
 from litellm.proxy.pass_through_endpoints.llm_passthrough_endpoints import router as llm_passthrough_router
 
 
+@pytest.mark.parametrize(
+    "role", (LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY, LitellmUserRoles.CUSTOMER),
+)
+@pytest.mark.parametrize(
+    ("method", "route"),
+    (
+        ("GET", "/retail/organizations"),
+        ("GET", "/retail/organizations/org-a"),
+        ("GET", "/retail/organizations/org-a/members"),
+        ("GET", "/retail/organizations/org-a/operation-events"),
+        ("POST", "/retail/organizations/org-a/members"),
+        ("PATCH", "/retail/organizations/org-a/members/member-b"),
+    ),
+)
+def test_retail_organization_dashboard_requests_reach_fresh_backend_acl_without_readonly_writes(
+    role: LitellmUserRoles, method: str, route: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from litellm.constants import UI_SESSION_TOKEN_TEAM_ID
+
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    session: Final = UserAPIKeyAuth(user_id="member", user_role=role, team_id=UI_SESSION_TOKEN_TEAM_ID)
+    request: Final = Request({"type": "http", "method": method, "path": route, "headers": []})
+    assert RouteChecks.is_virtual_key_allowed_to_call_route(route, session, request) is True
+    if role == LitellmUserRoles.INTERNAL_USER_VIEW_ONLY and method != "GET":
+        with pytest.raises(HTTPException) as failure:
+            RouteChecks.non_proxy_admin_allowed_routes_check(None, role, route, request, session, {})
+        assert failure.value.status_code == 403
+    else:
+        assert RouteChecks.non_proxy_admin_allowed_routes_check(None, role, route, request, session, {}) is None
+
+
+@pytest.mark.parametrize("role", (LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY))
+@pytest.mark.parametrize(
+    "route",
+    (
+        "/retail/organizations/org-a/consumption",
+        "/retail/organizations/org-a/members/member-b/permissions",
+        "/retail/organizations/org-a/nested/members",
+        "/retail/organizations-foreign/org-a/members",
+        "/retail/admin/organizations/org-a/consumption",
+        "/retail/admin/users/member/billing-organization",
+        "/retail/admin/users/member/billing-organization/organizations",
+    ),
+)
+def test_retail_organization_read_carveout_does_not_grant_other_paths_or_admin_finances(
+    role: LitellmUserRoles, route: str,
+) -> None:
+    request: Final = Request({"type": "http", "method": "GET", "path": route, "headers": []})
+    session: Final = UserAPIKeyAuth(user_id="member", user_role=role)
+    with pytest.raises(Exception, match="Only proxy admin"):
+        RouteChecks.non_proxy_admin_allowed_routes_check(None, role, route, request, session, {})
+
+
+@pytest.mark.parametrize(
+    ("method", "route"),
+    (
+        ("POST", "/retail/organizations"),
+        ("PATCH", "/retail/organizations/org-a"),
+        ("DELETE", "/retail/organizations/org-a/members/member-b"),
+        ("POST", "/retail/organizations/org-a/operation-events"),
+        ("PUT", "/retail/organizations/org-a/members"),
+        ("GET", "/retail/organizations/org-a/members/member-b"),
+    ),
+)
+def test_retail_organization_carveout_does_not_grant_other_methods(method: str, route: str) -> None:
+    request: Final = Request({"type": "http", "method": method, "path": route, "headers": []})
+    session: Final = UserAPIKeyAuth(user_id="member", user_role=LitellmUserRoles.INTERNAL_USER)
+    with pytest.raises(Exception, match="Only proxy admin"):
+        RouteChecks.non_proxy_admin_allowed_routes_check(
+            None, LitellmUserRoles.INTERNAL_USER, route, request, session, {},
+        )
+
+
+@pytest.mark.parametrize("allowed_routes", ((), ("*",), ("management_routes",)))
+@pytest.mark.parametrize("method", ("GET", "POST", "PATCH"))
+def test_retail_organization_routes_are_not_a_customer_inference_key_grant(
+    allowed_routes: tuple[str, ...], method: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RETAIL_PORTAL_ENABLED", "true")
+    route: Final = "/retail/organizations/org-a/members"
+    request: Final = Request({"type": "http", "method": method, "path": route, "headers": []})
+    key: Final = UserAPIKeyAuth(
+        user_id="member", user_role=LitellmUserRoles.INTERNAL_USER, allowed_routes=list(allowed_routes),
+    )
+    with pytest.raises(HTTPException) as failure:
+        RouteChecks.is_virtual_key_allowed_to_call_route(route, key, request)
+    assert failure.value.status_code == 403
+
+
 @pytest.mark.parametrize("role", (LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY))
 def test_personal_model_budgets_are_dashboard_readonly_and_not_a_customer_key_management_grant(
     role: LitellmUserRoles, monkeypatch: pytest.MonkeyPatch,

@@ -34,6 +34,7 @@ from .models import (
     nanos_to_amount,
     parse_discount,
 )
+from .organization_attribution import initialize_schema as initialize_organization_attribution_schema
 from .pricing import validated_cache_write_tiers
 
 
@@ -445,6 +446,7 @@ class WalletStore:
             async with self.transaction() as connection:
                 await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('retail:schema', 0))")
                 await connection.execute(schema, prepare=False)
+                await initialize_organization_attribution_schema(connection)
                 await initialize_budget_schema(connection)
             self._initialized = True
 

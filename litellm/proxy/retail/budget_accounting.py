@@ -60,6 +60,14 @@ RESERVE_SQL: Final = """WITH admission AS MATERIALIZED (SELECT clock_timestamp()
     ), reservation AS (
       INSERT INTO retail_reservations(request_id,user_id,model,reserved_nanos,price_snapshot,active_until)
       SELECT %s,held.user_id,%s,%s,%s,now()+(%s * interval '1 second') FROM held RETURNING *
+    ), attribution AS (
+      INSERT INTO retail_request_organization_snapshots
+        (request_id,organization_id,assignment_version,organization_version,membership_version,captured_at)
+      SELECT r.request_id,o.id,a.version,o.version,m.version,t.at
+      FROM reservation r JOIN retail_billing_organization_assignments a ON a.user_id=r.user_id
+      JOIN retail_organizations o ON o.id=a.organization_id AND o.enabled=true
+      JOIN retail_organization_memberships m ON m.organization_id=o.id AND m.user_id=r.user_id AND m.enabled=true
+      CROSS JOIN admission t RETURNING request_id
     ), allocation AS (
       INSERT INTO retail_model_budget_allocations(request_id,policy_id,reserved_nanos,status,config_version)
       SELECT r.request_id,b.id,r.reserved_nanos,'held',b.config_version FROM reservation r CROSS JOIN budget b

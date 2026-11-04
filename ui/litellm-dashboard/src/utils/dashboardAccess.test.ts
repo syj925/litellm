@@ -35,6 +35,7 @@ describe("dashboard role boundaries", () => {
     "model-pricing",
     "business-labels",
     "audit-delivery",
+    "organization-consumption",
     "agents",
     "workflows",
     "memory",
@@ -98,6 +99,7 @@ describe("dashboard role boundaries", () => {
     "model-pricing",
     "business-labels",
     "audit-delivery",
+    "organization-consumption",
   ])("does not expose %s to a proxy viewer", (page) => {
     expect(canAccessDashboardRoute(page, { ...customer, userRole: "proxy_admin_viewer" })).toBe(false);
     expect(canAccessDashboardRoute(page, { ...customer, userRole: "Admin", isViewOnly: true })).toBe(false);

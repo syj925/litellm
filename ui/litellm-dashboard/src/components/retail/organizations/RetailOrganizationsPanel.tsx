@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { isProxyAdminRole } from "@/utils/roles";
+import { canUseAdminControlPlane } from "@/utils/dashboardAccess";
 import { uiHref } from "@/utils/uiHref";
 import { retailRequest, type PageResult } from "../api";
 import {
@@ -31,6 +31,7 @@ import {
 import OrganizationEditor from "./OrganizationEditor";
 import OrganizationMembers from "./OrganizationMembers";
 import type { RetailOrganization } from "./types";
+import { organizationFinanceEnabled, useOrganizationFinanceConfiguration } from "../organization-finance/FinanceShared";
 
 const organizationParsers = { q: managementTextParser, page: managementPageParser };
 
@@ -43,11 +44,13 @@ function organizationRoleLabel(role: RetailOrganization["member_role"], admin: b
 function OrganizationRow({
   organization,
   admin,
+  financeEnabled,
   onMembers,
   onEdit,
 }: {
   organization: RetailOrganization;
   admin: boolean;
+  financeEnabled: boolean;
   onMembers: (organization: RetailOrganization) => void;
   onEdit: (organization: RetailOrganization) => void;
 }) {
@@ -69,6 +72,14 @@ function OrganizationRow({
       <TableCell className="text-xs text-muted-foreground">{managementTimestamp(organization.updated_at)}</TableCell>
       <TableCell className="pr-5">
         <div className="flex flex-wrap justify-end gap-2">
+          {admin && financeEnabled && (
+            <Link
+              className="inline-flex h-8 items-center rounded-md border px-3 text-sm hover:bg-muted"
+              href={`${uiHref("organization-consumption")}?organization=${encodeURIComponent(organization.id)}`}
+            >
+              Consumption
+            </Link>
+          )}
           {(organization.can_manage_members || organization.can_associate_members) && (
             <Button
               variant="outline"
@@ -106,7 +117,9 @@ function OrganizationRow({
 
 function OrganizationsWorkspace() {
   const { accessToken, userId, userRole, isViewOnly } = useAuthorized();
-  const admin = isProxyAdminRole(userRole) && !isViewOnly;
+  const admin = canUseAdminControlPlane({ userRole, isViewOnly });
+  const financeConfig = useOrganizationFinanceConfiguration(admin);
+  const financeEnabled = organizationFinanceEnabled(financeConfig.data, financeConfig.error, admin);
   const [filters, setFilters] = useQueryStates(organizationParsers);
   const [editing, setEditing] = useState<{ organization: RetailOrganization | null } | null>(null);
   const [members, setMembers] = useState<RetailOrganization | null>(null);
@@ -211,6 +224,7 @@ function OrganizationsWorkspace() {
                       key={organization.id}
                       organization={organization}
                       admin={admin}
+                      financeEnabled={financeEnabled}
                       onMembers={setMembers}
                       onEdit={(organization) => setEditing({ organization })}
                     />

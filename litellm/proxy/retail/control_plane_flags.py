@@ -29,3 +29,7 @@ def model_budgets_enabled() -> bool:
 
 def audit_delivery_enabled() -> bool:
     return operation_audit_enabled() and os.environ.get("RETAIL_AUDIT_DELIVERY_ENABLED", "false").lower() == "true"
+
+
+def organization_finance_enabled() -> bool:
+    return organizations_enabled() and os.environ.get("RETAIL_ORG_FINANCE_ENABLED", "false").lower() == "true"
