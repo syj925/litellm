@@ -3,6 +3,7 @@ import pytest
 from litellm.proxy.retail.control_plane_flags import (
     audit_delivery_enabled,
     model_budgets_enabled,
+    monthly_budgets_enabled,
     native_audit_enabled,
     object_metadata_enabled,
     operation_audit_enabled,
@@ -26,6 +27,7 @@ def test_audit_rollback_disables_dependent_management_writes(monkeypatch: pytest
     monkeypatch.setenv("RETAIL_MODEL_BUDGETS_ENABLED", "true")
     monkeypatch.setenv("RETAIL_AUDIT_DELIVERY_ENABLED", "true")
     monkeypatch.setenv("RETAIL_NATIVE_AUDIT_ENABLED", "true")
+    monkeypatch.setenv("RETAIL_MONTHLY_BUDGETS_ENABLED", "true")
     assert (
         operation_audit_enabled(),
         organizations_enabled(),
@@ -37,7 +39,8 @@ def test_audit_rollback_disables_dependent_management_writes(monkeypatch: pytest
         model_budgets_enabled(),
         audit_delivery_enabled(),
         native_audit_enabled(),
-    ) == (enabled, enabled, enabled, enabled, enabled, enabled, enabled, enabled, enabled, enabled)
+        monthly_budgets_enabled(),
+    ) == (enabled, enabled, enabled, enabled, enabled, enabled, enabled, enabled, enabled, enabled, enabled)
 
 
 def test_organization_rollback_preserves_personal_reports(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,6 +65,7 @@ def test_unconfigured_modules_stay_closed(monkeypatch: pytest.MonkeyPatch) -> No
         "RETAIL_MODEL_BUDGETS_ENABLED",
         "RETAIL_AUDIT_DELIVERY_ENABLED",
         "RETAIL_NATIVE_AUDIT_ENABLED",
+        "RETAIL_MONTHLY_BUDGETS_ENABLED",
     ):
         monkeypatch.delenv(name, raising=False)
     assert (
@@ -75,7 +79,8 @@ def test_unconfigured_modules_stay_closed(monkeypatch: pytest.MonkeyPatch) -> No
         model_budgets_enabled(),
         audit_delivery_enabled(),
         native_audit_enabled(),
-    ) == (False, False, False, False, False, False, False, False, False, False)
+        monthly_budgets_enabled(),
+    ) == (False, False, False, False, False, False, False, False, False, False, False)
 
 
 @pytest.mark.parametrize(
@@ -94,3 +99,16 @@ def test_finance_delegation_cannot_outlive_any_authority_dependency(
     assert organization_finance_delegation_enabled() is True
     monkeypatch.setenv(disabled, "false")
     assert organization_finance_delegation_enabled() is False
+
+
+@pytest.mark.parametrize(
+    "disabled", ("RETAIL_OPERATION_AUDIT_ENABLED", "RETAIL_MODEL_BUDGETS_ENABLED", "RETAIL_MONTHLY_BUDGETS_ENABLED"),
+)
+def test_monthly_budget_management_requires_audit_and_model_budgets(
+    monkeypatch: pytest.MonkeyPatch, disabled: str,
+) -> None:
+    for name in ("RETAIL_OPERATION_AUDIT_ENABLED", "RETAIL_MODEL_BUDGETS_ENABLED", "RETAIL_MONTHLY_BUDGETS_ENABLED"):
+        monkeypatch.setenv(name, "true")
+    assert monthly_budgets_enabled() is True
+    monkeypatch.setenv(disabled, "false")
+    assert monthly_budgets_enabled() is False

@@ -586,6 +586,7 @@ async def config() -> dict[str, JsonValue]:
     from .control_plane_flags import (
         audit_delivery_enabled,
         model_budgets_enabled,
+        monthly_budgets_enabled,
         native_audit_enabled,
         object_metadata_enabled,
         operation_audit_enabled,
@@ -606,6 +607,7 @@ async def config() -> dict[str, JsonValue]:
         "report_export_enabled": report_export_enabled(),
         "object_metadata_enabled": object_metadata_enabled(),
         "model_budgets_enabled": model_budgets_enabled(),
+        "monthly_budgets_enabled": monthly_budgets_enabled(),
         "audit_delivery_enabled": audit_delivery_enabled(),
         "org_finance_enabled": organization_finance_enabled(),
         "org_finance_delegation_enabled": organization_finance_delegation_enabled(),

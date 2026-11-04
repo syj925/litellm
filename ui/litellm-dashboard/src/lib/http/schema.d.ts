@@ -15513,6 +15513,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retail/admin/users/{user_id}/monthly-budgets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Monthly Budgets */
+        get: operations["admin_monthly_budgets_retail_admin_users__user_id__monthly_budgets_get"];
+        put?: never;
+        /** Create Monthly Budget */
+        post: operations["create_monthly_budget_retail_admin_users__user_id__monthly_budgets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/admin/users/{user_id}/monthly-budgets/{monthly_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Monthly Budget */
+        get: operations["admin_monthly_budget_retail_admin_users__user_id__monthly_budgets__monthly_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Monthly Budget */
+        patch: operations["update_monthly_budget_retail_admin_users__user_id__monthly_budgets__monthly_id__patch"];
+        trace?: never;
+    };
+    "/retail/admin/users/{user_id}/monthly-budgets/{monthly_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop Monthly Budget */
+        post: operations["stop_monthly_budget_retail_admin_users__user_id__monthly_budgets__monthly_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/wallets": {
         parameters: {
             query?: never;
@@ -15746,6 +15799,40 @@ export interface paths {
         };
         /** Personal Model Metrics */
         get: operations["personal_model_metrics_retail_model_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/monthly-budgets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Own Monthly Budgets */
+        get: operations["own_monthly_budgets_retail_monthly_budgets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/retail/monthly-budgets/{monthly_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Own Monthly Budget */
+        get: operations["own_monthly_budget_retail_monthly_budgets__monthly_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -33407,6 +33494,27 @@ export interface components {
             /** Model */
             model: string;
         };
+        /** CreateMonthlyBudget */
+        CreateMonthlyBudget: {
+            /**
+             * Currency
+             * @default USD
+             * @constant
+             */
+            currency: "USD";
+            /** Limit Usd */
+            limit_usd: string;
+            /** Model */
+            model: string;
+            /** Start Month */
+            start_month: string;
+            /**
+             * Timezone
+             * @default Asia/Shanghai
+             * @enum {string}
+             */
+            timezone: "UTC" | "Asia/Shanghai";
+        };
         /** CreateReportRequest */
         CreateReportRequest: {
             /** Account Id */
@@ -50611,6 +50719,11 @@ export interface components {
              */
             purpose: string;
         };
+        /** StopMonthlyBudget */
+        StopMonthlyBudget: {
+            /** Expected Version */
+            expected_version: number;
+        };
         /**
          * SuccessfulKeyUpdate
          * @description Successfully updated key with its updated information
@@ -53110,6 +53223,13 @@ export interface components {
             model_ids?: string[] | null;
             /** Model Names */
             model_names?: string[] | null;
+        };
+        /** UpdateMonthlyBudget */
+        UpdateMonthlyBudget: {
+            /** Expected Version */
+            expected_version: number;
+            /** Limit Usd */
+            limit_usd: string;
         };
         /**
          * UpdatePluginRequest
@@ -77848,6 +77968,196 @@ export interface operations {
             };
         };
     };
+    admin_monthly_budgets_retail_admin_users__user_id__monthly_budgets_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_monthly_budget_retail_admin_users__user_id__monthly_budgets_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMonthlyBudget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_monthly_budget_retail_admin_users__user_id__monthly_budgets__monthly_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+                monthly_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_monthly_budget_retail_admin_users__user_id__monthly_budgets__monthly_id__patch: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                user_id: string;
+                monthly_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMonthlyBudget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_monthly_budget_retail_admin_users__user_id__monthly_budgets__monthly_id__stop_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                user_id: string;
+                monthly_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StopMonthlyBudget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_wallets_retail_admin_wallets_get: {
         parameters: {
             query?: {
@@ -78412,6 +78722,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelMetricsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    own_monthly_budgets_retail_monthly_budgets_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    own_monthly_budget_retail_monthly_budgets__monthly_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monthly_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
                 };
             };
             /** @description Validation Error */

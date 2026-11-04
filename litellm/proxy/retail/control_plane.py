@@ -14,6 +14,8 @@ from .coordination_guard import close_coordination_guard, start_coordination_gua
 from .custom_secret_adapter import close_managed_secrets, start_managed_secrets
 from .delegated_finance import router as delegated_finance_router
 from .model_budgets import router as model_budgets_router
+from .monthly_budget_worker import close_monthly_budget_worker, start_monthly_budget_worker
+from .monthly_budgets import router as monthly_budgets_router
 from .native_audit_worker import close_native_audit_worker, start_native_audit_worker
 from .object_metadata import router as object_metadata_router
 from .organization_finance import router as organization_finance_router
@@ -32,6 +34,7 @@ async def _initialize_management() -> None:
             await store.initialize_control_plane()
             await start_report_worker(store)
             await start_audit_delivery_worker(store)
+            await start_monthly_budget_worker(store)
             if native_audit_enabled():
                 from litellm.proxy import proxy_server
 
@@ -55,6 +58,7 @@ async def control_plane_lifespan(app: FastAPI) -> AsyncIterator[None]:
         cleanup.push_async_callback(close_audit_delivery_worker)
         cleanup.push_async_callback(close_report_worker)
         cleanup.push_async_callback(close_native_audit_worker)
+        cleanup.push_async_callback(close_monthly_budget_worker)
         task: Final = asyncio.create_task(_initialize_management(), name="retail-management-startup")
         try:
             yield
@@ -68,6 +72,7 @@ router.include_router(organizations_router)
 router.include_router(reports_router)
 router.include_router(object_metadata_router)
 router.include_router(model_budgets_router)
+router.include_router(monthly_budgets_router)
 router.include_router(audit_delivery_router)
 router.include_router(organization_finance_router)
 router.include_router(organization_reports_router)
