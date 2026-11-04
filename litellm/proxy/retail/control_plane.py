@@ -18,6 +18,9 @@ from .monthly_budget_worker import close_monthly_budget_worker, start_monthly_bu
 from .monthly_budgets import router as monthly_budgets_router
 from .native_audit_worker import close_native_audit_worker, start_native_audit_worker
 from .object_metadata import router as object_metadata_router
+from .oidc import router as oidc_router
+from .oidc_http import install_oidc_access_filter
+from .oidc_service import close_oidc_service, start_oidc_service
 from .organization_finance import router as organization_finance_router
 from .organization_reports import router as organization_reports_router
 from .organizations import router as organizations_router
@@ -51,10 +54,13 @@ async def _initialize_management() -> None:
 @asynccontextmanager
 async def control_plane_lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with AsyncExitStack() as cleanup:
+        install_oidc_access_filter()
         await start_managed_secrets()
         cleanup.push_async_callback(close_managed_secrets)
         await start_coordination_guard()
         cleanup.push_async_callback(close_coordination_guard)
+        await start_oidc_service()
+        cleanup.push_async_callback(close_oidc_service)
         cleanup.push_async_callback(close_audit_delivery_worker)
         cleanup.push_async_callback(close_report_worker)
         cleanup.push_async_callback(close_native_audit_worker)
@@ -77,3 +83,4 @@ router.include_router(audit_delivery_router)
 router.include_router(organization_finance_router)
 router.include_router(organization_reports_router)
 router.include_router(delegated_finance_router)
+router.include_router(oidc_router)

@@ -44,6 +44,8 @@ _ALLOWED_ACTIONS: Final = frozenset(
         "native_key.rotated",
         "native_password.changed",
         "native_session.revoked",
+        "native_identity.configured",
+        "native_identity.signed_in",
     )
 )
 _ALLOWED_FIELDS: Final = frozenset(

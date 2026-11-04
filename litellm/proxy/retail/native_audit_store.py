@@ -17,7 +17,10 @@ from .control_plane_flags import native_audit_enabled
 from .operation_events import append_operation_event
 from .store import _one
 
-NativeAuditAction: TypeAlias = Literal["native_key.rotated", "native_password.changed", "native_session.revoked"]
+NativeAuditAction: TypeAlias = Literal[
+    "native_key.rotated", "native_password.changed", "native_session.revoked",
+    "native_identity.configured", "native_identity.signed_in",
+]
 NativeAuditFailure: TypeAlias = Literal["bridge_unavailable", "integrity_conflict"]
 
 

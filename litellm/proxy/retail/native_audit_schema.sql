@@ -10,7 +10,8 @@ BEGIN
         id UUID PRIMARY KEY,
         source_id UUID NOT NULL,
         actor_id TEXT NOT NULL CHECK (length(actor_id) BETWEEN 1 AND 191),
-        action TEXT NOT NULL CHECK (action IN ('native_key.rotated','native_password.changed','native_session.revoked')),
+        action TEXT NOT NULL CHECK (action IN ('native_key.rotated','native_password.changed','native_session.revoked',
+          'native_identity.configured','native_identity.signed_in')),
         resource_id UUID NOT NULL,
         affected_count BIGINT NOT NULL CHECK (affected_count>=0),
         occurred_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
@@ -25,6 +26,14 @@ BEGIN
           ('bridge_unavailable','integrity_conflict','attempts_exhausted','retention_expired')),
         CHECK ((state='processing')=(lease_owner IS NOT NULL AND lease_token IS NOT NULL AND lease_until IS NOT NULL))
     );
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+        WHERE conrelid='retail_native_audit_outbox'::regclass
+          AND conname='retail_native_audit_outbox_action_v2_check') THEN
+        ALTER TABLE retail_native_audit_outbox DROP CONSTRAINT IF EXISTS retail_native_audit_outbox_action_check;
+        ALTER TABLE retail_native_audit_outbox ADD CONSTRAINT retail_native_audit_outbox_action_v2_check
+          CHECK (action IN ('native_key.rotated','native_password.changed','native_session.revoked',
+            'native_identity.configured','native_identity.signed_in'));
+    END IF;
     CREATE INDEX IF NOT EXISTS retail_native_audit_outbox_queue
       ON retail_native_audit_outbox(next_attempt_at,occurred_at,id) WHERE state IN ('pending','processing');
     CREATE INDEX IF NOT EXISTS retail_native_audit_outbox_lease
