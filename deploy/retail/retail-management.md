@@ -12,6 +12,7 @@
 | `/ui/chat/api-keys/` | 使用已有自有接口轮换 API Key | 按原生账号和 Key 的实时权限校验；只读账号不能轮换 |
 | `/ui/business-labels/` | 维护 Key、团队、自有组织和数据库模型部署的独立分类及管理来源 | 仅当前有效的全站 Proxy Admin |
 | Customer Wallets 中的 Model budgets | 配置账号与精确模型的固定窗口消费额度，可提前安排连续的下一期 | 全站 Proxy Admin 配置，个人 Wallet 仅显示本人的当前及未来额度 |
+| Customer Wallets 中的 Billing organization、Organizations 中的 Consumption | 明确选择账号组织归属，按接纳快照查询实时已结算消费 | 仅当前可写全站 Proxy Admin；详见 [组织消费](organization-consumption.md) |
 | `/ui/audit-delivery/` | 从 Operation Audit 进入，管理自有审计元数据的异步外投递 | 仅当前可写全站 Proxy Admin，普通用户和只读管理员拒绝 |
 
 创建组织时需要填写组织名称和首位组织管理员的现有账号 ID。账号关联由全站管理员确认客户归属后完成，不发送邀请邮件，也不向组织管理员提供全站账号搜索
@@ -50,7 +51,7 @@ Redis 健康时已在隔离的两个真实 worker 中验证轮换后旧 Key 均�
 
 创建任务时在有界的 SERIALIZABLE 事务中物化账本可见行集合，并冻结汇总和未决状态。任务创建后才提交的源记录不会混入同一任务，即使它的业务时间早于结束时间。重试、分页和 worker 重启复用同一快照
 
-包含尚未结束的北京时间自然日或未来区间的报表标记为 partial，即使结束时间已在今天的较早时刻。以今天零点为不包含端点的历史窗口不包含当前日。组织历史财务没有按今天的成员关系重算，组织归属快照与共享钱包仍属于后续批次
+包含尚未结束的北京时间自然日或未来区间的报表标记为 partial，即使结束时间已在今天的较早时刻。以今天零点为不包含端点的历史窗口不包含当前日。组织历史财务没有按今天的成员关系重算，显式归属快照与管理员实时消费概览见 [组织消费](organization-consumption.md)，固定组织 CSV、委派财务和共享钱包仍属于后续批次
 
 CSV 只包含账本标识、时间、类型、金额、余额、请求 ID 和模型，不含自由描述、供应商成本、请求正文或凭据。文本单元格防止表格公式注入
 
@@ -64,7 +65,7 @@ CSV 只包含账本标识、时间、类型、金额、余额、请求 ID 和模
 
 报表另设连接池，默认每个 worker 最多两个连接。创建快照最多两个并发槽，全局最多两个有效生成租约。CSV 校验、生成和哈希在有界后台线程执行，取消或超时不会释放仍在运行的线程槽去无限排队
 
-这些组织和报表权限读取只发生在管理请求中，没有接入推理回调。后台初始化可重试，不因为新管理模块启动失败而主动停止现有推理服务
+组织和报表的权限读取只发生在管理请求中，没有接入推理回调。显式组织归属采集随既有预扣 SQL 一起写入，不新增应用数据库往返；消费预览使用诊断池，不占用财务或终态池。后台初始化可重试，不因为新管理模块启动失败而主动停止现有推理服务
 
 ## 开关与容量边界
 
@@ -76,6 +77,7 @@ CSV 只包含账本标识、时间、类型、金额、余额、请求 ID 和模
 | `RETAIL_REPORT_EXPORT_ENABLED` | false | 账号账本导出 |
 | `RETAIL_OBJECT_METADATA_ENABLED` | false | 全站管理员业务标签，依赖审计；详见 [业务标签与管理来源](business-labels.md) |
 | `RETAIL_MODEL_BUDGETS_ENABLED` | false | 消费额度管理和查询入口，依赖审计；已保存窗口的执行不随此开关关闭，详见 [模型额度](model-budgets.md) |
+| `RETAIL_ORG_FINANCE_ENABLED` | false | 组织归属管理及实时消费入口，依赖组织和审计；关闭入口不停止已保存有效归属的采集，详见 [组织消费](organization-consumption.md) |
 | `RETAIL_AUDIT_DELIVERY_ENABLED` | false | 外投递接口与后台 worker，依赖审计；真实地址与签名密钥仅在服务器配置，详见 [审计外投递](audit-delivery.md) |
 | `RETAIL_REPORT_DB_CONNECTIONS` | 2 | 每个 worker 的报表连接，允许 1 至 4 |
 | `RETAIL_REPORT_MAX_ROWS` | 10000 | 单任务最多物化行数，允许 1 至 100000 |

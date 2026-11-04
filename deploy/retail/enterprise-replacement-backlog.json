@@ -244,7 +244,7 @@
       "id": "REP-03",
       "phase": "R2",
       "title": "历史组织归属快照与组织财务汇总",
-      "status": "deferred",
+      "status": "validated_scoped_locally",
       "depends_on": [
         "ORG-02",
         "REP-02"
@@ -255,9 +255,14 @@
         "无证据旧流水保持未归属",
         "快照写入不新增逐请求远程查询"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "687321150dc480c8df9d4abdd5a6a4a5e7e45f74",
+      "validation_evidence": [
+        "validation/r6-2026-11-04.json",
+        "validation/r6-2026-11-04.md",
+        "organization-consumption.md"
+      ],
+      "deployment_status": "local_active_not_production",
+      "implementation_notes": "显式账号组织选择、不可变接纳归属、管理员有界实时消费预览及窄范围原生组织权限修复已验证；个人钱包仍权威，无历史推断或回填；组织固定CSV、委派财务及共享钱包后续实现"
     },
     {
       "id": "CTRL-01",
