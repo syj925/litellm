@@ -9,6 +9,14 @@ def native_audit_enabled() -> bool:
     return operation_audit_enabled() and os.environ.get("RETAIL_NATIVE_AUDIT_ENABLED", "false").lower() == "true"
 
 
+def oidc_sso_enabled() -> bool:
+    return (
+        native_audit_enabled()
+        and os.environ.get("RETAIL_REQUIRE_COORDINATION_REDIS", "false").lower() == "true"
+        and os.environ.get("RETAIL_OIDC_SSO_ENABLED", "false").lower() == "true"
+    )
+
+
 def organizations_enabled() -> bool:
     return operation_audit_enabled() and os.environ.get("RETAIL_ORGANIZATIONS_ENABLED", "false").lower() == "true"
 

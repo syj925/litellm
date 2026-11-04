@@ -6,6 +6,7 @@ from litellm.proxy.retail.control_plane_flags import (
     monthly_budgets_enabled,
     native_audit_enabled,
     object_metadata_enabled,
+    oidc_sso_enabled,
     operation_audit_enabled,
     organization_delegation_enabled,
     organization_finance_delegation_enabled,
@@ -66,6 +67,8 @@ def test_unconfigured_modules_stay_closed(monkeypatch: pytest.MonkeyPatch) -> No
         "RETAIL_AUDIT_DELIVERY_ENABLED",
         "RETAIL_NATIVE_AUDIT_ENABLED",
         "RETAIL_MONTHLY_BUDGETS_ENABLED",
+        "RETAIL_OIDC_SSO_ENABLED",
+        "RETAIL_REQUIRE_COORDINATION_REDIS",
     ):
         monkeypatch.delenv(name, raising=False)
     assert (
@@ -80,7 +83,8 @@ def test_unconfigured_modules_stay_closed(monkeypatch: pytest.MonkeyPatch) -> No
         audit_delivery_enabled(),
         native_audit_enabled(),
         monthly_budgets_enabled(),
-    ) == (False, False, False, False, False, False, False, False, False, False, False)
+        oidc_sso_enabled(),
+    ) == (False, False, False, False, False, False, False, False, False, False, False, False)
 
 
 @pytest.mark.parametrize(
@@ -112,3 +116,27 @@ def test_monthly_budget_management_requires_audit_and_model_budgets(
     assert monthly_budgets_enabled() is True
     monkeypatch.setenv(disabled, "false")
     assert monthly_budgets_enabled() is False
+
+
+@pytest.mark.parametrize("disabled", (
+    "RETAIL_OPERATION_AUDIT_ENABLED", "RETAIL_NATIVE_AUDIT_ENABLED",
+    "RETAIL_REQUIRE_COORDINATION_REDIS", "RETAIL_OIDC_SSO_ENABLED",
+))
+def test_oidc_sessions_require_audit_coordination_and_explicit_feature_flag(
+    monkeypatch: pytest.MonkeyPatch, disabled: str,
+) -> None:
+    for name in (
+        "RETAIL_OPERATION_AUDIT_ENABLED", "RETAIL_NATIVE_AUDIT_ENABLED",
+        "RETAIL_REQUIRE_COORDINATION_REDIS", "RETAIL_OIDC_SSO_ENABLED",
+    ):
+        monkeypatch.setenv(name, "true")
+    assert oidc_sso_enabled()
+    monkeypatch.setenv(disabled, "false")
+    assert not oidc_sso_enabled()
+
+
+def test_oidc_remains_opt_in_with_all_authority_dependencies_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("RETAIL_OPERATION_AUDIT_ENABLED", "RETAIL_NATIVE_AUDIT_ENABLED", "RETAIL_REQUIRE_COORDINATION_REDIS"):
+        monkeypatch.setenv(name, "true")
+    monkeypatch.delenv("RETAIL_OIDC_SSO_ENABLED", raising=False)
+    assert not oidc_sso_enabled()

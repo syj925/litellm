@@ -16,6 +16,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.rows import dict_row
 
 from litellm.proxy.retail.native_audit_store import (
+    NativeAuditAction,
     NativeAuditClaim,
     NativeAuditConflict,
     NativeAuditStore,
@@ -408,3 +409,52 @@ async def test_native_slot_waiting_is_part_of_total_deadline(runtime: Runtime) -
     assert any(isinstance(outcome, TimeoutError) for outcome in outcomes)
     assert all(isinstance(outcome, (TimeoutError, psycopg.errors.LockNotAvailable)) for outcome in outcomes)
     assert (await runtime.store.counts()).retained == 0
+
+
+@pytest.mark.asyncio
+async def test_three_action_native_outbox_upgrades_in_place_and_bridges_all_five_kinds(runtime: Runtime) -> None:
+    legacy: Final[tuple[NativeAuditAction, ...]] = (
+        "native_key.rotated", "native_password.changed", "native_session.revoked",
+    )
+    added: Final[tuple[NativeAuditAction, ...]] = ("native_identity.configured", "native_identity.signed_in")
+    async with runtime.native.tx(timeout=timedelta(seconds=5)) as writer:
+        await writer.execute_raw(
+            "ALTER TABLE retail_native_audit_outbox DROP CONSTRAINT retail_native_audit_outbox_action_v2_check",
+        )
+        await writer.execute_raw(
+            """ALTER TABLE retail_native_audit_outbox ADD CONSTRAINT retail_native_audit_outbox_action_check
+               CHECK(action IN ('native_key.rotated','native_password.changed','native_session.revoked'))""",
+        )
+        for action in legacy:
+            await append_native_audit(writer, actor_id="migration-owner", action=action)
+        before: Final = await writer.query_raw("SELECT * FROM retail_native_audit_outbox ORDER BY id")
+        settings_before: Final = await writer.query_raw("SELECT * FROM retail_native_audit_settings")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        async with runtime.native.tx(timeout=timedelta(seconds=5)) as writer:
+            await append_native_audit(writer, actor_id="migration-owner", action=added[0])
+    await ensure_native_schema(runtime.native)
+    await ensure_native_schema(runtime.native)
+    async with runtime.native.tx(timeout=timedelta(seconds=5)) as writer:
+        assert await writer.query_raw("SELECT * FROM retail_native_audit_outbox ORDER BY id") == before
+        assert await writer.query_raw("SELECT * FROM retail_native_audit_settings") == settings_before
+        for action in added:
+            await append_native_audit(writer, actor_id="migration-owner", action=action)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        async with runtime.native.tx(timeout=timedelta(seconds=5)) as writer:
+            await writer.query_raw(
+                """INSERT INTO retail_native_audit_outbox(id,source_id,actor_id,action,resource_id,affected_count)
+                   SELECT gen_random_uuid(),source_id,'migration-owner','unsupported-kind',gen_random_uuid(),1
+                   FROM retail_native_audit_settings RETURNING id""",
+            )
+    worker: Final = NativeAuditWorker(runtime.store)
+    for _ in range(len(legacy) + len(added)):
+        await worker.run_once()
+    assert await retail_counts(runtime) == (len(legacy) + len(added), 0)
+    assert (await runtime.store.counts()).retained == 0
+    async with runtime.wallet.diagnostic_transaction() as connection:
+        rows: Final = await (await connection.execute(
+            "SELECT action,changes,organization_id FROM retail_operation_events ORDER BY action",
+        )).fetchall()
+    assert tuple(row["action"] for row in rows) == tuple(sorted((*legacy, *added)))
+    assert all(row["organization_id"] is None for row in rows)
+    assert all(row["changes"] == {"kind": row["action"], "row_count": 1} for row in rows)
