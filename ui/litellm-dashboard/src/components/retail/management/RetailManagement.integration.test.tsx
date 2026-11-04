@@ -238,6 +238,9 @@ it("does not probe foreign audit organizations from a deep link", async () => {
 });
 
 const addedAuditActions = [
+  ["monthly_budget.created", "Monthly budget plan created"],
+  ["monthly_budget.updated", "Monthly budget plan updated"],
+  ["monthly_budget.stopped", "Monthly budget plan stopped"],
   ["billing_organization.updated", "Billing organization updated"],
   ["organization_report.created", "Organization report requested"],
   ["organization_report.completed", "Organization report completed"],
@@ -249,6 +252,8 @@ const addedAuditActions = [
   ["native_key.rotated", "API key rotated"],
   ["native_password.changed", "Account password changed"],
   ["native_session.revoked", "Account sessions revoked"],
+  ["native_identity.configured", "Organization sign-in bindings configured"],
+  ["native_identity.signed_in", "Organization sign-in completed"],
 ] as const;
 
 it.each(addedAuditActions)("filters and labels the controlled admin audit action %s", async (action, label) => {
@@ -308,18 +313,22 @@ it.each(addedAuditActions)("filters and labels the controlled admin audit action
 });
 
 it.each([
-  { role: "Internal User", viewer: false },
-  { role: "Admin", viewer: true },
+  { role: "Internal User", viewer: false, action: "finance_grant.updated" },
+  { role: "Admin", viewer: true, action: "finance_grant.updated" },
+  { role: "Internal User", viewer: false, action: "native_identity.configured" },
+  { role: "Admin", viewer: true, action: "native_identity.configured" },
+  { role: "Internal User", viewer: false, action: "native_identity.signed_in" },
+  { role: "Admin", viewer: true, action: "native_identity.signed_in" },
 ])(
-  "limits audit action options and deep links to organization actions for $role (viewer=$viewer)",
-  async ({ role, viewer }) => {
+  "strips $action and limits audit actions to organizations for $role (viewer=$viewer)",
+  async ({ role, viewer, action }) => {
     auth.userRole = role;
     auth.isViewOnly = viewer;
     const calls = serve((request) =>
       response(page(request.url.pathname.endsWith("operation-events") ? [] : [organization])),
     );
     renderWithProviders(<RetailOperationAuditPanel />, {
-      searchParams: { organization: organization.id, action: "finance_grant.updated" },
+      searchParams: { organization: organization.id, action },
     });
     await screen.findByText("No operation events found");
     const select = screen.getByRole("combobox", { name: "Action" });
