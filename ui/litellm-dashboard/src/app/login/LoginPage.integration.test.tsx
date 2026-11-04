@@ -58,7 +58,7 @@ vi.mock("@/hooks/useWorker", () => ({
 }));
 
 import { useUIConfig } from "@/app/(dashboard)/hooks/uiConfig/useUIConfig";
-import { switchToWorkerUrl } from "@/components/networking";
+import { getProxyBaseUrl, switchToWorkerUrl } from "@/components/networking";
 
 let WORKERS: { worker_id: string; name: string; url: string }[] = [];
 
@@ -83,6 +83,7 @@ const originalLocation = window.location;
 describe("LoginPage submit payload", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getProxyBaseUrl).mockReturnValue("http://localhost:4000");
     WORKERS = [];
     setSearch("");
     (useUIConfig as ReturnType<typeof vi.fn>).mockReturnValue({
@@ -97,6 +98,7 @@ describe("LoginPage submit payload", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     Object.defineProperty(window, "location", { value: originalLocation, writable: true });
   });
 
@@ -194,5 +196,53 @@ describe("LoginPage submit payload", () => {
     await waitFor(() => expect(mockMutate).toHaveBeenCalledTimes(1));
     expect(mockMutate.mock.calls[0][0]).toStrictEqual({ username: "admin", password: "sk-9876", useV3: true });
     expect(switchToWorkerUrl).toHaveBeenCalledWith("http://worker-a:4000");
+  });
+
+  it.each(["pending", "failed"])("allows password login while optional OIDC discovery is %s", async (state) => {
+    vi.mocked(getProxyBaseUrl).mockReturnValue(window.location.origin);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        if (!input.endsWith("/auth/oidc/status")) return new Response("{}");
+        if (state === "pending") return new Promise<Response>(() => undefined);
+        return new Response(JSON.stringify({ detail: "private-provider-failure" }), { status: 503 });
+      }),
+    );
+    renderLoginPage();
+    await screen.findByRole("heading", { name: "Login" });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "fixture-user" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "fixture-password" } });
+    await userEvent.click(screen.getByRole("button", { name: "Login" }));
+    await waitFor(() => expect(mockMutate).toHaveBeenCalledTimes(1));
+    expect(mockMutate.mock.calls[0][0]).toEqual({
+      username: "fixture-user",
+      password: "fixture-password",
+      useV3: false,
+    });
+    expect(screen.queryByRole("button", { name: "Login with SSO" })).not.toBeInTheDocument();
+    expect(screen.queryByText("private-provider-failure")).not.toBeInTheDocument();
+  });
+
+  it("preserves configured native worker SSO while excluding the independent OIDC entry", async () => {
+    WORKERS = [{ worker_id: "worker-a", name: "Worker A", url: "http://worker-a:4000" }];
+    setSearch("?worker=worker-a");
+    vi.mocked(useUIConfig).mockReturnValue({
+      data: {
+        auto_redirect_to_sso: false,
+        server_root_path: "/",
+        proxy_base_url: null,
+        sso_configured: true,
+        is_control_plane: true,
+      },
+      isLoading: false,
+    } as ReturnType<typeof useUIConfig>);
+    const network = vi.fn(async () => new Response("{}"));
+    vi.stubGlobal("fetch", network);
+    renderLoginPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Login with SSO" }));
+    expect(mockPush).toHaveBeenCalledWith(expect.stringContaining("http://worker-a:4000/sso/key/generate?return_to="));
+    expect(switchToWorkerUrl).toHaveBeenCalledWith("http://worker-a:4000");
+    expect(screen.queryByRole("button", { name: "Continue with organization account" })).not.toBeInTheDocument();
+    expect(network.mock.calls.some(([input]) => String(input).includes("/auth/oidc/"))).toBe(false);
   });
 });

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
 import { useZodForm } from "@/lib/forms/useZodForm";
 import { clearTokenCookies, getCookieFromDocument } from "@/utils/cookieUtils";
@@ -27,6 +27,8 @@ import Link from "next/link";
 import { uiHref } from "@/utils/uiHref";
 import PublicSiteShell, { publicSiteThemeClassName } from "@/components/retail/public-site/PublicSiteShell";
 import styles from "@/components/retail/public-site/PublicAuth.module.css";
+import OrganizationOidcLogin, { OrganizationOidcError } from "@/components/retail/auth/OrganizationOidcLogin";
+import { supportsOrganizationOidc } from "@/components/retail/auth/oidcLoginInput";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Please enter your username"),
@@ -269,6 +271,7 @@ function LoginPageContent() {
                     <AlertTitle>{error}</AlertTitle>
                   </Alert>
                 )}
+                <OrganizationOidcError />
 
                 <form onSubmit={form.handleSubmit(handleSubmit)}>
                   <FieldGroup>
@@ -325,18 +328,11 @@ function LoginPageContent() {
                       {isLoginLoading ? "Logging in..." : "Login"}
                     </Button>
 
-                    {!uiConfig?.sso_configured ? (
-                      <Tooltip>
-                        <TooltipTrigger render={<span className="block w-full" />}>
-                          <Button type="button" variant="outline" size="lg" disabled className="w-full">
-                            Login with SSO
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent className={[publicSiteThemeClassName, styles.tooltip].join(" ")}>
-                          Please configure SSO to log in with SSO.
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
+                    <OrganizationOidcLogin
+                      supported={supportsOrganizationOidc(uiConfig, selectedWorkerId)}
+                      disabled={isLoginLoading}
+                    />
+                    {uiConfig?.sso_configured && (
                       <Button
                         type="button"
                         variant="outline"

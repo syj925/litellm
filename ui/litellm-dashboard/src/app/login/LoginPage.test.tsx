@@ -268,7 +268,7 @@ describe("LoginPage", () => {
     expect(screen.getByRole("button", { name: "Login with SSO" })).toBeInTheDocument();
   });
 
-  it("should show disabled Login with SSO button with popover when sso_configured is false", async () => {
+  it("hides the unconfigured native SSO entry", async () => {
     (useUIConfig as ReturnType<typeof vi.fn>).mockReturnValue({
       data: {
         auto_redirect_to_sso: false,
@@ -292,9 +292,7 @@ describe("LoginPage", () => {
       expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     });
 
-    const ssoButton = screen.getByRole("button", { name: "Login with SSO" });
-    expect(ssoButton).toBeInTheDocument();
-    expect(ssoButton).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Login with SSO" })).not.toBeInTheDocument();
   });
 
   describe("URL ?token= legacy path is rejected (security regression test)", () => {
