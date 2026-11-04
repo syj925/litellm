@@ -7,10 +7,16 @@ import { formatMoney } from "../api";
 import { managementTimestamp } from "../management/ManagementShared";
 import type { ModelBudget } from "./types";
 
-function statusLabel(state: ModelBudget["state"]) {
+function statusLabel(budget: ModelBudget) {
+  if (budget.recurrence_id && !budget.enabled) return "Cancelled by monthly plan";
+  const { state } = budget;
   if (state === "disabled") return "Enforcement paused";
   if (state === "scheduled") return "Scheduled";
   return state;
+}
+
+function isManuallyPaused(budget: ModelBudget) {
+  return !budget.recurrence_id && budget.state === "scheduled" && !budget.enabled;
 }
 
 export default function ModelBudgetsTable<T extends ModelBudget>({
@@ -58,8 +64,8 @@ export default function ModelBudgetsTable<T extends ModelBudget>({
             <TableCell className="text-right tabular-nums">{formatMoney(budget.remaining_usd)}</TableCell>
             <TableCell>
               <div className="flex flex-col items-start gap-1">
-                <Badge variant="outline">{statusLabel(budget.state)}</Badge>
-                {budget.state === "scheduled" && !budget.enabled && (
+                <Badge variant="outline">{statusLabel(budget)}</Badge>
+                {isManuallyPaused(budget) && (
                   <span className="text-xs text-muted-foreground">Enforcement paused</span>
                 )}
                 {budget.successor_id && <span className="text-xs text-muted-foreground">Next window scheduled</span>}

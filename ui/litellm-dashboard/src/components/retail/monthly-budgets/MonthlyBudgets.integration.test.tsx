@@ -292,6 +292,27 @@ it.each(["public-model", "p".repeat(150)])(
   },
 );
 
+it("labels disabled monthly child windows as cancelled while retaining manual paused status and amounts", async () => {
+  serve({
+    fixed: [
+      { ...child, enabled: false, state: "scheduled", spent_usd: "0.125000000" },
+      { ...child, id: "manual-window", model: "manual-model", recurrence_id: null, enabled: false, state: "scheduled" },
+    ],
+  });
+  renderWithProviders(<AdminModelBudgetsDialog userId="account-one" onClose={() => undefined} />);
+  const monthly = within(await screen.findByRole("row", { name: /public-model/ }));
+  expect(monthly.getByText("Cancelled by monthly plan")).toBeInTheDocument();
+  expect(monthly.queryByText("Scheduled")).not.toBeInTheDocument();
+  expect(monthly.queryByText("Enforcement paused")).not.toBeInTheDocument();
+  expect(monthly.getByText("$0.125")).toBeInTheDocument();
+  expect(monthly.queryByRole("button", { name: "Edit budget for public-model" })).not.toBeInTheDocument();
+  expect(monthly.queryByRole("button", { name: "Schedule next window for public-model" })).not.toBeInTheDocument();
+  const manual = within(screen.getByRole("row", { name: /manual-model/ }));
+  expect(manual.getByText("Scheduled")).toBeInTheDocument();
+  expect(manual.getByText("Enforcement paused")).toBeInTheDocument();
+  expect(manual.getByRole("button", { name: "Edit budget for manual-model" })).toBeEnabled();
+});
+
 it("treats rejected terms as validation rather than an uncertain successful write", async () => {
   serve({ writeStatus: 422 });
   await monthlyTab();
