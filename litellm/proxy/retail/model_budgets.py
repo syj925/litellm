@@ -6,7 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import JsonValue
 
 from .api import Admin, OperationKey, User, _execute
-from .budget_management import BudgetManagementStore, CreateModelBudget, UpdateModelBudget, validate_user_id
+from .budget_management import (
+    BudgetManagementStore,
+    CreateModelBudget,
+    ScheduleModelBudget,
+    UpdateModelBudget,
+    validate_user_id,
+)
 from .control_plane_access import verify_actor, verify_target_user
 from .control_plane_flags import model_budgets_enabled
 from .control_plane_http import PrivateManagementRoute
@@ -98,3 +104,14 @@ async def own_budgets(
     return await _execute(
         BudgetManagementStore(store).list(actor.user_id, actor, admin=False, q=q, limit=limit, offset=offset)
     )
+
+
+@router.post("/admin/users/{user_id}/model-budgets/{budget_id}/successor", status_code=201)
+async def schedule_budget(
+    user_id: str, budget_id: UUID, data: ScheduleModelBudget, user: Admin, store: Store, key: OperationKey
+) -> Mapping[str, JsonValue]:
+    actor: Final = await verify_actor(user)
+    require_admin(actor)
+    validate_user_id(user_id)
+    await verify_target_user(user_id)
+    return await _execute(BudgetManagementStore(store).schedule(user_id, budget_id, data, actor, key))

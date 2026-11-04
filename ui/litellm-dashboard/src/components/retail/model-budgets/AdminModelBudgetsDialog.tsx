@@ -19,7 +19,7 @@ import { BudgetPagination, BudgetScopeNote } from "./BudgetShared";
 import ModelBudgetForm from "./ModelBudgetForm";
 import { modelBudgetListParsers, modelBudgetModelParsers, modelBudgetPageSize } from "./modelBudgetInput";
 import ModelBudgetsTable from "./ModelBudgetsTable";
-import type { AdminModelBudget } from "./types";
+import type { AdminModelBudget, ModelBudgetDraft } from "./types";
 
 function AdminBudgetWorkspace({
   userId,
@@ -35,8 +35,7 @@ function AdminBudgetWorkspace({
   const id = useId();
   const client = useQueryClient();
   const [filters, setFilters] = useQueryStates(modelBudgetListParsers);
-  const [creating, setCreating] = useState(false);
-  const [editing, setEditing] = useState<AdminModelBudget | null>(null);
+  const [draft, setDraft] = useState<ModelBudgetDraft | null>(null);
   const [authorityLost, setAuthorityLost] = useState(false);
   const parameters = {
     q: filters.budget_q,
@@ -58,13 +57,11 @@ function AdminBudgetWorkspace({
   const budgets = useQuery(options);
   const visible = !budgets.error && !authorityLost ? budgets.data : undefined;
   const closeForm = () => {
-    setCreating(false);
-    setEditing(null);
+    setDraft(null);
   };
   const unavailable = useCallback(() => {
     setAuthorityLost(true);
-    setCreating(false);
-    setEditing(null);
+    setDraft(null);
     onSavingChange(false);
   }, [onSavingChange]);
   const refresh = async () => {
@@ -76,7 +73,7 @@ function AdminBudgetWorkspace({
     closeForm();
     void client.invalidateQueries({ queryKey: ["retail", "model-budgets"] });
     void client.invalidateQueries({ queryKey: ["retail", "operation-events"] });
-    toast.success("Model budget saved");
+    toast.success(draft?.kind === "successor" ? "Next budget window scheduled" : "Model budget saved");
   };
   return (
     <div className="space-y-5">
@@ -109,13 +106,13 @@ function AdminBudgetWorkspace({
         </>
       )}
       {visible &&
-        (creating || editing ? (
+        (draft ? (
           <ModelBudgetForm
-            key={editing ? `${editing.id}:${editing.config_version}` : "create"}
+            key={draft.kind === "create" ? "create" : `${draft.kind}:${draft.budget.id}:${draft.budget.config_version}`}
             accessToken={accessToken}
             actorId={actorId}
             userId={userId}
-            budget={editing}
+            draft={draft}
             onSaved={saved}
             onCancel={closeForm}
             onReload={() => void refresh()}
@@ -139,7 +136,7 @@ function AdminBudgetWorkspace({
                   <RefreshCw />
                   Reload budgets
                 </Button>
-                <Button onClick={() => setCreating(true)} disabled={budgets.isFetching}>
+                <Button onClick={() => setDraft({ kind: "create" })} disabled={budgets.isFetching}>
                   <Plus />
                   New model budget
                 </Button>
@@ -147,7 +144,12 @@ function AdminBudgetWorkspace({
             </div>
             <div className="overflow-hidden rounded-xl border">
               {visible.items.length ? (
-                <ModelBudgetsTable items={visible.items} onEdit={setEditing} disabled={budgets.isFetching} />
+                <ModelBudgetsTable
+                  items={visible.items}
+                  onEdit={(budget) => setDraft({ kind: "edit", budget })}
+                  onSchedule={(budget) => setDraft({ kind: "successor", budget })}
+                  disabled={budgets.isFetching}
+                />
               ) : (
                 <StateMessage
                   role="status"

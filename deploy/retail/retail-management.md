@@ -11,7 +11,7 @@
 | `/ui/reports/` | 固定时间窗的账号账本 CSV 导出 | 本人创建和下载自己的任务；全站管理员可为明确指定的有效账号创建任务 |
 | `/ui/chat/api-keys/` | 使用已有自有接口轮换 API Key | 按原生账号和 Key 的实时权限校验；只读账号不能轮换 |
 | `/ui/business-labels/` | 维护 Key、团队、自有组织和数据库模型部署的独立分类及管理来源 | 仅当前有效的全站 Proxy Admin |
-| Customer Wallets 中的 Model budgets | 配置账号与精确模型的固定窗口消费额度 | 全站 Proxy Admin 配置，个人 Wallet 仅显示本人的只读额度 |
+| Customer Wallets 中的 Model budgets | 配置账号与精确模型的固定窗口消费额度，可提前安排连续的下一期 | 全站 Proxy Admin 配置，个人 Wallet 仅显示本人的当前及未来额度 |
 
 创建组织时需要填写组织名称和首位组织管理员的现有账号 ID。账号关联由全站管理员确认客户归属后完成，不发送邀请邮件，也不向组织管理员提供全站账号搜索
 

@@ -26,6 +26,7 @@ _ALLOWED_ACTIONS: Final = frozenset(
         "object_metadata.updated",
         "model_budget.created",
         "model_budget.updated",
+        "model_budget.scheduled",
     )
 )
 _ALLOWED_FIELDS: Final = frozenset(
@@ -44,6 +45,7 @@ _ALLOWED_FIELDS: Final = frozenset(
         "tag_count",
         "model",
         "limit_usd",
+        "predecessor_id",
     )
 )
 

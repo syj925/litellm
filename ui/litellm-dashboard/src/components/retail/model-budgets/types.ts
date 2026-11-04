@@ -12,7 +12,9 @@ export interface ModelBudget {
   config_version: number;
   accounting_version: number;
   accounted_at: string | null;
-  state: "active" | "disabled" | "expired";
+  predecessor_id: string | null;
+  successor_id: string | null;
+  state: "scheduled" | "active" | "disabled" | "expired";
 }
 
 export interface AdminModelBudget extends ModelBudget {
@@ -36,3 +38,12 @@ export interface UpdateModelBudget {
   enabled: boolean;
   expected_version: number;
 }
+
+export interface ScheduleModelBudget {
+  ends_at: string;
+  limit_usd: string;
+  enabled: boolean;
+  expected_version: number;
+}
+
+export type ModelBudgetDraft = { kind: "create" } | { kind: "edit" | "successor"; budget: AdminModelBudget };

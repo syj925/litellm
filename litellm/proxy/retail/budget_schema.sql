@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS retail_model_budget_policies (
     id UUID PRIMARY KEY,
+    predecessor_id UUID REFERENCES retail_model_budget_policies(id),
     user_id TEXT NOT NULL REFERENCES retail_wallets(user_id),
     model TEXT NOT NULL CHECK (length(model) BETWEEN 1 AND 191),
     effective_from TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
@@ -18,6 +19,10 @@ CREATE TABLE IF NOT EXISTS retail_model_budget_policies (
     accounted_at TIMESTAMPTZ,
     CHECK (ends_at > effective_from AND ends_at <= effective_from + interval '366 days')
 );
+ALTER TABLE retail_model_budget_policies
+ADD COLUMN IF NOT EXISTS predecessor_id UUID REFERENCES retail_model_budget_policies(id);
+CREATE UNIQUE INDEX IF NOT EXISTS retail_model_budget_policies_successor
+ON retail_model_budget_policies(predecessor_id) WHERE predecessor_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS retail_model_budget_policies_scope
 ON retail_model_budget_policies(user_id,model,ends_at,effective_from);
 
@@ -36,14 +41,17 @@ ON retail_model_budget_allocations(policy_id,status);
 
 CREATE OR REPLACE FUNCTION retail_model_budget_policy_guard() RETURNS trigger
 LANGUAGE plpgsql AS $$
+DECLARE
+    admitted_at TIMESTAMPTZ;
+    predecessor_end TIMESTAMPTZ;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         RAISE EXCEPTION 'Budget windows cannot be deleted' USING ERRCODE = '55000';
     END IF;
     IF TG_OP = 'UPDATE' THEN
-        IF (NEW.user_id,NEW.model,NEW.effective_from,NEW.ends_at,NEW.source,NEW.created_at,NEW.created_by)
+        IF (NEW.user_id,NEW.model,NEW.predecessor_id,NEW.effective_from,NEW.ends_at,NEW.source,NEW.created_at,NEW.created_by)
           IS DISTINCT FROM
-          (OLD.user_id,OLD.model,OLD.effective_from,OLD.ends_at,OLD.source,OLD.created_at,OLD.created_by) THEN
+          (OLD.user_id,OLD.model,OLD.predecessor_id,OLD.effective_from,OLD.ends_at,OLD.source,OLD.created_at,OLD.created_by) THEN
             RAISE EXCEPTION 'Budget window identity is immutable' USING ERRCODE = '55000';
         END IF;
         IF NEW.spent_nanos < OLD.spent_nanos THEN
@@ -52,9 +60,20 @@ BEGIN
         RETURN NEW;
     END IF;
     PERFORM user_id FROM retail_wallets WHERE user_id=NEW.user_id FOR UPDATE;
-    NEW.effective_from := clock_timestamp();
-    NEW.created_at := NEW.effective_from;
-    NEW.updated_at := NEW.effective_from;
+    admitted_at := clock_timestamp();
+    IF NEW.predecessor_id IS NULL THEN
+        NEW.effective_from := admitted_at;
+    ELSE
+        SELECT ends_at INTO predecessor_end FROM retail_model_budget_policies
+        WHERE id=NEW.predecessor_id AND user_id=NEW.user_id AND model=NEW.model
+          AND effective_from<=admitted_at AND ends_at>admitted_at;
+        IF predecessor_end IS NULL THEN
+            RAISE EXCEPTION 'A successor requires the current budget window' USING ERRCODE = '23514';
+        END IF;
+        NEW.effective_from := predecessor_end;
+    END IF;
+    NEW.created_at := admitted_at;
+    NEW.updated_at := admitted_at;
     IF EXISTS (
         SELECT 1 FROM retail_model_budget_policies
         WHERE user_id=NEW.user_id AND model=NEW.model

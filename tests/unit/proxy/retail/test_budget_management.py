@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from litellm.proxy.retail.budget_management import (
     CreateModelBudget,
+    ScheduleModelBudget,
     UpdateModelBudget,
     _Policy,
     budget_view,
@@ -86,6 +87,49 @@ def test_creation_requires_a_timezone_and_does_not_accept_client_provenance() ->
 
 
 @pytest.mark.parametrize(
+    "extra",
+    (
+        {"expected_version": 0},
+        {"expected_version": True},
+        {"expected_version": "1"},
+        {"expected_version": 1.0},
+        {"expected_version": 9_223_372_036_854_775_807},
+        {"enabled": "false"},
+        {"enabled": None},
+        {"limit_usd": "0.0000000001"},
+        {"limit_usd": "NaN"},
+        {"limit_usd": 1},
+        {"ends_at": "2026-02-01T00:00:00"},
+        {"model": "forged-model"},
+        {"effective_from": NOW},
+        {"predecessor_id": str(UUID(int=2))},
+        {"created_by": "forged-actor"},
+    ),
+)
+def test_successor_requires_strict_cas_and_rejects_client_window_identity(extra: object) -> None:
+    assert isinstance(extra, dict)
+    with pytest.raises(ValidationError):
+        ScheduleModelBudget.model_validate(
+            {"expected_version": 1, "ends_at": NOW, "limit_usd": "1", **extra}
+        )
+
+
+def test_successor_normalizes_money_and_offset_without_accepting_a_start_or_model() -> None:
+    selected: Final = ScheduleModelBudget(
+        expected_version=3,
+        ends_at=NOW.astimezone(timezone(timedelta(hours=8))),
+        limit_usd="0.000000001",
+        enabled=False,
+    )
+    assert selected.model_dump(mode="json") == {
+        "expected_version": 3,
+        "ends_at": "2026-01-01T00:00:00Z",
+        "limit_usd": "0.000000001",
+        "enabled": False,
+    }
+
+
+@pytest.mark.parametrize(
     ("enabled", "expired", "state"),
     ((True, False, "active"), (False, False, "disabled"), (True, True, "expired"), (False, True, "expired")),
 )
@@ -117,6 +161,63 @@ def test_public_projection_has_exact_overrun_and_no_admin_provenance(enabled: bo
     assert (public["config_version"], public["accounting_version"]) == (3, 8)
     assert set(admin) - set(public) == {"user_id", "source", "created_at", "created_by", "updated_at", "updated_by"}
     assert all("private-" not in str(value) for value in public.values())
+
+
+@pytest.mark.parametrize(
+    ("enabled", "observed_at", "state"),
+    (
+        (True, NOW - timedelta(microseconds=1), "scheduled"),
+        (False, NOW - timedelta(microseconds=1), "scheduled"),
+        (True, NOW, "active"),
+        (False, NOW, "disabled"),
+        (True, NOW + timedelta(hours=1), "expired"),
+        (False, NOW + timedelta(hours=1), "expired"),
+    ),
+)
+def test_successor_projection_has_half_open_state_boundaries_and_preserves_own_links(
+    enabled: bool, observed_at: datetime, state: str
+) -> None:
+    row: Final = _Policy(
+        id=UUID(int=2),
+        user_id="private-owner",
+        model="public-model",
+        predecessor_id=UUID(int=1),
+        successor_id=UUID(int=3),
+        effective_from=NOW,
+        ends_at=NOW + timedelta(hours=1),
+        limit_nanos=1_000_000_000,
+        spent_nanos=0,
+        held_nanos=0,
+        enabled=enabled,
+        config_version=1,
+        accounting_version=0,
+        source="management_api",
+        created_at=NOW - timedelta(days=1),
+        created_by="private-creator",
+        updated_at=NOW - timedelta(days=1),
+        updated_by="private-editor",
+        accounted_at=None,
+        observed_at=observed_at,
+    )
+    public: Final = budget_view(row, admin=False)
+    assert public == {
+        "id": str(UUID(int=2)),
+        "model": "public-model",
+        "effective_from": "2026-01-01T00:00:00Z",
+        "ends_at": "2026-01-01T01:00:00Z",
+        "limit_usd": "1.000000000",
+        "spent_usd": "0.000000000",
+        "held_usd": "0.000000000",
+        "remaining_usd": "1.000000000",
+        "overrun_usd": "0.000000000",
+        "enabled": enabled,
+        "config_version": 1,
+        "accounting_version": 0,
+        "accounted_at": None,
+        "predecessor_id": str(UUID(int=1)),
+        "successor_id": str(UUID(int=3)),
+        "state": state,
+    }
 
 
 @pytest.mark.parametrize(

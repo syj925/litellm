@@ -13,6 +13,7 @@ class BudgetPolicyRow(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: UUID
+    predecessor_id: UUID | None = None
     user_id: str
     model: str
     effective_from: datetime

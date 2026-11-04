@@ -15305,6 +15305,23 @@ export interface paths {
         patch: operations["update_budget_retail_admin_users__user_id__model_budgets__budget_id__patch"];
         trace?: never;
     };
+    "/retail/admin/users/{user_id}/model-budgets/{budget_id}/successor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Schedule Budget */
+        post: operations["schedule_budget_retail_admin_users__user_id__model_budgets__budget_id__successor_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retail/admin/wallets": {
         parameters: {
             query?: never;
@@ -48500,6 +48517,23 @@ export interface components {
              */
             selected: number;
         };
+        /** ScheduleModelBudget */
+        ScheduleModelBudget: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** Expected Version */
+            expected_version: number;
+            /** Limit Usd */
+            limit_usd: string;
+        };
         /**
          * ScheduledJobStaggerSettings
          * @description Spreads the proxy's scheduled background jobs across a window instead of firing them
@@ -76328,6 +76362,46 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    schedule_budget_retail_admin_users__user_id__model_budgets__budget_id__successor_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                user_id: string;
+                budget_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleModelBudget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

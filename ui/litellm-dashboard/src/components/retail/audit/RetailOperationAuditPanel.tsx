@@ -71,6 +71,7 @@ const eventLabels: Record<string, string> = {
   "object_metadata.updated": "Business labels updated",
   "model_budget.created": "Model budget created",
   "model_budget.updated": "Model budget updated",
+  "model_budget.scheduled": "Next model budget window scheduled",
 };
 
 function AuditFiltersForm({

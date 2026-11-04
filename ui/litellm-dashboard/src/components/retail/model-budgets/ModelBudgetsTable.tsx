@@ -7,13 +7,21 @@ import { formatMoney } from "../api";
 import { managementTimestamp } from "../management/ManagementShared";
 import type { ModelBudget } from "./types";
 
+function statusLabel(state: ModelBudget["state"]) {
+  if (state === "disabled") return "Enforcement paused";
+  if (state === "scheduled") return "Scheduled";
+  return state;
+}
+
 export default function ModelBudgetsTable<T extends ModelBudget>({
   items,
   onEdit,
+  onSchedule,
   disabled = false,
 }: {
   items: T[];
   onEdit?: (budget: T) => void;
+  onSchedule?: (budget: T) => void;
   disabled?: boolean;
 }) {
   return (
@@ -27,7 +35,7 @@ export default function ModelBudgetsTable<T extends ModelBudget>({
           <TableHead className="text-right">Held (USD)</TableHead>
           <TableHead className="text-right">Available (USD)</TableHead>
           <TableHead>Status</TableHead>
-          {onEdit && (
+          {(onEdit || onSchedule) && (
             <TableHead className="pr-5">
               <span className="sr-only">Actions</span>
             </TableHead>
@@ -48,23 +56,44 @@ export default function ModelBudgetsTable<T extends ModelBudget>({
             <TableCell className="text-right tabular-nums">{formatMoney(budget.remaining_usd)}</TableCell>
             <TableCell>
               <div className="flex flex-col items-start gap-1">
-                <Badge variant="outline">{budget.state === "disabled" ? "Enforcement paused" : budget.state}</Badge>
+                <Badge variant="outline">{statusLabel(budget.state)}</Badge>
+                {budget.state === "scheduled" && !budget.enabled && (
+                  <span className="text-xs text-muted-foreground">Enforcement paused</span>
+                )}
+                {budget.successor_id && <span className="text-xs text-muted-foreground">Next window scheduled</span>}
                 {/[1-9]/.test(budget.overrun_usd) && (
                   <span className="text-xs text-destructive">Above limit: {formatMoney(budget.overrun_usd)}</span>
                 )}
               </div>
             </TableCell>
-            {onEdit && (
+            {(onEdit || onSchedule) && (
               <TableCell className="pr-5 text-right">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label={`Edit budget for ${budget.model}`}
-                  disabled={disabled || budget.state === "expired"}
-                  onClick={() => onEdit(budget)}
-                >
-                  Edit
-                </Button>
+                <div className="flex flex-col items-end gap-2">
+                  {onEdit && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label={`Edit budget for ${budget.model}`}
+                      disabled={disabled || budget.state === "expired"}
+                      onClick={() => onEdit(budget)}
+                    >
+                      Edit
+                    </Button>
+                  )}
+                  {onSchedule && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label={`Schedule next window for ${budget.model}`}
+                      disabled={
+                        disabled || !["active", "disabled"].includes(budget.state) || Boolean(budget.successor_id)
+                      }
+                      onClick={() => onSchedule(budget)}
+                    >
+                      Schedule next window
+                    </Button>
+                  )}
+                </div>
               </TableCell>
             )}
           </TableRow>

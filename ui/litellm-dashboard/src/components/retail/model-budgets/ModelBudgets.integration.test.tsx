@@ -6,7 +6,8 @@ import AdminWalletsPanel from "../AdminWalletsPanel";
 import WalletPanel from "../WalletPanel";
 import { beijingTimeInput } from "../management/time";
 import AdminModelBudgetsDialog from "./AdminModelBudgetsDialog";
-import type { AdminModelBudget, CreateModelBudget, UpdateModelBudget } from "./types";
+import { BudgetScopeNote } from "./BudgetShared";
+import type { AdminModelBudget, CreateModelBudget, ScheduleModelBudget, UpdateModelBudget } from "./types";
 
 const auth = vi.hoisted(() => ({ userRole: "Admin", isViewOnly: false }));
 vi.mock("@/components/networking", () => ({
@@ -44,6 +45,8 @@ const budget: AdminModelBudget = {
   config_version: 1,
   accounting_version: 2,
   accounted_at: "2026-11-04T01:00:00Z",
+  predecessor_id: null,
+  successor_id: null,
   state: "active",
   source: "management_api",
   created_at: "2026-11-04T00:00:00Z",
@@ -73,6 +76,10 @@ function serveModels(call: Call, state: State) {
   const models = offset > 0 ? [{ model: "public/beta" }] : [{ model: "public/alpha" }, { model: "public/beta" }];
   return json(page(models, state.modelTotal, offset));
 }
+function updatedState(row: AdminModelBudget, enabled: boolean): AdminModelBudget["state"] {
+  if (row.state === "scheduled") return "scheduled";
+  return enabled ? "active" : "disabled";
+}
 function serveMutation(call: Call, state: State) {
   if (state.writeStatus !== 200)
     return json(
@@ -80,6 +87,32 @@ function serveMutation(call: Call, state: State) {
       state.writeStatus,
     );
   if (call.method === "POST") {
+    if (call.url.pathname.endsWith("/successor")) {
+      const payload = call.body as ScheduleModelBudget;
+      const predecessorId = call.url.pathname.split("/").at(-2);
+      const predecessor = state.rows.find((row) => row.id === predecessorId);
+      if (!predecessor) return json({ detail: "Budget unavailable" }, 404);
+      const created: AdminModelBudget = {
+        ...budget,
+        id: "8ac98597-89fd-40e0-830a-412e129a1ed7",
+        model: predecessor.model,
+        effective_from: predecessor.ends_at,
+        ends_at: payload.ends_at,
+        limit_usd: payload.limit_usd,
+        remaining_usd: payload.limit_usd,
+        spent_usd: "0.000000000",
+        held_usd: "0.000000000",
+        predecessor_id: predecessor.id,
+        enabled: payload.enabled,
+        state: "scheduled",
+      };
+      state.rows = [
+        ...state.rows.map((row) => (row.id === predecessor.id ? { ...row, successor_id: created.id } : row)),
+        created,
+      ];
+      state.budgetTotal += 1;
+      return json(created, 201);
+    }
     const payload = call.body as CreateModelBudget;
     const created: AdminModelBudget = {
       ...budget,
@@ -97,14 +130,19 @@ function serveMutation(call: Call, state: State) {
     return json(created, 201);
   }
   const payload = call.body as UpdateModelBudget;
-  state.rows = state.rows.map((row) => ({
-    ...row,
-    limit_usd: payload.limit_usd,
-    enabled: payload.enabled,
-    config_version: payload.expected_version + 1,
-    state: payload.enabled ? "active" : "disabled",
-  }));
-  return json(state.rows[0]);
+  const target = call.url.pathname.split("/").at(-1);
+  state.rows = state.rows.map((row) =>
+    row.id === target
+      ? {
+          ...row,
+          limit_usd: payload.limit_usd,
+          enabled: payload.enabled,
+          config_version: payload.expected_version + 1,
+          state: updatedState(row, payload.enabled),
+        }
+      : row,
+  );
+  return json(state.rows.find((row) => row.id === target));
 }
 function serve() {
   const calls: Call[] = [];
@@ -171,6 +209,133 @@ function fillEnd() {
   });
   return future.toISOString();
 }
+
+function fillSuccessorEnd() {
+  const end = new Date(Date.parse(budget.ends_at) + 2 * 24 * 60 * 60 * 1000).toISOString();
+  fireEvent.change(screen.getByLabelText("End time (Beijing)"), {
+    target: { value: beijingTimeInput(end) },
+  });
+  return end;
+}
+
+it("keeps budget guidance compact and reveals the full accounting rules on request", async () => {
+  renderWithProviders(<BudgetScopeNote />);
+  expect(screen.getByText(/Each exact public model shares its budget/)).toBeVisible();
+  const accounting = screen.getByText(/Final charges can exceed the estimate/);
+  const renewal = screen.getByText(/Windows do not repeat automatically/);
+  expect(accounting).not.toBeVisible();
+  expect(renewal).not.toBeVisible();
+  const user = userEvent.setup();
+  await user.click(screen.getByText("How budget windows work"));
+  expect(accounting).toBeVisible();
+  expect(renewal).toBeVisible();
+  await user.click(screen.getByText("How budget windows work"));
+  expect(accounting).not.toBeVisible();
+});
+
+it("schedules one separate next window with a server-fixed start and the predecessor configuration version", async () => {
+  const { calls, state } = serve();
+  renderWithProviders(<AdminWalletsPanel />);
+  const user = await openAdmin();
+  await user.click(screen.getByRole("button", { name: "Schedule next window for public/alpha" }));
+  expect(screen.getByText("Next window starts (Beijing)")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Public model")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Budget limit (USD)")).toHaveValue(budget.limit_usd);
+  expect(screen.getByText(/This does not enable automatic renewal/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Budget limit (USD)"), { target: { value: "40.123456789" } });
+  const end = fillSuccessorEnd();
+  await user.click(screen.getByRole("button", { name: "Schedule next window", exact: true }));
+  await screen.findByText("Scheduled");
+  const write = calls.find((call) => call.method === "POST");
+  expect(write?.url.pathname).toBe(`/retail/admin/users/customer-example/model-budgets/${budget.id}/successor`);
+  const expected = { ends_at: end, limit_usd: "40.123456789", enabled: true, expected_version: 1 };
+  expect(write?.body).toEqual(expected);
+  expect(write?.headers.get("Idempotency-Key")).toBeTruthy();
+  expect(state.rows[0]).toEqual({ ...budget, successor_id: state.rows[1].id });
+  expect(screen.getByText("Next window scheduled")).toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: "Schedule next window for public/alpha" })).toHaveLength(2);
+  for (const button of screen.getAllByRole("button", { name: "Schedule next window for public/alpha" })) {
+    expect(button).toBeDisabled();
+  }
+});
+
+it.each([
+  { state: "scheduled" as const, successor_id: null },
+  { state: "expired" as const, successor_id: null },
+  { state: "active" as const, successor_id: "already-scheduled" },
+])("does not schedule another window from a $state budget with successor=$successor_id", async (condition) => {
+  const { state, calls } = serve();
+  state.rows = [{ ...budget, ...condition }];
+  renderWithProviders(<AdminWalletsPanel />);
+  await openAdmin();
+  expect(screen.getByRole("button", { name: "Schedule next window for public/alpha" })).toBeDisabled();
+  expect(calls.some((call) => call.method === "POST")).toBe(false);
+});
+
+it("allows a next window after a paused current window and distinguishes its scheduled paused state", async () => {
+  const { state, calls } = serve();
+  state.rows = [{ ...budget, enabled: false, state: "disabled" }];
+  renderWithProviders(<AdminWalletsPanel />);
+  const user = await openAdmin();
+  await user.click(screen.getByRole("button", { name: "Schedule next window for public/alpha" }));
+  expect(screen.getByRole("checkbox", { name: "Enforce this budget" })).not.toBeChecked();
+  fillSuccessorEnd();
+  await user.click(screen.getByRole("button", { name: "Schedule next window", exact: true }));
+  await screen.findByText("Scheduled");
+  const futureRow = within(screen.getByRole("row", { name: /Scheduled/ }));
+  expect(futureRow.getByText("Enforcement paused")).toBeInTheDocument();
+  expect(futureRow.getByRole("button", { name: "Edit budget for public/alpha" })).toBeEnabled();
+  expect(calls.find((call) => call.method === "POST")?.body).toMatchObject({ enabled: false, expected_version: 1 });
+  await user.click(futureRow.getByRole("button", { name: "Edit budget for public/alpha" }));
+  expect(screen.queryByLabelText("End time (Beijing)")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("checkbox", { name: "Enforce this budget" }));
+  await user.click(screen.getByRole("button", { name: "Save budget" }));
+  await screen.findByText("Scheduled");
+  expect(
+    within(screen.getByRole("row", { name: /Scheduled/ })).queryByText("Enforcement paused"),
+  ).not.toBeInTheDocument();
+  expect(calls.find((call) => call.method === "PATCH")?.body).toEqual({
+    limit_usd: budget.limit_usd,
+    enabled: true,
+    expected_version: 1,
+  });
+});
+
+it("retries an uncertain successor write with the same idempotency key and does not resubmit a conflict", async () => {
+  const { state, calls } = serve();
+  state.writeStatus = 503;
+  renderWithProviders(<AdminWalletsPanel />);
+  const user = await openAdmin();
+  await user.click(screen.getByRole("button", { name: "Schedule next window for public/alpha" }));
+  fillSuccessorEnd();
+  await user.click(screen.getByRole("button", { name: "Schedule next window", exact: true }));
+  await screen.findByText("Unable to save model budget");
+  state.writeStatus = 409;
+  await user.click(screen.getByRole("button", { name: "Schedule next window", exact: true }));
+  await screen.findByText("Budget needs review");
+  expect(screen.getByRole("button", { name: "Schedule next window", exact: true })).toBeDisabled();
+  const writes = calls.filter((call) => call.method === "POST");
+  expect(writes).toHaveLength(2);
+  expect(writes[1].headers.get("Idempotency-Key")).toBe(writes[0].headers.get("Idempotency-Key"));
+  expect(writes[1].body).toEqual(writes[0].body);
+  state.rows = [{ ...budget, successor_id: "created-elsewhere" }];
+  await user.click(screen.getByRole("button", { name: "Reload budgets" }));
+  expect(await screen.findByRole("button", { name: "Schedule next window for public/alpha" })).toBeDisabled();
+});
+
+it("shows a personal scheduled paused window without offering schedule or edit controls", async () => {
+  auth.userRole = "Internal User";
+  const { state, calls } = serve();
+  state.rows = [{ ...budget, enabled: false, state: "scheduled", predecessor_id: "previous-window" }];
+  renderWithProviders(<WalletPanel />);
+  const section = await screen.findByRole("region", { name: "Your model budgets" });
+  await within(section).findByText("Scheduled");
+  expect(within(section).getByText("Enforcement paused")).toBeInTheDocument();
+  expect(within(section).queryByRole("button", { name: /Schedule next window/ })).not.toBeInTheDocument();
+  expect(within(section).queryByRole("button", { name: /Edit budget/ })).not.toBeInTheDocument();
+  expect(screen.queryByText("private-operator")).not.toBeInTheDocument();
+  expect(calls.some((call) => call.url.pathname.includes("/admin/"))).toBe(false);
+});
 
 it("opens the account model budget flow and creates a server-started fixed window with exact USD precision", async () => {
   const { state, calls } = serve();

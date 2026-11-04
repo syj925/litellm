@@ -13,7 +13,7 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from pydantic import JsonValue
 
-from litellm.proxy.retail.budget_accounting import BudgetPolicyRow, lock_budget_wallet
+from litellm.proxy.retail.budget_accounting import BudgetPolicyRow, initialize_schema, lock_budget_wallet
 from litellm.proxy.retail.models import BudgetExceeded, IdempotencyConflict
 from litellm.proxy.retail.settlement_store import claim_facts, record_facts
 from litellm.proxy.retail.settlement_worker import SettlementWorker
@@ -82,6 +82,53 @@ async def _policy(runtime: BudgetRuntime, identifier: UUID) -> BudgetPolicyRow:
         ).fetchone()
     assert row is not None
     return BudgetPolicyRow.model_validate(row)
+
+
+async def _successor(
+    store: WalletStore,
+    predecessor: BudgetPolicyRow,
+    *,
+    user_id: str | None = None,
+    model: str | None = None,
+    enabled: bool = True,
+    seconds: float = 3600,
+) -> BudgetPolicyRow:
+    async with store.diagnostic_transaction() as connection:
+        await lock_budget_wallet(connection, user_id or predecessor.user_id)
+        row: Final = await (
+            await connection.execute(
+                """INSERT INTO retail_model_budget_policies
+                (id,predecessor_id,user_id,model,effective_from,ends_at,limit_nanos,enabled,created_by,updated_by)
+                VALUES(%s,%s,%s,%s,'2000-01-01T00:00:00Z',%s+(%s*interval '1 second'),100000000,%s,'admin','admin')
+                RETURNING *""",
+                (
+                    uuid4(),
+                    predecessor.id,
+                    user_id or predecessor.user_id,
+                    model or predecessor.model,
+                    predecessor.ends_at,
+                    seconds,
+                    enabled,
+                ),
+            )
+        ).fetchone()
+    assert row is not None
+    return BudgetPolicyRow.model_validate(row)
+
+
+async def _wait_for_window_end(store: WalletStore, identifier: UUID) -> None:
+    async with store.diagnostic_transaction() as connection:
+        async with asyncio.timeout(5):
+            while True:
+                row: Final = await (
+                    await connection.execute(
+                        "SELECT ends_at<=clock_timestamp() AS ended FROM retail_model_budget_policies WHERE id=%s",
+                        (identifier,),
+                    )
+                ).fetchone()
+                if row is not None and row["ended"]:
+                    return
+                await asyncio.sleep(0.01)
 
 
 async def _reserve(
@@ -324,6 +371,7 @@ async def test_terminal_facts_keep_critical_capacity_when_finance_pool_is_satura
 async def _wallet_waiter(connection: psycopg.AsyncConnection) -> None:
     async with asyncio.timeout(2):
         while True:
+            await connection.execute("SELECT pg_stat_clear_snapshot()")
             row: Final = await (
                 await connection.execute(
                     """SELECT count(*) AS n FROM pg_stat_activity WHERE datname=current_database()
@@ -361,3 +409,124 @@ async def test_expiry_while_request_waits_for_wallet_is_checked_after_lock(runti
         await connection.execute("SELECT pg_sleep(0.35)")
     assert (await request)["status"] == "reserved"
     assert (await _policy(runtime, budget.id)).held_nanos == 0
+
+
+@pytest.mark.asyncio
+async def test_successor_starts_at_predecessor_end_and_does_not_use_client_start(runtime: BudgetRuntime) -> None:
+    previous: Final = await _budget(runtime, enabled=False)
+    successor: Final = await _successor(runtime.peer, previous, enabled=False)
+    assert successor.predecessor_id == previous.id and successor.effective_from == previous.ends_at
+    assert previous.effective_from <= successor.created_at < previous.ends_at
+    assert successor.updated_at == successor.created_at and successor.spent_nanos == 0 and successor.held_nanos == 0
+    assert await _policy(runtime, previous.id) == previous
+    with pytest.raises(psycopg.errors.ExclusionViolation):
+        await _successor(runtime.store, previous)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        await _successor(runtime.store, successor)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("user_id,model", (("other-account", None), (None, "other-model")))
+async def test_successor_parent_cannot_be_forged_across_account_or_model(
+    runtime: BudgetRuntime, user_id: str | None, model: str | None
+) -> None:
+    previous: Final = await _budget(runtime)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        await _successor(runtime.peer, previous, user_id=user_id, model=model)
+    assert await _policy(runtime, previous.id) == previous
+    async with runtime.store.diagnostic_transaction() as connection:
+        count: Final = await (
+            await connection.execute("SELECT count(*) AS n FROM retail_model_budget_policies")
+        ).fetchone()
+    assert count == {"n": 1}
+
+
+@pytest.mark.asyncio
+async def test_two_workers_scheduling_same_predecessor_create_exactly_one_successor(runtime: BudgetRuntime) -> None:
+    previous: Final = await _budget(runtime)
+    results: Final = await asyncio.gather(
+        _successor(runtime.store, previous), _successor(runtime.peer, previous), return_exceptions=True
+    )
+    assert sum(isinstance(result, BudgetPolicyRow) for result in results) == 1
+    assert sum(isinstance(result, psycopg.errors.ExclusionViolation) for result in results) == 1
+    async with runtime.store.diagnostic_transaction() as connection:
+        rows: Final = await (
+            await connection.execute(
+                "SELECT effective_from,ends_at FROM retail_model_budget_policies WHERE predecessor_id=%s",
+                (previous.id,),
+            )
+        ).fetchall()
+    assert len(rows) == 1 and rows[0]["effective_from"] == previous.ends_at
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ("predecessor_id", "effective_from", "ends_at"))
+async def test_scheduled_window_link_and_time_identity_cannot_be_changed(runtime: BudgetRuntime, field: str) -> None:
+    previous: Final = await _budget(runtime)
+    successor: Final = await _successor(runtime.store, previous)
+    expression: Final = sql.SQL("NULL") if field == "predecessor_id" else sql.SQL("{}+interval '1 second'").format(
+        sql.Identifier(field)
+    )
+    with pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState):
+        async with runtime.store.diagnostic_transaction() as connection:
+            await connection.execute(
+                sql.SQL("UPDATE retail_model_budget_policies SET {}={} WHERE id=%s").format(
+                    sql.Identifier(field), expression
+                ),
+                (successor.id,),
+            )
+    assert await _policy(runtime, successor.id) == successor
+
+
+@pytest.mark.asyncio
+async def test_successor_cutover_preserves_old_holds_and_separates_late_settlement(runtime: BudgetRuntime) -> None:
+    previous: Final = await _budget(runtime, limit=400000000, seconds=2)
+    await _reserve(runtime.store, "old-window", "0.4")
+    successor: Final = await _successor(runtime.peer, previous)
+    with pytest.raises(BudgetExceeded):
+        await _reserve(runtime.peer, "before-cutover", "0.01")
+    assert (await _policy(runtime, successor.id)).accounting_version == 0
+    await _wait_for_window_end(runtime.store, previous.id)
+    await _reserve(runtime.peer, "new-window", "0.05")
+    await runtime.store.settle("old-window", "0.3", {})
+    old: Final = await _policy(runtime, previous.id)
+    new: Final = await _policy(runtime, successor.id)
+    assert old.spent_nanos == 300000000 and old.held_nanos == 0
+    assert new.spent_nanos == 0 and new.held_nanos == 50000000
+    with pytest.raises(BudgetExceeded):
+        await _reserve(runtime.store, "new-over-cap", "0.06")
+    await runtime.peer.settle("new-window", "0.04", {})
+    assert (await _policy(runtime, successor.id)).spent_nanos == 40000000
+    assert (await runtime.store.get_wallet("account"))["reserved"] == "0.000000000"
+
+
+@pytest.mark.asyncio
+async def test_successor_rechecks_expired_predecessor_after_waiting_for_wallet_lock(runtime: BudgetRuntime) -> None:
+    previous: Final = await _budget(runtime, seconds=0.3)
+    async with runtime.store.diagnostic_transaction() as connection:
+        await lock_budget_wallet(connection, "account")
+        pending: Final = asyncio.create_task(_successor(runtime.peer, previous))
+        await _wallet_waiter(connection)
+        await _wait_for_window_end(runtime.store, previous.id)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        await pending
+    assert await _policy(runtime, previous.id) == previous
+
+
+@pytest.mark.asyncio
+async def test_schema_upgrade_preserves_existing_policy_holds_and_allocation(runtime: BudgetRuntime) -> None:
+    previous: Final = await _budget(runtime)
+    await _reserve(runtime.store, "before-upgrade")
+    held: Final = await _policy(runtime, previous.id)
+    async with runtime.store.diagnostic_transaction() as connection:
+        await connection.execute("DROP TRIGGER retail_model_budget_policy_guard ON retail_model_budget_policies")
+        await connection.execute("ALTER TABLE retail_model_budget_policies DROP COLUMN predecessor_id")
+        await initialize_schema(connection)
+        await initialize_schema(connection)
+    assert await _policy(runtime, previous.id) == held
+    successor: Final = await _successor(runtime.peer, held)
+    await runtime.store.settle("before-upgrade", "0.3", {})
+    old: Final = await _policy(runtime, previous.id)
+    new: Final = await _policy(runtime, successor.id)
+    assert old.spent_nanos == 300000000 and old.held_nanos == 0
+    assert new.spent_nanos == 0 and new.held_nanos == 0 and new.accounting_version == 0

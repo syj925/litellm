@@ -20,7 +20,12 @@ from litellm.constants import UI_SESSION_TOKEN_TEAM_ID
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.retail import api, model_budgets
-from litellm.proxy.retail.budget_management import BudgetManagementStore, CreateModelBudget, UpdateModelBudget
+from litellm.proxy.retail.budget_management import (
+    BudgetManagementStore,
+    CreateModelBudget,
+    ScheduleModelBudget,
+    UpdateModelBudget,
+)
 from litellm.proxy.retail.control_plane_access import ControlPlaneActor
 from litellm.proxy.retail.models import BudgetExceeded
 from litellm.proxy.retail.store import WalletStore
@@ -168,6 +173,27 @@ def _identifier(result: Mapping[str, JsonValue]) -> UUID:
     value: Final = result["id"]
     assert isinstance(value, str)
     return UUID(value)
+
+
+def _successor_body(runtime: Runtime, *, enabled: bool = True) -> Mapping[str, JsonValue]:
+    return {
+        "expected_version": 1,
+        "ends_at": (runtime.ends_at + timedelta(days=1)).isoformat(),
+        "limit_usd": "2",
+        "enabled": enabled,
+    }
+
+
+async def _schedule(
+    runtime: Runtime, parent: Mapping[str, JsonValue], *, enabled: bool = True, key: str = "schedule"
+) -> Mapping[str, JsonValue]:
+    response: Final = await runtime.client.post(
+        ROOT + "/" + str(parent["id"]) + "/successor",
+        json=_successor_body(runtime, enabled=enabled),
+        headers={"X-Fixture-Actor": "admin", "Idempotency-Key": key},
+    )
+    assert response.status_code == 201, response.text
+    return _JSON.validate_python(response.json())
 
 
 @pytest.mark.asyncio
@@ -318,8 +344,14 @@ async def test_audit_failure_rolls_back_budget_creation_update_and_private_recei
         json={"enabled": False, "expected_version": 1},
         headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "fail-update"},
     )
-    assert failed_create.status_code == failed_update.status_code == 503
+    failed_schedule: Final = await runtime.client.post(
+        ROOT + "/" + str(created["id"]) + "/successor",
+        json=_successor_body(runtime),
+        headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "fail-schedule"},
+    )
+    assert failed_create.status_code == failed_update.status_code == failed_schedule.status_code == 503
     assert "fixture" not in failed_create.text and "fixture" not in failed_update.text
+    assert "fixture" not in failed_schedule.text
     async with runtime.store.diagnostic_transaction() as connection:
         current: Final = await (
             await connection.execute("SELECT config_version,enabled FROM retail_model_budget_policies")
@@ -451,7 +483,8 @@ async def test_patch_waiting_on_idempotency_lock_cannot_edit_a_window_after_it_e
 async def test_live_native_revocation_blocks_cached_admin_grant_including_idempotent_replay(
     runtime: Runtime, change: str
 ) -> None:
-    await _create(runtime)
+    parent: Final = await _create(runtime)
+    await _schedule(runtime, parent)
     async with await psycopg.AsyncConnection.connect(runtime.native_url) as connection:
         if change == "role":
             await connection.execute("UPDATE \"LiteLLM_UserTable\" SET user_role='internal_user' WHERE user_id='admin'")
@@ -465,6 +498,12 @@ async def test_live_native_revocation_blocks_cached_admin_grant_including_idempo
         ROOT, json=_body(runtime), headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "create"}
     )
     assert denied.status_code == 403 and "no-store" in denied.headers["Cache-Control"]
+    successor_replay: Final = await runtime.client.post(
+        ROOT + "/" + str(parent["id"]) + "/successor",
+        json=_successor_body(runtime),
+        headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "schedule"},
+    )
+    assert successor_replay.status_code == 403 and "no-store" in successor_replay.headers["Cache-Control"]
     page: Final = await runtime.client.get(ROOT, headers={"X-Fixture-Actor": "admin"})
     assert page.status_code == 403
 
@@ -489,7 +528,7 @@ async def test_ordinary_and_viewer_only_read_their_own_budget_and_reject_scope_i
 async def test_feature_rollback_closes_management_but_cannot_disable_existing_budget_enforcement(
     runtime: Runtime, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    await _create(runtime)
+    parent: Final = await _create(runtime)
     monkeypatch.setenv("RETAIL_MODEL_BUDGETS_ENABLED", "false")
     config: Final = await runtime.client.get("/retail/config")
     assert config.json()["model_budgets_enabled"] is False
@@ -497,7 +536,12 @@ async def test_feature_rollback_closes_management_but_cannot_disable_existing_bu
     create: Final = await runtime.client.post(
         ROOT, json=_body(runtime), headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "off"}
     )
-    assert page.status_code == create.status_code == 404
+    schedule: Final = await runtime.client.post(
+        ROOT + "/" + str(parent["id"]) + "/successor",
+        json=_successor_body(runtime),
+        headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "schedule-off"},
+    )
+    assert page.status_code == create.status_code == schedule.status_code == 404
     with pytest.raises(BudgetExceeded):
         await runtime.peer.reserve("owner", "too-large", "public-model", "2", {})
 
@@ -537,3 +581,246 @@ async def test_creation_rejects_past_or_excessive_windows_from_server_clock(runt
         headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "bad-window"},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled", (True, False))
+async def test_successor_starts_at_parent_end_with_zero_usage_and_private_linked_projection(
+    runtime: Runtime, enabled: bool
+) -> None:
+    parent: Final = await _create(runtime, enabled=enabled)
+    await runtime.store.reserve("owner", "held-old", "public-model", "0.25", {})
+    child: Final = await _schedule(runtime, parent, enabled=enabled)
+    assert (child["predecessor_id"], child["successor_id"], child["effective_from"], child["state"]) == (
+        parent["id"], None, parent["ends_at"], "scheduled"
+    )
+    assert (child["spent_usd"], child["held_usd"], child["accounting_version"], child["enabled"]) == (
+        "0.000000000", "0.000000000", 0, enabled
+    )
+    assert child["created_at"] == child["updated_at"] and child["created_at"] < child["effective_from"]
+    admin_page: Final = await runtime.client.get(ROOT + "?limit=1&offset=1", headers={"X-Fixture-Actor": "admin"})
+    assert admin_page.json()["items"][0]["successor_id"] == child["id"]
+    own: Final = await runtime.client.get("/retail/model-budgets", headers={"X-Fixture-Actor": "owner"})
+    rows: Final = own.json()["items"]
+    assert (own.status_code, len(rows), rows[0]["predecessor_id"], rows[1]["successor_id"]) == (
+        200, 2, parent["id"], child["id"]
+    )
+    assert not any(name in rows[0] for name in ("user_id", "created_by", "updated_by", "source"))
+    async with runtime.store.diagnostic_transaction() as connection:
+        event: Final = await (
+            await connection.execute("SELECT action,resource_id,changes FROM retail_operation_events "
+                                     "WHERE action='model_budget.scheduled'")
+        ).fetchone()
+    assert event is not None and event["resource_id"] == child["id"]
+    assert event["changes"]["predecessor_id"] == parent["id"]
+    assert datetime.fromisoformat(event["changes"]["start"]) == datetime.fromisoformat(str(parent["ends_at"]))
+
+
+@pytest.mark.asyncio
+async def test_concurrent_successor_retries_share_one_receipt_and_another_operation_cannot_add_a_second(
+    runtime: Runtime,
+) -> None:
+    parent: Final = await _create(runtime)
+    data: Final = ScheduleModelBudget.model_validate(_successor_body(runtime))
+    replies: Final = await asyncio.gather(
+        *(
+            BudgetManagementStore(store).schedule("owner", _identifier(parent), data, ADMIN, "retry-successor")
+            for store in (runtime.store, runtime.peer, runtime.store, runtime.peer)
+        )
+    )
+    assert all(reply == replies[0] for reply in replies)
+    changed_retry: Final = await runtime.client.post(
+        ROOT + "/" + str(parent["id"]) + "/successor",
+        json={**_successor_body(runtime), "limit_usd": "3"},
+        headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "retry-successor"},
+    )
+    assert changed_retry.status_code == 409
+    duplicate: Final = await runtime.client.post(
+        ROOT + "/" + str(parent["id"]) + "/successor",
+        json=_successor_body(runtime),
+        headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "second-child"},
+    )
+    assert duplicate.status_code == 409 and "no-store" in duplicate.headers["Cache-Control"]
+    async with runtime.store.diagnostic_transaction() as connection:
+        counts: Final = await (await connection.execute("""SELECT
+          (SELECT count(*) FROM retail_model_budget_policies) AS policies,
+          (SELECT count(*) FROM retail_operation_events) AS events,
+          (SELECT count(*) FROM retail_model_budget_management_receipts) AS receipts""")).fetchone()
+    assert counts == {"policies": 2, "events": 2, "receipts": 2}
+
+
+@pytest.mark.asyncio
+async def test_successor_rejects_stale_version_foreign_scope_and_advance_chaining(runtime: Runtime) -> None:
+    parent: Final = await _create(runtime)
+    root: Final = ROOT + "/" + str(parent["id"]) + "/successor"
+    stale: Final = await runtime.client.post(
+        root,
+        json={**_successor_body(runtime), "expected_version": 2},
+        headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "stale"},
+    )
+    foreign: Final = await runtime.client.post(
+        root.replace("owner", "other"),
+        json=_successor_body(runtime),
+        headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "foreign"},
+    )
+    assert stale.status_code == 409 and foreign.status_code == 404
+    child: Final = await _schedule(runtime, parent)
+    chain: Final = await runtime.client.post(
+        ROOT + "/" + str(child["id"]) + "/successor",
+        json={**_successor_body(runtime), "ends_at": (runtime.ends_at + timedelta(days=2)).isoformat()},
+        headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "chain"},
+    )
+    assert chain.status_code == 409
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("extra_days", (0, 367))
+async def test_successor_end_must_follow_derived_start_and_fit_one_window(
+    runtime: Runtime, extra_days: int
+) -> None:
+    parent: Final = await _create(runtime)
+    response: Final = await runtime.client.post(
+        ROOT + "/" + str(parent["id"]) + "/successor",
+        json={**_successor_body(runtime), "ends_at": (runtime.ends_at + timedelta(days=extra_days)).isoformat()},
+        headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "bad-successor-end"},
+    )
+    assert response.status_code == 422
+    async with runtime.store.diagnostic_transaction() as connection:
+        count: Final = await (await connection.execute("SELECT count(*) AS total FROM retail_model_budget_policies")).fetchone()
+    assert count == {"total": 1}
+
+
+@pytest.mark.asyncio
+async def test_successor_full_year_horizon_is_relative_to_its_start_not_creation_clock(runtime: Runtime) -> None:
+    parent: Final = await _create(runtime)
+    response: Final = await runtime.client.post(
+        ROOT + "/" + str(parent["id"]) + "/successor",
+        json={**_successor_body(runtime), "ends_at": (runtime.ends_at + timedelta(days=366)).isoformat()},
+        headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "full-year-successor"},
+    )
+    assert response.status_code == 201, response.text
+    assert datetime.fromisoformat(response.json()["ends_at"]) - datetime.fromisoformat(
+        response.json()["effective_from"]
+    ) == timedelta(days=366)
+
+
+@pytest.mark.asyncio
+async def test_scheduled_configuration_can_change_without_retiming_or_changing_parent_usage(runtime: Runtime) -> None:
+    parent: Final = await _create(runtime)
+    await runtime.store.reserve("owner", "old-reserve", "public-model", "0.25", {})
+    child: Final = await _schedule(runtime, parent)
+    changed: Final = await runtime.client.patch(
+        ROOT + "/" + str(child["id"]),
+        json={"limit_usd": "0.5", "enabled": False, "expected_version": 1},
+        headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "update-scheduled"},
+    )
+    assert changed.status_code == 200, changed.text
+    assert (changed.json()["state"], changed.json()["enabled"], changed.json()["predecessor_id"]) == (
+        "scheduled", False, parent["id"]
+    )
+    parent_change: Final = await runtime.client.patch(
+        ROOT + "/" + str(parent["id"]),
+        json={"limit_usd": "3", "expected_version": 1},
+        headers={"X-Fixture-Actor": "admin", "Idempotency-Key": "update-parent"},
+    )
+    assert parent_change.status_code == 200 and parent_change.json()["successor_id"] == child["id"]
+    assert parent_change.json()["held_usd"] == "0.250000000"
+    assert changed.json()["effective_from"] == child["effective_from"] and changed.json()["ends_at"] == child["ends_at"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ("owner", "viewer"))
+async def test_successor_management_requires_writable_native_admin(runtime: Runtime, role: str) -> None:
+    parent: Final = await _create(runtime)
+    denied: Final = await runtime.client.post(
+        ROOT + "/" + str(parent["id"]) + "/successor",
+        json=_successor_body(runtime),
+        headers={"X-Fixture-Actor": role, "Idempotency-Key": "not-admin-successor"},
+    )
+    assert denied.status_code == 403 and "no-store" in denied.headers["Cache-Control"]
+
+
+@pytest.mark.asyncio
+async def test_successor_replays_original_receipt_after_parent_expiry_but_rejects_new_operation(runtime: Runtime) -> None:
+    async with runtime.store.diagnostic_transaction() as connection:
+        clock: Final = await (await connection.execute("SELECT clock_timestamp() AS at")).fetchone()
+    assert clock is not None
+    end: Final = clock["at"] + timedelta(seconds=0.6)
+    parent: Final = await BudgetManagementStore(runtime.store).create(
+        "owner", CreateModelBudget(model="public-model", ends_at=end, limit_usd="1"), ADMIN, "short-parent"
+    )
+    data: Final = ScheduleModelBudget(expected_version=1, ends_at=runtime.ends_at, limit_usd="2")
+    child: Final = await BudgetManagementStore(runtime.store).schedule("owner", _identifier(parent), data, ADMIN, "next")
+    async with runtime.store.diagnostic_transaction() as connection:
+        await connection.execute(
+            "SELECT pg_sleep(GREATEST(0,EXTRACT(EPOCH FROM (%s::timestamptz-clock_timestamp())))+0.03)", (end,)
+        )
+    replay: Final = await BudgetManagementStore(runtime.peer).schedule("owner", _identifier(parent), data, ADMIN, "next")
+    assert replay == child and replay["state"] == "scheduled"
+    with pytest.raises(HTTPException) as expired:
+        await BudgetManagementStore(runtime.peer).schedule("owner", _identifier(parent), data, ADMIN, "new-next")
+    assert expired.value.status_code == 409
+    page: Final = await BudgetManagementStore(runtime.store).list("owner", OWN, admin=False)
+    assert tuple(row["state"] for row in _ITEMS.validate_python(page["items"])) == ("active", "expired")
+
+
+@pytest.mark.asyncio
+async def test_successor_waiting_on_idempotency_lock_cannot_backfill_after_parent_expiry(runtime: Runtime) -> None:
+    async with runtime.store.diagnostic_transaction() as connection:
+        clock: Final = await (await connection.execute("SELECT clock_timestamp() AS at")).fetchone()
+    assert clock is not None
+    end: Final = clock["at"] + timedelta(seconds=0.6)
+    parent: Final = await BudgetManagementStore(runtime.store).create(
+        "owner", CreateModelBudget(model="public-model", ends_at=end, limit_usd="1"), ADMIN, "short-parent"
+    )
+    async with runtime.store.diagnostic_transaction() as blocker:
+        await blocker.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("retail:operation:admin:late-successor",)
+        )
+        pending: Final = asyncio.create_task(
+            BudgetManagementStore(runtime.peer).schedule(
+                "owner",
+                _identifier(parent),
+                ScheduleModelBudget(expected_version=1, ends_at=runtime.ends_at, limit_usd="2"),
+                ADMIN,
+                "late-successor",
+            )
+        )
+        try:
+            for _ in range(100):
+                waiting: Final = await (
+                    await blocker.execute("""SELECT count(*) AS total FROM pg_locks
+                    WHERE locktype='advisory' AND NOT granted
+                    AND database=(SELECT oid FROM pg_database WHERE datname=current_database())""")
+                ).fetchone()
+                if waiting is not None and waiting["total"] > 0:
+                    break
+                await asyncio.sleep(0.002)
+            else:
+                pytest.fail("The successor never reached the held idempotency lock")
+            await blocker.execute(
+                "SELECT pg_sleep(GREATEST(0,EXTRACT(EPOCH FROM (%s::timestamptz-clock_timestamp())))+0.03)", (end,)
+            )
+        except BaseException:
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
+            raise
+    with pytest.raises(HTTPException) as expired:
+        await pending
+    assert expired.value.status_code == 409
+    async with runtime.store.diagnostic_transaction() as connection:
+        counts: Final = await (await connection.execute("""SELECT
+          (SELECT count(*) FROM retail_model_budget_policies) AS policies,
+          (SELECT count(*) FROM retail_operation_events) AS events,
+          (SELECT count(*) FROM retail_model_budget_management_receipts) AS receipts""")).fetchone()
+    assert counts == {"policies": 1, "events": 1, "receipts": 1}
+
+
+@pytest.mark.asyncio
+async def test_successor_requires_parent_public_model_to_remain_configured(runtime: Runtime) -> None:
+    parent: Final = await _create(runtime)
+    with pytest.raises(HTTPException) as missing:
+        await BudgetManagementStore(runtime.store, models=tuple).schedule(
+            "owner", _identifier(parent), ScheduleModelBudget.model_validate(_successor_body(runtime)), ADMIN, "removed"
+        )
+    assert missing.value.status_code == 422

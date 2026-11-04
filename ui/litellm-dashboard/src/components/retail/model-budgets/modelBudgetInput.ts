@@ -23,19 +23,36 @@ export function isModelBudgetAmount(value: string): boolean {
 }
 
 type BudgetEnd = { ok: true; ends_at: string } | { ok: false; error: string };
-export function modelBudgetEnd(value: string, now: number): BudgetEnd {
+function fixedWindowEnd(value: string, start: number, successor: boolean): BudgetEnd {
   const invalid = { ok: false as const, error: "Enter a valid end date and time in Beijing time." };
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return invalid;
   const date = new Date(`${value}:00+08:00`);
   if (Number.isNaN(date.getTime())) return invalid;
   if (beijingTimeInput(date.toISOString()) !== value) return invalid;
-  const duration = date.getTime() - now;
+  const duration = date.getTime() - start;
   if (duration <= 0)
     return {
       ok: false,
-      error: "Choose an end time in the future. The server sets the start when the budget is created.",
+      error: successor
+        ? "Choose an end time after the next window starts."
+        : "Choose an end time in the future. The server sets the start when the budget is created.",
     };
   if (duration > 366 * 24 * 60 * 60 * 1000)
-    return { ok: false, error: "Choose an end time no more than 366 days ahead." };
+    return {
+      ok: false,
+      error: successor
+        ? "Choose an end time no more than 366 days after the next window starts."
+        : "Choose an end time no more than 366 days ahead.",
+    };
   return { ok: true, ends_at: date.toISOString() };
+}
+
+export function modelBudgetEnd(value: string, now: number): BudgetEnd {
+  return fixedWindowEnd(value, now, false);
+}
+
+export function modelBudgetSuccessorEnd(value: string, startsAt: string): BudgetEnd {
+  const start = Date.parse(startsAt);
+  if (!Number.isFinite(start)) return { ok: false, error: "The next window start is unavailable. Reload budgets." };
+  return fixedWindowEnd(value, start, true);
 }

@@ -103,6 +103,25 @@ class UpdateModelBudget(BaseModel):
         return self
 
 
+class ScheduleModelBudget(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    expected_version: StrictInt = Field(ge=1, le=9_223_372_036_854_775_806)
+    ends_at: AwareDatetime
+    limit_usd: str = Field(min_length=1, max_length=30)
+    enabled: StrictBool = True
+
+    @field_validator("limit_usd")
+    @classmethod
+    def positive_limit(cls, value: str) -> str:
+        return budget_amount(value)
+
+    @field_validator("ends_at")
+    @classmethod
+    def utc_end(cls, value: datetime) -> datetime:
+        return value.astimezone(timezone.utc)
+
+
 class ModelBudgetView(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -119,7 +138,9 @@ class ModelBudgetView(BaseModel):
     config_version: int
     accounting_version: int
     accounted_at: datetime | None
-    state: Literal["active", "disabled", "expired"]
+    predecessor_id: UUID | None
+    successor_id: UUID | None
+    state: Literal["scheduled", "active", "disabled", "expired"]
 
 
 class AdminModelBudgetView(ModelBudgetView):
@@ -133,6 +154,7 @@ class AdminModelBudgetView(ModelBudgetView):
 
 class _Policy(BudgetPolicyRow):
     observed_at: datetime
+    successor_id: UUID | None = None
 
 
 class _Count(BaseModel):
@@ -151,10 +173,22 @@ class _Receipt(BaseModel):
 
 
 _POLICY_COLUMNS: Final = "p.*,clock_timestamp() AS observed_at"
+_POLICY_SELECT_COLUMNS: Final = (
+    _POLICY_COLUMNS
+    + ",(SELECT c.id FROM retail_model_budget_policies c WHERE c.predecessor_id=p.id AND c.user_id=p.user_id) AS successor_id"
+)
 
 
 def budget_view(row: _Policy, *, admin: bool) -> Mapping[str, JsonValue]:
-    state: Final = "expired" if row.ends_at <= row.observed_at else "active" if row.enabled else "disabled"
+    state: Final = (
+        "expired"
+        if row.ends_at <= row.observed_at
+        else "scheduled"
+        if row.effective_from > row.observed_at
+        else "active"
+        if row.enabled
+        else "disabled"
+    )
     common: Final = ModelBudgetView(
         id=row.id,
         model=row.model,
@@ -169,6 +203,8 @@ def budget_view(row: _Policy, *, admin: bool) -> Mapping[str, JsonValue]:
         config_version=row.config_version,
         accounting_version=row.accounting_version,
         accounted_at=row.accounted_at,
+        predecessor_id=row.predecessor_id,
+        successor_id=row.successor_id,
         state=state,
     )
     if not admin:
@@ -273,7 +309,7 @@ class BudgetManagementStore:
             )
             rows: Final = await _many(
                 connection,
-                f"SELECT {_POLICY_COLUMNS} FROM retail_model_budget_policies p "
+                f"SELECT {_POLICY_SELECT_COLUMNS} FROM retail_model_budget_policies p "
                 "WHERE user_id=%s AND model ILIKE %s ORDER BY effective_from DESC,id "
                 "LIMIT %s OFFSET %s",
                 (user_id, pattern, limit, offset),
@@ -425,7 +461,8 @@ class BudgetManagementStore:
             await lock_budget_wallet(connection, user_id)
             previous: Final = await _one(
                 connection,
-                f"SELECT {_POLICY_COLUMNS} FROM retail_model_budget_policies p WHERE id=%s AND user_id=%s FOR UPDATE",
+                f"SELECT {_POLICY_SELECT_COLUMNS} FROM retail_model_budget_policies p "
+                "WHERE id=%s AND user_id=%s FOR UPDATE OF p",
                 (budget_id, user_id),
                 _Policy,
             )
@@ -458,4 +495,100 @@ class BudgetManagementStore:
             if changed is None:
                 raise HTTPException(409, "The budget changed. Refresh before submitting again")
             changes: Final = {name: value for name, value in payload.items() if name in {"limit_usd", "enabled"}}
-            return await self._event(connection, actor, key, action, digest, changed, previous.config_version, changes)
+            return await self._event(
+                connection,
+                actor,
+                key,
+                action,
+                digest,
+                changed.model_copy(update={"successor_id": previous.successor_id}),
+                previous.config_version,
+                changes,
+            )
+
+    async def schedule(
+        self,
+        user_id: str,
+        budget_id: UUID,
+        data: ScheduleModelBudget,
+        actor: ControlPlaneActor,
+        key: str,
+    ) -> Mapping[str, JsonValue]:
+        require_admin(actor)
+        validate_user_id(user_id)
+        action: Final = "model_budget.scheduled"
+        digest: Final = operation_digest(
+            action, {"user_id": user_id, "id": str(budget_id), **data.model_dump(mode="json")}
+        )
+        try:
+            async with self._store.diagnostic_transaction() as connection:
+                await connection.execute("SET LOCAL statement_timeout='3000ms'")
+                await connection.execute("SET LOCAL lock_timeout='1000ms'")
+                await lock_budget_wallet(connection, user_id)
+                previous: Final = await _one(
+                    connection,
+                    f"SELECT {_POLICY_SELECT_COLUMNS} FROM retail_model_budget_policies p "
+                    "WHERE id=%s AND user_id=%s FOR UPDATE OF p",
+                    (budget_id, user_id),
+                    _Policy,
+                )
+                if previous is None:
+                    raise HTTPException(404, "The requested budget is unavailable")
+                replay: Final = await self._replay(connection, actor, key, action, digest)
+                if replay is not None:
+                    return replay
+                clock: Final = await _one(connection, "SELECT clock_timestamp() AS at", (), _Clock)
+                if clock is None:
+                    raise HTTPException(503, "The budget clock is unavailable")
+                if not previous.effective_from <= clock.at < previous.ends_at:
+                    raise HTTPException(409, "Only a current budget window can have a successor scheduled")
+                if previous.config_version != data.expected_version:
+                    raise HTTPException(409, "The budget changed. Refresh before submitting again")
+                if previous.successor_id is not None:
+                    raise HTTPException(409, "This budget window already has a successor")
+                if previous.model not in self._models() or not exact_model_name(previous.model):
+                    raise HTTPException(422, "Select one current configured public model")
+                if not previous.ends_at < data.ends_at <= previous.ends_at + timedelta(days=366):
+                    raise HTTPException(422, "The successor must end after its start and within 366 days")
+                policy: Final = await _one(
+                    connection,
+                    "INSERT INTO retail_model_budget_policies AS p "
+                    "(id,user_id,model,predecessor_id,ends_at,limit_nanos,enabled,created_by,updated_by) "
+                    f"VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING {_POLICY_COLUMNS}",
+                    (
+                        uuid4(),
+                        user_id,
+                        previous.model,
+                        previous.id,
+                        data.ends_at,
+                        amount_to_nanos(data.limit_usd),
+                        data.enabled,
+                        actor.user_id,
+                        actor.user_id,
+                    ),
+                    _Policy,
+                )
+                if policy is None:
+                    raise HTTPException(503, "The successor budget could not be scheduled")
+                return await self._event(
+                    connection,
+                    actor,
+                    key,
+                    action,
+                    digest,
+                    policy,
+                    None,
+                    {
+                        "user_id": user_id,
+                        "model": policy.model,
+                        "predecessor_id": str(previous.id),
+                        "limit_usd": data.limit_usd,
+                        "enabled": policy.enabled,
+                        "start": policy.effective_from.isoformat(),
+                        "end": policy.ends_at.isoformat(),
+                    },
+                )
+        except (psycopg.errors.ExclusionViolation, psycopg.errors.UniqueViolation) as exc:
+            raise HTTPException(409, "A successor or overlapping budget window already exists") from exc
+        except psycopg.errors.CheckViolation as exc:
+            raise HTTPException(409, "The budget window is no longer eligible for this successor") from exc

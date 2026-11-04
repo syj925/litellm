@@ -5,6 +5,7 @@ import {
   modelBudgetBrowseLimit,
   modelBudgetEnd,
   modelBudgetListParsers,
+  modelBudgetSuccessorEnd,
 } from "./modelBudgetInput";
 
 describe("model budget money", () => {
@@ -25,6 +26,37 @@ describe("model budget money", () => {
     "1 ",
     "9".repeat(1000),
   ])("rejects invalid or out-of-range USD amounts: %s", (value) => expect(isModelBudgetAmount(value)).toBe(false));
+});
+
+describe("successor budget end time", () => {
+  const start = "2026-12-04T00:00:00.123Z";
+  it("uses the exact predecessor end instead of the current time", () => {
+    expect(modelBudgetSuccessorEnd("2026-12-04T08:01", start)).toEqual({
+      ok: true,
+      ends_at: "2026-12-04T00:01:00.000Z",
+    });
+    expect(modelBudgetSuccessorEnd("2026-12-04T08:00", start)).toEqual({
+      ok: false,
+      error: "Choose an end time after the next window starts.",
+    });
+  });
+  it("measures the 366-day limit from the scheduled start", () => {
+    const boundary = Date.parse(start) + 366 * 24 * 60 * 60 * 1000;
+    expect(modelBudgetSuccessorEnd(beijingTimeInput(new Date(boundary).toISOString()), start).ok).toBe(true);
+    expect(modelBudgetSuccessorEnd(beijingTimeInput(new Date(boundary + 60_000).toISOString()), start)).toEqual({
+      ok: false,
+      error: "Choose an end time no more than 366 days after the next window starts.",
+    });
+  });
+  it.each(["", "2026-02-30T08:00", "2026-13-01T08:00"])("rejects invalid Beijing dates: %s", (value) => {
+    expect(modelBudgetSuccessorEnd(value, start).ok).toBe(false);
+  });
+  it("requires a valid server start before accepting the next end", () => {
+    expect(modelBudgetSuccessorEnd("2026-12-05T08:00", "unknown")).toEqual({
+      ok: false,
+      error: "The next window start is unavailable. Reload budgets.",
+    });
+  });
 });
 
 describe("model budget end time", () => {
