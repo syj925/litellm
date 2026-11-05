@@ -20,6 +20,7 @@ from .store import _one
 NativeAuditAction: TypeAlias = Literal[
     "native_key.rotated", "native_password.changed", "native_session.revoked",
     "native_identity.configured", "native_identity.signed_in",
+    "native_api_identity.configured",
 ]
 NativeAuditFailure: TypeAlias = Literal["bridge_unavailable", "integrity_conflict"]
 

@@ -46,6 +46,7 @@ _ALLOWED_ACTIONS: Final = frozenset(
         "native_session.revoked",
         "native_identity.configured",
         "native_identity.signed_in",
+        "native_api_identity.configured",
     )
 )
 _ALLOWED_FIELDS: Final = frozenset(

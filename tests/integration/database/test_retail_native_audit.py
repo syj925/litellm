@@ -412,18 +412,26 @@ async def test_native_slot_waiting_is_part_of_total_deadline(runtime: Runtime) -
 
 
 @pytest.mark.asyncio
-async def test_three_action_native_outbox_upgrades_in_place_and_bridges_all_five_kinds(runtime: Runtime) -> None:
-    legacy: Final[tuple[NativeAuditAction, ...]] = (
+@pytest.mark.parametrize("legacy", (
+    ("native_key.rotated", "native_password.changed", "native_session.revoked"),
+    ("native_key.rotated", "native_password.changed", "native_session.revoked",
+     "native_identity.configured", "native_identity.signed_in"),
+))
+async def test_native_outbox_upgrades_in_place_and_bridges_all_kinds(
+    runtime: Runtime, legacy: tuple[NativeAuditAction, ...],
+) -> None:
+    supported: Final[tuple[NativeAuditAction, ...]] = (
         "native_key.rotated", "native_password.changed", "native_session.revoked",
+        "native_identity.configured", "native_identity.signed_in", "native_api_identity.configured",
     )
-    added: Final[tuple[NativeAuditAction, ...]] = ("native_identity.configured", "native_identity.signed_in")
+    added: Final = tuple(action for action in supported if action not in legacy)
     async with runtime.native.tx(timeout=timedelta(seconds=5)) as writer:
         await writer.execute_raw(
-            "ALTER TABLE retail_native_audit_outbox DROP CONSTRAINT retail_native_audit_outbox_action_v2_check",
+            "ALTER TABLE retail_native_audit_outbox DROP CONSTRAINT retail_native_audit_outbox_action_v3_check",
         )
         await writer.execute_raw(
-            """ALTER TABLE retail_native_audit_outbox ADD CONSTRAINT retail_native_audit_outbox_action_check
-               CHECK(action IN ('native_key.rotated','native_password.changed','native_session.revoked'))""",
+            sql.SQL("ALTER TABLE retail_native_audit_outbox ADD CONSTRAINT retail_native_audit_outbox_action_check "
+                    "CHECK(action IN ({}))").format(sql.SQL(",").join(tuple(sql.Literal(action) for action in legacy))).as_string(),
         )
         for action in legacy:
             await append_native_audit(writer, actor_id="migration-owner", action=action)

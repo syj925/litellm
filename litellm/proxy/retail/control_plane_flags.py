@@ -17,6 +17,15 @@ def oidc_sso_enabled() -> bool:
     )
 
 
+def api_jwt_enabled() -> bool:
+    return (
+        native_audit_enabled()
+        and os.environ.get("RETAIL_REQUIRE_COORDINATION_REDIS", "false").lower() == "true"
+        and os.environ.get("RETAIL_BILLING_ENABLED", "false").lower() == "true"
+        and os.environ.get("RETAIL_API_JWT_ENABLED", "false").lower() == "true"
+    )
+
+
 def organizations_enabled() -> bool:
     return operation_audit_enabled() and os.environ.get("RETAIL_ORGANIZATIONS_ENABLED", "false").lower() == "true"
 

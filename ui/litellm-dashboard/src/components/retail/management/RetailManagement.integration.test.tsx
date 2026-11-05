@@ -254,6 +254,7 @@ const addedAuditActions = [
   ["native_session.revoked", "Account sessions revoked"],
   ["native_identity.configured", "Organization sign-in bindings configured"],
   ["native_identity.signed_in", "Organization sign-in completed"],
+  ["native_api_identity.configured", "API access-token bindings configured"],
 ] as const;
 
 it.each(addedAuditActions)("filters and labels the controlled admin audit action %s", async (action, label) => {
@@ -319,6 +320,8 @@ it.each([
   { role: "Admin", viewer: true, action: "native_identity.configured" },
   { role: "Internal User", viewer: false, action: "native_identity.signed_in" },
   { role: "Admin", viewer: true, action: "native_identity.signed_in" },
+  { role: "Internal User", viewer: false, action: "native_api_identity.configured" },
+  { role: "Admin", viewer: true, action: "native_api_identity.configured" },
 ])(
   "strips $action and limits audit actions to organizations for $role (viewer=$viewer)",
   async ({ role, viewer, action }) => {

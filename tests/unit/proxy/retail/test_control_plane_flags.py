@@ -1,6 +1,7 @@
 import pytest
 
 from litellm.proxy.retail.control_plane_flags import (
+    api_jwt_enabled,
     audit_delivery_enabled,
     model_budgets_enabled,
     monthly_budgets_enabled,
@@ -140,3 +141,30 @@ def test_oidc_remains_opt_in_with_all_authority_dependencies_enabled(monkeypatch
         monkeypatch.setenv(name, "true")
     monkeypatch.delenv("RETAIL_OIDC_SSO_ENABLED", raising=False)
     assert not oidc_sso_enabled()
+
+
+@pytest.mark.parametrize("disabled", (
+    "RETAIL_OPERATION_AUDIT_ENABLED", "RETAIL_NATIVE_AUDIT_ENABLED", "RETAIL_REQUIRE_COORDINATION_REDIS",
+    "RETAIL_BILLING_ENABLED", "RETAIL_API_JWT_ENABLED",
+))
+def test_api_jwt_requires_audit_coordination_billing_and_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch, disabled: str,
+) -> None:
+    for name in (
+        "RETAIL_OPERATION_AUDIT_ENABLED", "RETAIL_NATIVE_AUDIT_ENABLED", "RETAIL_REQUIRE_COORDINATION_REDIS",
+        "RETAIL_BILLING_ENABLED", "RETAIL_API_JWT_ENABLED",
+    ):
+        monkeypatch.setenv(name, "true")
+    assert api_jwt_enabled()
+    monkeypatch.setenv(disabled, "false")
+    assert not api_jwt_enabled()
+
+
+def test_api_jwt_remains_off_without_explicit_feature_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "RETAIL_OPERATION_AUDIT_ENABLED", "RETAIL_NATIVE_AUDIT_ENABLED", "RETAIL_REQUIRE_COORDINATION_REDIS",
+        "RETAIL_BILLING_ENABLED",
+    ):
+        monkeypatch.setenv(name, "true")
+    monkeypatch.delenv("RETAIL_API_JWT_ENABLED", raising=False)
+    assert not api_jwt_enabled()

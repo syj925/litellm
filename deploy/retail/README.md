@@ -24,6 +24,10 @@
 
 [自有 OIDC 控制台登录](oidc-sign-in.md) 说明固定 issuer、显式已有账号绑定、同站多 worker、管理会话撤销及默认关闭的接入方式
 
+[外部 API access JWT 映射](api-access-jwt.md) 说明固定签发方、显式普通 Key 绑定、短期 access token、配置代际撤销、原计费权限复用和默认关闭边界
+
+[API JWT 验收记录](validation/r12-2026-11-05.md) 保存协议、原生权限、双 worker 账本、热公钥故障、脱敏及回归检查的本地证据
+
 [OIDC 控制台验收记录](validation/r11-2026-11-04.md) 保存协议、原生事务、跨 worker、恢复不复活、日志脱敏及真实浏览器回调的本地证据
 
 [自然月预算验收记录](validation/r10-2026-11-04.md) 保存完整月续窗、停机恢复、跨 Key/资源池共享额度、实际三角色页面和有限数据库对照的本地证据

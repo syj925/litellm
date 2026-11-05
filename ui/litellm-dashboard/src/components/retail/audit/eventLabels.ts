@@ -30,6 +30,7 @@ export const eventLabels: Record<string, string> = {
   "native_session.revoked": "Account sessions revoked",
   "native_identity.configured": "Organization sign-in bindings configured",
   "native_identity.signed_in": "Organization sign-in completed",
+  "native_api_identity.configured": "API access-token bindings configured",
   "audit_delivery.updated": "Audit delivery configuration updated",
   "audit_delivery.retried": "Audit delivery retried",
   "audit_delivery.discarded": "Outstanding audit deliveries discarded",

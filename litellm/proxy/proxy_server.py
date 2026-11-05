@@ -20824,6 +20824,10 @@ if os.getenv("RETAIL_PORTAL_ENABLED", "false").lower() == "true":
         from litellm.proxy.retail.coordination_guard import CoordinationGuardMiddleware
 
         app.add_middleware(CoordinationGuardMiddleware)
+from litellm.proxy.retail.api_jwt_middleware import ApiJwtCredentialMiddleware
+
+# The credential namespace remains reserved even when the optional portal is off.
+app.add_middleware(ApiJwtCredentialMiddleware)
 # Added last on purpose - last-added is outermost, and the client-visible URL
 # prefix must be resolved into scope["root_path"] before any inner middleware
 # or the router inspects the path. Only added when SERVER_ROOT_PATHS is
