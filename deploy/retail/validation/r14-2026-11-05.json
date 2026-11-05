@@ -1,0 +1,478 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-05",
+  "scope": "ID-SCIM fixed-namespace Groups and membership access conditions",
+  "baseline_commit": "617165b5f24916956fb4d1ae6b0d82415880310f",
+  "implementation_commit": "92ad481fb578195dd5ae29af9b7ac78e0dd964d3",
+  "status": "validated_scoped_locally",
+  "production_changed": false,
+  "real_idp_configured": false,
+  "real_account_bindings_created": 0,
+  "paid_model_calls": 0,
+  "test_counts": {
+    "backend_unit": 411,
+    "postgres": 173,
+    "frontend": 71,
+    "total_unique": 655
+  },
+  "counting_note": "Only the final deduplicated mapped suites are counted; development retries, mutation executions and the nine actual native HTTP groups are separate evidence",
+  "test_groups": [
+    {
+      "suite": "unit",
+      "passed": 411,
+      "files": [
+        "tests/unit/proxy/retail/test_scim_config.py",
+        "tests/unit/proxy/retail/test_scim_groups_protocol.py",
+        "tests/unit/proxy/retail/test_scim_http.py",
+        "tests/unit/proxy/retail/test_scim_identity.py",
+        "tests/unit/proxy/retail/test_scim_identity_native.py",
+        "tests/unit/proxy/retail/test_scim_middleware.py",
+        "tests/unit/proxy/retail/test_scim_protocol.py",
+        "tests/unit/proxy/retail/test_scim_service.py",
+        "tests/unit/proxy/retail/test_scim_store.py",
+        "tests/unit/proxy/retail/test_groups_store.py",
+        "tests/unit/proxy/retail/test_native_audit_store.py",
+        "tests/unit/proxy/retail/test_operation_events.py",
+        "tests/unit/proxy/retail/test_key_rotation.py"
+      ],
+      "exit_code": 0
+    },
+    {
+      "suite": "postgres",
+      "passed": 173,
+      "files": [
+        "tests/integration/database/test_retail_scim_store.py",
+        "tests/integration/database/test_retail_groups_store.py",
+        "tests/integration/database/test_retail_scim_identity.py",
+        "tests/integration/database/test_retail_native_audit.py",
+        "tests/integration/database/test_retail_oidc_sessions.py",
+        "tests/integration/database/test_retail_native_session_transactions.py",
+        "tests/integration/database/test_retail_api_jwt_store.py"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "source_changed_during_final_checks": false,
+  "tests_changed_during_final_checks": false,
+  "native_http_observations": [
+    {
+      "case": "Groups discovery/create/filter/search/count-zero and member validation work without creating Keys, wallets or native grants",
+      "passed": true
+    },
+    {
+      "case": "Allowed membership is only an additional condition; Key/OIDC/APIJWT retain native model limits and wallet accounting with stale owner caches on two workers",
+      "passed": true
+    },
+    {
+      "case": "GET-to-PUT ignores readonly identity without changes; invalid later PATCH and stale ETag leave all membership and credentials unchanged",
+      "passed": true
+    },
+    {
+      "case": "Member removal races issuance, blocks old Key/session/JWT on both workers and never revives them after re-add; already-admitted SSE still completes and settles",
+      "passed": true,
+      "raced_key_requests": 4,
+      "issued_before_removal": 1
+    },
+    {
+      "case": "Remove-and-add in one atomic PATCH revokes proofs; group DELETE tombstones membership and recreation cannot reactivate any old credential or move funds",
+      "passed": true
+    },
+    {
+      "case": "Persisted access-list generation changes invalidate old proofs permanently, including after weakening or restoring group requirements; fresh issuance follows the new rule",
+      "passed": true
+    },
+    {
+      "case": "User deletion removes live group membership and advances affected group ETag while preserving retained-edge tombstones; deleted user cannot be added back",
+      "passed": true
+    },
+    {
+      "case": "Removing SCIM flag/config on both workers stops sync while retained membership/credential authority still denies revoked managed keys",
+      "passed": true
+    },
+    {
+      "case": "Group/user private directory fields and raw credentials are absent from upstream, both output streams and four diagnostic tables",
+      "passed": true
+    }
+  ],
+  "native_workers": 2,
+  "source_rows_copied": 0,
+  "sampled_mutations": {
+    "protocol_config_discovery": 23,
+    "store_and_real_lock_order": 12,
+    "identity": 10,
+    "http_dispatch": 5,
+    "total": 50,
+    "killed": 50,
+    "not_full_mutation_space": true,
+    "note": "HTTP samples span snapshots before and after import sorting; all final mapped HTTP cases passed in the frozen 411 suite"
+  },
+  "python_gates": {
+    "baseline": "617165b5f24916956fb4d1ae6b0d82415880310f",
+    "file_count": 20,
+    "checks": 60,
+    "passed": true,
+    "semantic_pyright_run": false,
+    "full_repository_check": false
+  },
+  "frontend_validation": {
+    "passed": true,
+    "test_count": 71,
+    "failed": 0,
+    "openapi_generation_byte_equal_to_baseline": true,
+    "schema_sha256": "2ca4997d901bf5570779e57686d54561e16691fada96bf633a483fb881df244c",
+    "static_pages": 75,
+    "full_ui_suite": false,
+    "baseline": "617165b5"
+  },
+  "frontend_steps": {
+    "tests": {
+      "kind": "tests",
+      "exit_code": 0,
+      "elapsed_seconds": 13.91,
+      "command": [
+        "node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "src/components/retail/management/RetailManagement.integration.test.tsx",
+        "src/components/retail/audit/AuditOrganizationSearch.integration.test.tsx",
+        "src/components/retail/management/time.test.ts",
+        "--maxWorkers=2",
+        "--reporter=json",
+        "--outputFile=C:\\Users\\26933\\Documents\\Codex\\2026-11-02\\sub2api-4-thread-01a19a80-3f14-77f0-2\\work\\r14-ui-tests-results.json"
+      ]
+    },
+    "typescript": {
+      "kind": "typescript",
+      "exit_code": 0,
+      "elapsed_seconds": 51.85,
+      "command": [
+        "npm.cmd",
+        "run",
+        "typecheck"
+      ]
+    },
+    "build": {
+      "kind": "build",
+      "exit_code": 0,
+      "elapsed_seconds": 118.86,
+      "command": [
+        "npm.cmd",
+        "run",
+        "build",
+        "--",
+        "--webpack"
+      ]
+    },
+    "openapi": {
+      "kind": "openapi",
+      "exit_code": 0,
+      "elapsed_seconds": 42.68,
+      "command": [
+        "npm.cmd",
+        "run",
+        "gen:api"
+      ]
+    },
+    "lint": {
+      "kind": "lint",
+      "exit_code": 0,
+      "elapsed_seconds": 10.24,
+      "command": [
+        "node",
+        "node_modules/eslint/bin/eslint.js",
+        "src/components/retail/audit/eventLabels.ts",
+        "src/components/retail/management/RetailManagement.integration.test.tsx"
+      ]
+    },
+    "format-checkout": {
+      "kind": "format-checkout",
+      "exit_code": 0,
+      "elapsed_seconds": 0.42,
+      "command": [
+        "node",
+        "node_modules/prettier/bin/prettier.cjs",
+        "--check",
+        "--end-of-line",
+        "auto",
+        "src/components/retail/audit/eventLabels.ts",
+        "src/components/retail/management/RetailManagement.integration.test.tsx"
+      ]
+    }
+  },
+  "postgres_scope": [
+    "Group CRUD/membership and existing User/proof retention",
+    "R13 schema migration",
+    "legacy 3/5/6/10 action sets upgraded to 13 actions without changing existing rows",
+    "issuance versus removal/configuration deterministic lock races",
+    "1000-member page budget and count/page snapshot",
+    "OIDC/APIJWT/session and ordinary key rotation regressions"
+  ],
+  "local_activation": {
+    "local_active": true,
+    "production_changed": false,
+    "real_idp_configured": false,
+    "real_account_bindings_created": 0,
+    "paid_model_calls": 0,
+    "capacity_certification": false,
+    "existing_fingerprint_table_count": 26,
+    "existing_fingerprints_unchanged": true,
+    "scim_enabled": false,
+    "api_jwt_enabled": false,
+    "identity_authority_tables_created": false,
+    "oidc_status": {
+      "enabled": false,
+      "available": false,
+      "label": "Organization sign in"
+    },
+    "two_workers": true,
+    "native_audit_enabled": true,
+    "monthly_budgets_enabled": true,
+    "managed_secrets_enabled": false,
+    "audit_paused": true,
+    "source_overlays_match": true,
+    "overlay_mount_count": 50,
+    "overlay_file_count": 1094,
+    "ui_overlay_files": 911,
+    "runtime_restart_verified": true,
+    "compose_source_only_recreate_fixed": true
+  },
+  "local_native_audit_schema": {
+    "passed": true,
+    "action_constraints": [
+      "retail_native_audit_outbox_action_v5_check"
+    ]
+  },
+  "local_http_smoke": {
+    "passed": true,
+    "checks": [
+      {
+        "method": "GET",
+        "path": "/health/readiness",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/ui/welcome/",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/ui/login/",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/auth/oidc/status",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/runtime",
+        "status": 401,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/runtime",
+        "status": 200,
+        "authorization": "admin"
+      },
+      {
+        "method": "GET",
+        "path": "/qa/runtime",
+        "status": 404,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/wallets",
+        "status": 401,
+        "authorization": "synthetic-reserved"
+      },
+      {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "status": 503,
+        "authorization": "synthetic-reserved"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/Users",
+        "status": 401,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/Groups",
+        "status": 401,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/Groups",
+        "status": 401,
+        "authorization": "admin"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/Groups",
+        "status": 503,
+        "authorization": "synthetic-reserved"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/ServiceProviderConfig",
+        "status": 401,
+        "authorization": "admin"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/Users",
+        "status": 503,
+        "authorization": "synthetic-reserved"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/wallets",
+        "status": 401,
+        "authorization": "synthetic-reserved"
+      }
+    ],
+    "real_account_changes": false,
+    "paid_model_calls": 0,
+    "secret_values_recorded": false
+  },
+  "qa_cleanup": {
+    "removed_owned_containers": 3,
+    "removed_owned_network": true,
+    "main_runtime_untouched": true,
+    "evidence_retained": true
+  },
+  "secret_review": {
+    "source_files": 32,
+    "actual_runtime_secret_matches": 0,
+    "passed": true,
+    "values_recorded": false
+  },
+  "source_verification": {
+    "qa_snapshot_files_verified": 32,
+    "main_matches_qa_normalized_source_files": 24,
+    "qa_file_sha256": {
+      "litellm/proxy/retail/groups_store.py": "5c88bb8f1df9df86e521c477b2e56343b98d1c9fced34caa8771eb8854ddd9ed",
+      "litellm/proxy/retail/native_audit_schema.sql": "d826701a223c805f72a66724eafaa1113ee12113e599a11f09c9c887d7a82cb4",
+      "litellm/proxy/retail/native_audit_store.py": "cb0b914806d6137c0d7ee062f211cbe212ec045f7b0dccb7ef95f249147c4aae",
+      "litellm/proxy/retail/operation_events.py": "f92385adf07baeebde96f0a86593368a67717f56f0ed677890922090f63ecf81",
+      "litellm/proxy/retail/scim_config.py": "b912ed6768b76fba8a432a95f423045164d9b8e2767778d8132bd2725af27f68",
+      "litellm/proxy/retail/scim_groups_protocol.py": "0926ad8bc5213d7a2a535e0c93e33848d96ad4b2e560d5bf7dee7a6c0767b97c",
+      "litellm/proxy/retail/scim_http.py": "cda4e9d3c888a13ba955fba3de1419980a95d0d09d49f64ac37644256295433f",
+      "litellm/proxy/retail/scim_identity.py": "045c02ba865157da769c24329b7079e4618e0af7532d3b74b37b6962677bf934",
+      "litellm/proxy/retail/scim_protocol.py": "4ec6174acabbbb0f52aed576f3e151eb8671bda290494faddf13ae3c21aa6f38",
+      "litellm/proxy/retail/scim_schema.sql": "d2fbbb9e65af2d1df4eb05166cf2b1be76c11ac52287fa034ee857df479bff73",
+      "litellm/proxy/retail/scim_service.py": "26ca877e0624979c86a906d56c4e879ff7eba01128c2fd3fd93e2f13a30afb11",
+      "litellm/proxy/retail/scim_store.py": "1fda211e99d2ac411c1f644f74aacbb68997de4114ee6937b1220389d0785ea7",
+      "tests/unit/proxy/retail/test_scim_config.py": "e47b1ddf81e6eaf67a2dd8b91944f3247b6cc47578c879f6b3912a68fc877692",
+      "tests/unit/proxy/retail/test_scim_groups_protocol.py": "bd1e94c9c0ca66391afb6369f3993242eabc7924c9c78a19d946be2098f2579c",
+      "tests/unit/proxy/retail/test_scim_http.py": "beb88d50972851cf155b7199f605ca1dc5fd7156ea62f116e92f6afbd1132c5c",
+      "tests/unit/proxy/retail/test_scim_identity.py": "4769c1798b667bf6bde85d10d15218110fa3e09dcc258ec813e63ad7198ddfc0",
+      "tests/unit/proxy/retail/test_scim_identity_native.py": "5c2e2fa5f8527dbbf938964f958d216e150cf4dac88ec3fd9e17a928e1a87b8e",
+      "tests/unit/proxy/retail/test_scim_middleware.py": "c1bf4578de2014488206378ce1387c75233e88ab8a2505afea36ecf8ccadd05b",
+      "tests/unit/proxy/retail/test_scim_protocol.py": "b8221200ea9fc3745f06da8a377d1e4e0be9e55aa02c0bad6c7b18d510a8fb08",
+      "tests/unit/proxy/retail/test_scim_service.py": "6a9ce9c15b20d8a5320f18c82de29d1e8552d954b68fbad16cfcfbe96a9eee10",
+      "tests/unit/proxy/retail/test_scim_store.py": "f0e0ba606ca2eb81e721d5e30c589390f0886566e1863db05600a9acc2480600",
+      "tests/unit/proxy/retail/test_groups_store.py": "816219d17945bef07bf0b9d261bd8536ba2e26ef273050eaba636d2eab7d1c68",
+      "tests/unit/proxy/retail/test_native_audit_store.py": "a92431f4f90cfad356ec12df7abb568d924e9b099fe004578db76e27901b87c3",
+      "tests/unit/proxy/retail/test_operation_events.py": "828e14216a5a8d5a90d0ca14d75f0d1e03dc5c144b0e8cd200c1cfeb5b45fd30",
+      "tests/unit/proxy/retail/test_key_rotation.py": "dcb394cfcc3fe60278efc978b1d5475dd8ad3298489961115f2132f5f4e421f3",
+      "tests/integration/database/test_retail_scim_store.py": "6ea888bd8ebb083f746cefacba2a3c9a16421e5017c56843b8dffc59f77f0cc4",
+      "tests/integration/database/test_retail_groups_store.py": "bebd7ea3815ce535a60c74b2b448584de92b6edcef65075bd26e05b81c1c76b0",
+      "tests/integration/database/test_retail_scim_identity.py": "b0c2cd7e359f14cc6e88ae1bcaad3588e5f1f8320808b795b3b5777bf2e4292a",
+      "tests/integration/database/test_retail_native_audit.py": "12b64e9d89261ba706c52af8c9d5fa11d4df9901cd05d4823aacc4206fc273ba",
+      "tests/integration/database/test_retail_oidc_sessions.py": "2fbda027c0cbf2855ad5dcc9ded5aea0cff3afe6366e0af6e225b631e8dd60aa",
+      "tests/integration/database/test_retail_native_session_transactions.py": "cf639ae06478f1d201c64d0e2c7cdb3c38d511a5e3f47bcde9487d2a687d98eb",
+      "tests/integration/database/test_retail_api_jwt_store.py": "9945b4e125759e1468506db91d87e1742e3f8ec5ef780f9f0eb7de0a557d21d2"
+    }
+  },
+  "evidence": [
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-final-unit.json",
+      "sha256": "3c12cfbbc4ab0ceb891ea5d1be7e64c986cece665ca7a829efcee61fa51b6ae7"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-final-postgres.json",
+      "sha256": "d5751b7acb9317c597955fa1ae761cf2a1d7e6f9e56ace85ad6cc28f44c4fa4a"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-ui-validation.json",
+      "sha256": "a218e00df489c8560eb0e3efee251a8d81fd03be213d1017537070f5f74d2d89"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-all-python-gates.json",
+      "sha256": "b1aa199d865080bbe5cdc7b49299cf7beb8d508394a5b91700a2a1eb374c9047"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-protocol-results.json",
+      "sha256": "3e0e47059e6d241be9538559a78c59b9cbb2391ca62512b23c59e2eff9d0538a"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-protocol-mutants/results.json",
+      "sha256": "04c591984cb7157bffffd85b08d19b9c4d680fff0b2f39c78382bf82558975c8"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-groups-store-mutations.json",
+      "sha256": "136004ee56af3d92e65721d5070fac6c0814b56409f4c7ce26aab6af2e518e30"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-identity-mutations.json",
+      "sha256": "12772ca03b870805b0751676f6dc8560da5d9ebdb001ea44ff560d4f67af8991"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-http-mutations.json",
+      "sha256": "fde81de111b6fef334c24db61ace1353a316db8551e13b8f614577a40ef93871"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-groups-store-postgres.json",
+      "sha256": "da2f6bbcb8d2ecee65f746d8420e780bbcd45b42b727ddd2dc524a89e84bbe22"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-native/results.json",
+      "sha256": "a73278cb97dd79fdd19477135c6e64fc95186b54a03f297a41ae4198c091dd94"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-local-activation.json",
+      "sha256": "f42a540d4462ba474cca73d82d741e6504645e279b2ede65dd772ef88c1c5727"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-local-http.json",
+      "sha256": "410b29d5d5f36363befb68a89d9879af5f99aeb7ea77d47f4d553d38a69f1a00"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-local-audit-schema.json",
+      "sha256": "02c9a8de8f092328fc4b23dace33a231fbad4b9442a30cbd4d10b03467491d30"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-cleanup.json",
+      "sha256": "cbd525ef9febe41f9864c04a7ec3cc99b840f4207f8fc54fcaf51d51702159fd"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r14-source-secret-review.json",
+      "sha256": "b7500eb1cf2479a915a872c0b21219b991bf990be65ef3bf55b89216abffa54f"
+    }
+  ],
+  "remaining_scope": [
+    "Native organization/role entitlement mapping and nested groups",
+    "User.groups reverse projection and complete directory-product interoperability",
+    "Real IdP and production configuration, existing-account migration, multi-source and multi-tenant provisioning",
+    "Bulk, enterprise extensions, RFC9865 cursor pagination and RFC9967 asynchronous events",
+    "Capacity certification including 20000 RPM"
+  ],
+  "compatibility_limits": [
+    "Same safe native authentication modes and root-path requirement as R13",
+    "Server-derived member $ref/type are readOnly in this limited profile; core RFC7643 uses immutable",
+    "R13 upgrade requires native schema migration and a higher configuration generation before managed traffic",
+    "Do not downgrade to binaries unaware of group checks; disabled sync retains authority and credential tombstones"
+  ]
+}

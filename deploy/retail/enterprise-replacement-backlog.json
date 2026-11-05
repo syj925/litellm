@@ -112,11 +112,12 @@
         "validation/r3-2026-11-04.json",
         "validation/r4-2026-11-04.json",
         "validation/r5-2026-11-04.json",
-        "validation/r9-2026-11-04.json"
+        "validation/r9-2026-11-04.json",
+        "validation/r14-2026-11-05.json"
       ],
       "deployment_status": "local_active_not_production",
-      "implementation_notes": "自有组织、报表、分类、消费额度及外投递控制的领域写入具备同事务不可修改事件；R9 新增自有Key轮换、自助改密和logout三类原生同事务outbox及跨库幂等桥，保留原发生时间，默认关闭，使用运维合同见native-audit.md，R9真实双worker、队列满回滚和源事件幂等已验收，本地已启用。其他原生充值、价格、渠道、账号CRUD和旧Key管理入口、全部拒绝尝试仍未覆盖；原生商业Audit Logs许可门禁不变",
-      "latest_validation_commit": "bce21cd559fb64a22d8a8e8b0d992697c5419a87"
+      "implementation_notes": "自有组织、报表、分类、消费额度及外投递控制的领域写入具备同事务不可修改事件；R9 新增自有Key轮换、自助改密和logout三类原生同事务outbox及跨库幂等桥，保留原发生时间，默认关闭，使用运维合同见native-audit.md，R9真实双worker、队列满回滚和源事件幂等已验收，本地已启用。其他原生充值、价格、渠道、账号CRUD和旧Key管理入口、全部拒绝尝试仍未覆盖；原生商业Audit Logs许可门禁不变；R11至R14已接入独立OIDC/APIJWT配置与SCIM用户/组生命周期元数据，原生outbox十三动作兼容迁移及双worker已验收",
+      "latest_validation_commit": "92ad481fb578195dd5ae29af9b7ac78e0dd964d3"
     },
     {
       "id": "ORG-01",
@@ -388,7 +389,7 @@
       "implementation_notes": "R11仅固定issuer、最多128显式既有账号绑定、code/nonce/S256/RS256的控制台登录；三角色双worker、撤销恢复、日志脱敏和原生事务审计已本地验收。主本地默认关闭且无真实IdP/绑定；不变更原生商业门禁。",
       "remaining_scope": [
         "真实企业IdP接入验收",
-        "多issuer、SAML、自动建号和组同步",
+        "多issuer、SAML、OIDC自动建号和目录组到原生组织/角色的映射",
         "大规模登录容量验证"
       ]
     },
@@ -419,7 +420,7 @@
         "真实IdP互通与生产配置",
         "通用OAuth2签发、refresh、introspection及裸Bearer互通",
         "多issuer及复杂组织/服务账号映射",
-        "SCIM Groups/复杂授权映射和大规模容量认证"
+        "目录组到原生组织/角色的复杂授权映射和大规模容量认证"
       ]
     },
     {
@@ -436,19 +437,20 @@
         "禁用与组变更撤销一致",
         "跨租户冲突与失败恢复测试"
       ],
-      "implementation_commit": "94294b2eff8db7418cb63b55f4f3aefca12197e5",
+      "implementation_commit": "92ad481fb578195dd5ae29af9b7ac78e0dd964d3",
       "validation_evidence": [
         "scim-provisioning.md",
-        "validation/r13-2026-11-05.json"
+        "validation/r13-2026-11-05.json",
+        "validation/r14-2026-11-05.json"
       ],
       "deployment_status": "local_active_feature_disabled",
-      "implementation_notes": "R13：固定来源Users子集独立创建新customer；查询/PATCH/PUT/ETag/停用/恢复/删除、同事务审计、不可变Key证明与永久撤销已验收。双worker覆盖Key/OIDC/APIJWT和钱包，修复Key轮换与生命周期锁顺序。普通非受管Key不新增本批数据库读取或外部RPC。主站默认关闭，未接真实目录；Groups及授权映射未完成，不改原生商业门禁。",
+      "implementation_notes": "R13/R14：固定来源Users/Groups子集、全新customer、组成员与可选访问条件、ETag/原子PATCH/PUT/删除、同事务审计、不可变凭据证明已验收。移出再加回不复活旧Key/session/JWT；配置名单变化撤销全部旧证明。双worker、并发发行/结算、迁移与分页成员预算已验证。普通非受管Key无新增本批DB/RPC，主站默认关闭；不自动授予原生组织/角色/模型权限，真实目录互通及复杂映射仍待验收，商业门禁保持原样。",
       "remaining_scope": [
-        "SCIM Groups and explicit native entitlement/organization mappings",
-        "Real directory/IdP interoperability and production configuration",
-        "Existing-account migration, multi-source and multi-tenant provisioning",
-        "Bulk, enterprise extensions, cursor pagination RFC9865 and asynchronous SET RFC9967",
-        "Capacity certification including 20000 RPM; this scoped validation is not an SLA"
+        "Native organization/role entitlement mapping and nested groups",
+        "User.groups reverse projection and complete directory-product interoperability",
+        "Real IdP and production configuration, existing-account migration, multi-source and multi-tenant provisioning",
+        "Bulk, enterprise extensions, RFC9865 cursor pagination and RFC9967 asynchronous events",
+        "Capacity certification including 20000 RPM"
       ]
     },
     {
@@ -577,7 +579,7 @@
       "tasks": [
         "ID-SCIM"
       ],
-      "reason": "自有Users同步子集已本地验收并默认关闭；Groups与复杂授权映射、真实目录互通仍待实现/验收，原生商业路由与许可判断不变",
+      "reason": "自有Users/Groups子集与可选访问组条件已本地验收并默认关闭；复杂原生授权映射、嵌套组及真实目录互通仍待实现/验收，原生商业路由与许可判断不变",
       "refs": [
         {
           "path": "litellm/proxy/management_endpoints/scim/scim_v2.py",
@@ -586,8 +588,8 @@
       ],
       "current_scoped_implementation": {
         "task": "ID-SCIM",
-        "evidence": "validation/r13-2026-11-05.json",
-        "scope": "Default-off fixed-namespace Users only; new customer provisioning and permanent credential revocation, with no automatic grants, existing-account adoption or Groups support"
+        "evidence": "validation/r14-2026-11-05.json",
+        "scope": "Default-off fixed-namespace Users/Groups with bounded membership pages and durable access conditions; no automatic native grants or existing-account adoption"
       }
     },
     {
@@ -2166,5 +2168,5 @@
   },
   "runtime_scope": "local_only",
   "production_changed": false,
-  "validation_record": "validation/r13-2026-11-05.json"
+  "validation_record": "validation/r14-2026-11-05.json"
 }
