@@ -7,6 +7,7 @@ from fastapi import APIRouter, FastAPI
 
 from litellm._logging import verbose_proxy_logger
 
+from .api_jwt_service import close_api_jwt_service, start_api_jwt_service
 from .audit_delivery import router as audit_delivery_router
 from .audit_delivery_worker import close_audit_delivery_worker, start_audit_delivery_worker
 from .control_plane_flags import native_audit_enabled, operation_audit_enabled
@@ -61,6 +62,8 @@ async def control_plane_lifespan(app: FastAPI) -> AsyncIterator[None]:
         cleanup.push_async_callback(close_coordination_guard)
         await start_oidc_service()
         cleanup.push_async_callback(close_oidc_service)
+        await start_api_jwt_service()
+        cleanup.push_async_callback(close_api_jwt_service)
         cleanup.push_async_callback(close_audit_delivery_worker)
         cleanup.push_async_callback(close_report_worker)
         cleanup.push_async_callback(close_native_audit_worker)
