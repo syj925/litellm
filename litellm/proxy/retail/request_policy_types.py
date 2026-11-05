@@ -4,10 +4,16 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictInt
 
-from litellm.proxy._types import LiteLLM_UserTable, UserAPIKeyAuth
+from litellm.proxy._types import (
+    LiteLLM_BudgetTable,
+    LiteLLM_TeamMembership,
+    LiteLLM_TeamTable,
+    LiteLLM_UserTable,
+    UserAPIKeyAuth,
+)
 
 RouteKind: TypeAlias = Literal["chat.completions", "responses", "messages"]
-TargetKind: TypeAlias = Literal["model", "user", "key"]
+TargetKind: TypeAlias = Literal["model", "team", "user", "key"]
 
 
 class Definition(BaseModel):
@@ -41,6 +47,9 @@ class ResolvedRequestPolicies:
     user: LiteLLM_UserTable | None = field(repr=False)
     target_hash: str = field(repr=False)
     policies: tuple[ApplicablePolicy, ...] = field(repr=False)
+    team: LiteLLM_TeamTable | None = field(default=None, repr=False)
+    team_membership: LiteLLM_TeamMembership | None = field(default=None, repr=False)
+    team_member_default_budget: LiteLLM_BudgetTable | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +63,7 @@ class CompiledRequestPolicy:
 
 
 def compile_policies(policies: tuple[ApplicablePolicy, ...]) -> CompiledRequestPolicy | RequestPolicyFailure:
-    if len(policies) > 3 or len(frozenset(policy.target_kind for policy in policies)) != len(policies):
+    if len(policies) > 4 or len(frozenset(policy.target_kind for policy in policies)) != len(policies):
         return RequestPolicyFailure("invalid")
     route_sets: Final = tuple(frozenset(policy.definition.allowed_routes) for policy in policies
         if policy.definition.allowed_routes is not None)
@@ -70,7 +79,8 @@ def compile_policies(policies: tuple[ApplicablePolicy, ...]) -> CompiledRequestP
         return RequestPolicyFailure("conflict")
     caps: Final = tuple(policy.definition.max_output_tokens for policy in policies
         if policy.definition.max_output_tokens is not None)
-    prompts: Final = tuple(policy.prompt_text for policy in policies if policy.prompt_text)
+    ordered: Final = sorted(policies, key=lambda policy: ("model", "team", "user", "key").index(policy.target_kind))
+    prompts: Final = tuple(policy.prompt_text for policy in ordered if policy.prompt_text)
     prompt: Final = "\n\n".join(prompts)
     if len(prompt.encode("utf-8")) > 16384:
         return RequestPolicyFailure("capacity")

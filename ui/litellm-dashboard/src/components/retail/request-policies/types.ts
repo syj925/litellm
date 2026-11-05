@@ -1,6 +1,12 @@
 export type PolicyRoute = "chat.completions" | "responses" | "messages";
 export type PolicyTab = "policies" | "prompts" | "bindings";
-export type TargetKind = "user" | "key" | "model";
+export type TargetKind = "user" | "key" | "model" | "team";
+export const targetKindLabels: Readonly<Record<TargetKind, string>> = {
+  user: "User",
+  key: "Virtual key",
+  model: "Public model",
+  team: "Team",
+};
 export interface PolicyDefinition {
   allowed_routes: PolicyRoute[] | null;
   max_output_tokens: number | null;

@@ -2535,6 +2535,10 @@ async def prepare_key_update_data(
 ):
     from litellm.proxy.retail.customer_access import customer_key_metadata, is_customer_personal_key
     from litellm.proxy.retail.key_policy import validate_native_key_resource_metadata
+    from litellm.proxy.retail.request_policy_key_moves import guard_key_team_change
+
+    await guard_key_team_change(user_api_key_dict, existing_key_row.team_id, data.team_id,
+        provided="team_id" in data.model_fields_set)
 
     if "metadata" in data.model_fields_set and data.metadata is None:
         stored_metadata: Final = TypeAdapter(Mapping[str, object]).validate_python(existing_key_row.metadata or {})

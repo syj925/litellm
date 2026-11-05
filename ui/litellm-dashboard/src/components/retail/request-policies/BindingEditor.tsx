@@ -15,6 +15,7 @@ import { LoadingState } from "@/components/shared/LoadingState";
 import { usePolicyWrite, usePrivateResource } from "./api";
 import { PolicyChoice, PolicyField, PolicyWriteError, selectClass, policyFieldId } from "./PolicyShared";
 import type { PolicyBinding, PolicySession, PolicyTarget, RequestPolicy, TargetKind } from "./types";
+import { targetKindLabels } from "./types";
 
 function TargetPicker({
   session,
@@ -53,6 +54,7 @@ function TargetPicker({
             <option value="user">User</option>
             <option value="key">Virtual key</option>
             <option value="model">Public model</option>
+            <option value="team">Team</option>
           </select>
         </PolicyField>
         <PolicyField name="Search targets">
@@ -159,7 +161,7 @@ export default function BindingEditor({
       <PolicyWriteError error={write.error} />
       {binding ? (
         <p className="text-sm">
-          Target: <strong>{binding.target_label}</strong> ({binding.target_kind})
+          Target: <strong>{binding.target_label}</strong> ({targetKindLabels[binding.target_kind]})
         </p>
       ) : (
         <TargetPicker session={session} value={target} onChange={setTarget} disabled={blocked} />
@@ -177,8 +179,9 @@ export default function BindingEditor({
         Apply policy
       </label>
       <p className="max-w-prose text-sm text-muted-foreground">
-        Turn off “Apply policy” to stop applying this binding. Each target can have one binding. User, key, and model
-        restrictions combine; they do not grant model access or funds.
+        Turn off “Apply policy” to stop applying this binding. Each target can have one binding. Restrictions combine in
+        this order: public model, Team, user, then key. They do not grant model access or funds. Team policies follow
+        each key’s native Team assignment; creating a binding does not assign team membership.
       </p>
       <div className="flex gap-2">
         <Button type="submit" disabled={saveDisabled}>

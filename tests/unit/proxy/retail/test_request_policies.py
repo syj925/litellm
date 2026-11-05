@@ -99,3 +99,12 @@ async def test_native_database_outage_is_generic_service_failure(monkeypatch: py
         result: Final = await client.get(PREFIX+"/prompts")
     assert result.status_code == 503 and "private-native-failure" not in result.text
     assert "no-store" in result.headers["cache-control"]
+
+
+@pytest.mark.asyncio
+async def test_team_target_route_is_supported_and_keeps_native_failures_private(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RETAIL_REQUEST_POLICIES_ENABLED", "true")
+    context: Final = application()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=context.app), base_url="http://fixture") as client:
+        result: Final = await client.get(PREFIX+"/targets?kind=team&q=Existing&limit=25&offset=0")
+    assert result.status_code == 503 and "private-native-failure" not in result.text

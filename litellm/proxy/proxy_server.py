@@ -7984,7 +7984,9 @@ class ProxyConfig:
         # back to DB on a cache miss.
         if user_api_key_dict is not None and user_api_key_dict.team_id is not None:
             try:
-                team_obj: Final = await get_team_object(
+                from litellm.proxy.retail.request_policy_runtime import request_policy_attested, request_policy_team
+
+                team_obj: Final = request_policy_team() if request_policy_attested() else await get_team_object(
                     team_id=user_api_key_dict.team_id,
                     prisma_client=prisma_client,
                     user_api_key_cache=user_api_key_cache,

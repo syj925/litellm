@@ -373,3 +373,119 @@ it("keeps tab and pagination URL state while preserving unrelated parameters", a
   expect(calls.at(-1)?.url.searchParams.get("offset")).toBe("25");
   expect(onUrlUpdate.mock.lastCall?.[0].searchParams.get("retained")).toBe("yes");
 });
+
+it("searches and pages Teams without changing search case, clears an old user selection, and binds the opaque Team reference", async () => {
+  const teamTarget = "22222222-2222-4222-8222-222222222222";
+  const calls = serve((call) => {
+    if (call.method === "POST") {
+      const created = { ...binding, target_kind: "team", target_id: teamTarget, target_label: "Research Team" };
+      return json(created);
+    }
+    if (call.url.pathname.endsWith("/targets")) {
+      if (call.url.searchParams.get("kind") === "user")
+        return json(page([{ id: "previous-user", kind: "user", label: "Previous user" }]));
+      const secondPage = call.url.searchParams.get("offset") === "25";
+      return json(
+        page(
+          [
+            {
+              id: secondPage ? teamTarget : "first-team",
+              kind: "team",
+              label: secondPage ? "Research Team" : "Platform Team",
+            },
+          ],
+          60,
+        ),
+      );
+    }
+    return json(page(call.url.pathname.endsWith("/policies") ? [policy] : []));
+  });
+  renderWithProviders(<RequestPoliciesPanel />, { searchParams: { tab: "bindings" } });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Create binding" }));
+  await user.click(await screen.findByRole("radio", { name: "Previous user" }));
+  expect(await screen.findByRole("option", { name: policy.name })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Request policy"), { target: { value: policy.id } });
+  expect(screen.getByRole("button", { name: "Save binding" })).toBeEnabled();
+  fireEvent.change(screen.getByLabelText("Target type"), { target: { value: "team" } });
+  expect(screen.getByRole("button", { name: "Save binding" })).toBeDisabled();
+  expect(screen.queryByText("Selected target: Previous user")).not.toBeInTheDocument();
+  expect(await screen.findByRole("radio", { name: "Platform Team" })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Search targets"), { target: { value: "ReSeArCh" } });
+  await user.click(screen.getByRole("button", { name: "Search", exact: true }));
+  await waitFor(() => expect(calls.some((call) => call.url.searchParams.get("q") === "ReSeArCh")).toBe(true));
+  const form = screen.getByRole("form", { name: "Create policy binding" });
+  await user.click(within(form).getByRole("button", { name: "Next page" }));
+  await user.click(await screen.findByRole("radio", { name: "Research Team" }));
+  await user.click(screen.getByRole("button", { name: "Save binding" }));
+  await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
+  expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+    target_id: teamTarget,
+    policy_id: policy.id,
+    enabled: true,
+  });
+  const targetPage = calls.find(
+    (call) => call.url.pathname.endsWith("/targets") && call.url.searchParams.get("offset") === "25",
+  );
+  expect(targetPage?.url.searchParams.get("kind")).toBe("team");
+  expect(targetPage?.url.searchParams.get("q")).toBe("ReSeArCh");
+  expect(targetPage?.url.searchParams.get("limit")).toBe("25");
+});
+
+it("removes paged Team labels and the selected target when current administrator access is revoked", async () => {
+  const calls = serve((call) => {
+    if (call.url.pathname.endsWith("/targets")) {
+      if (call.url.searchParams.get("kind") !== "team") return json(page([]));
+      if (call.url.searchParams.get("offset") === "25") return json({ detail: "Access revoked" }, 403);
+      return json(page([{ id: "private-team-reference", kind: "team", label: "Scoped Team" }], 26));
+    }
+    return json(page(call.url.pathname.endsWith("/policies") ? [policy] : []));
+  });
+  renderWithProviders(<RequestPoliciesPanel />, { searchParams: { tab: "bindings" } });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Create binding" }));
+  fireEvent.change(screen.getByLabelText("Target type"), { target: { value: "team" } });
+  await user.click(await screen.findByRole("radio", { name: "Scoped Team" }));
+  const form = screen.getByRole("form", { name: "Create policy binding" });
+  await user.click(within(form).getByRole("button", { name: "Next page" }));
+  expect(await screen.findByText("Administrator access is no longer available")).toBeInTheDocument();
+  expect(screen.queryByText("Scoped Team")).not.toBeInTheDocument();
+  expect(screen.queryByRole("form", { name: "Create policy binding" })).not.toBeInTheDocument();
+  expect(calls.filter((call) => call.url.searchParams.get("kind") === "team")).toHaveLength(2);
+  expect(calls.some((call) => call.method === "POST")).toBe(false);
+});
+
+it("shows a safe Team binding label and disables application without changing its fixed target", async () => {
+  let applied = true;
+  const teamBinding: PolicyBinding = {
+    ...binding,
+    target_kind: "team",
+    target_label: "Platform Team",
+    target_id: "opaque-team-target",
+  };
+  const calls = serve((call) => {
+    if (call.method === "PUT") {
+      applied = false;
+      return json({ ...teamBinding, enabled: applied });
+    }
+    if (call.url.pathname.endsWith("/policies")) return json(page([policy]));
+    return json(page([{ ...teamBinding, enabled: applied }]));
+  });
+  renderWithProviders(<RequestPoliciesPanel />, { searchParams: { tab: "bindings" } });
+  const user = userEvent.setup();
+  const edit = await screen.findByRole("button", { name: "Edit Platform Team" });
+  expect(
+    within(screen.getByRole("region", { name: "Saved bindings" })).getByText("Team", { exact: true }),
+  ).toBeInTheDocument();
+  await user.click(edit);
+  expect(screen.queryByLabelText("Target type")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("checkbox", { name: "Apply policy" }));
+  await user.click(screen.getByRole("button", { name: "Save binding" }));
+  expect(await screen.findByText("Not applied", { exact: true })).toBeInTheDocument();
+  expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
+    policy_id: policy.id,
+    enabled: false,
+    expected_version: 3,
+  });
+  expect(calls.some((call) => call.url.pathname.endsWith("/targets"))).toBe(false);
+});

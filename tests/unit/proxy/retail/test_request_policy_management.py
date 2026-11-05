@@ -4,7 +4,13 @@ from typing import Final
 import pytest
 from pydantic import ValidationError
 
-from litellm.proxy.retail.request_policy_management import BindingUpdate, PolicyCreate, PolicyUpdate, PromptCreate
+from litellm.proxy.retail.request_policy_management import (
+    BindingUpdate,
+    PolicyCreate,
+    PolicyTarget,
+    PolicyUpdate,
+    PromptCreate,
+)
 from litellm.proxy.retail.request_policy_types import Definition
 
 
@@ -46,3 +52,8 @@ def test_binding_update_does_not_accept_identity_reassignment(extra: Mapping[str
     with pytest.raises(ValidationError):
         BindingUpdate.model_validate({"policy_id": "00000000-0000-0000-0000-000000000001", "enabled": False,
             "expected_version": 1, **extra})
+
+
+def test_team_target_uses_same_opaque_public_shape_without_native_identity() -> None:
+    value: Final = PolicyTarget(id="00000000-0000-0000-0000-000000000001", kind="team", label="Existing team")
+    assert value.model_dump(mode="json") == {"id": "00000000-0000-0000-0000-000000000001", "kind": "team", "label": "Existing team"}

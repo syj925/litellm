@@ -13,8 +13,15 @@ from fastapi import HTTPException
 from prisma.errors import PrismaError
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
-from litellm.constants import LITELLM_PROXY_MASTER_KEY_ALIAS
-from litellm.proxy._types import LiteLLM_UserTable, LitellmUserRoles, UserAPIKeyAuth
+from litellm.constants import LITELLM_PROXY_MASTER_KEY_ALIAS, UI_SESSION_TOKEN_TEAM_ID
+from litellm.proxy._types import (
+    LiteLLM_BudgetTable,
+    LiteLLM_TeamMembership,
+    LiteLLM_TeamTable,
+    LiteLLM_UserTable,
+    LitellmUserRoles,
+    UserAPIKeyAuth,
+)
 from litellm.proxy.auth.route_checks import RouteChecks
 
 from .control_plane_flags import native_audit_enabled
@@ -49,6 +56,7 @@ WriteInput: TypeAlias = PromptCreate | PromptUpdate | PolicyCreate | PolicyUpdat
 Resource: TypeAlias = PromptRow | PolicyRow | BindingRow
 _SLOTS: Final = asyncio.Semaphore(4)
 _JSON: Final = TypeAdapter(dict[str, JsonValue])
+_JSON_VALUE: Final = TypeAdapter(JsonValue)
 _HASH: Final = re.compile(r"[a-f0-9]{64}\Z")
 _TABLES: Final = {"prompts": "retail_request_policy_prompts", "policies": "retail_request_policy_policies", "bindings": "retail_request_policy_bindings"}
 
@@ -126,6 +134,9 @@ class _Lookup(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
     key_data: Mapping[str, JsonValue] | None = Field(repr=False)
     user_data: Mapping[str, JsonValue] | None = Field(repr=False)
+    team_data: Mapping[str, JsonValue] | None = Field(repr=False)
+    team_membership_data: Mapping[str, JsonValue] | None = Field(repr=False)
+    default_budget_data: Mapping[str, JsonValue] | None = Field(repr=False)
     active: bool
     rules: tuple[_Rule, ...] = Field(repr=False)
 
@@ -144,6 +155,14 @@ def _json(value: BaseModel) -> Mapping[str, JsonValue]:
 
 def _digest(value: JsonValue) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+
+
+def _team(value: Mapping[str, JsonValue] | None) -> LiteLLM_TeamTable | None:
+    if value is None:
+        return None
+    members: Final = value.get("members_with_roles", [])
+    return LiteLLM_TeamTable.model_validate({**value,
+        "members_with_roles": _JSON_VALUE.validate_json(members) if isinstance(members, str) else members})
 
 
 def _anchor(target: _NativeTarget) -> str:
@@ -203,10 +222,16 @@ async def _capacity(writer: NativeAuditTransaction, kind: Literal["prompt", "pol
 
 
 async def _native(writer: NativeAuditTransaction, kind: TargetKind, native_id: str) -> _NativeTarget | None:
+    if kind == "team" and native_id == UI_SESSION_TOKEN_TEAM_ID:
+        return None
     if kind == "user":
         query: Final = '''SELECT user_id AS native_id,created_at AT TIME ZONE 'UTC' AS native_created_at,
         NULL::text AS owner_id,NULL::timestamptz AS owner_created_at,user_alias AS label
         FROM "LiteLLM_UserTable" WHERE user_id=$1 AND created_at IS NOT NULL'''
+    elif kind == "team":
+        query: Final = '''SELECT team_id AS native_id,created_at AT TIME ZONE 'UTC' AS native_created_at,
+        NULL::text AS owner_id,NULL::timestamptz AS owner_created_at,team_alias AS label
+        FROM "LiteLLM_TeamTable" WHERE team_id=$1 AND created_at IS NOT NULL'''
     else:
         query: Final = '''SELECT k.token AS native_id,k.created_at AT TIME ZONE 'UTC' AS native_created_at,
         k.user_id AS owner_id,u.created_at AT TIME ZONE 'UTC' AS owner_created_at,k.key_alias AS label
@@ -336,7 +361,7 @@ async def _target_item(writer: NativeAuditTransaction, kind: TargetKind, native:
     identifier: Final = existing[0].id if existing else uuid4()
     if not existing:
         await _capacity(writer, "target")
-        await writer.query_raw("INSERT INTO retail_request_policy_targets(id,kind,native_id,anchor,native_created_at,owner_id,owner_created_at,label) VALUES($1::uuid,$2,$3,$4,$5::timestamptz,$6,$7::timestamptz,$8) RETURNING id", str(identifier), kind, native.native_id, anchor, native.native_created_at, native.owner_id, native.owner_created_at, safe_display_name(native.label, f"{kind.title()} {identifier.hex[:8]}"))
+        await writer.query_raw("INSERT INTO retail_request_policy_targets(id,kind,native_id,anchor,native_created_at,owner_id,owner_created_at,label) VALUES($1::uuid,$2,$3,$4,$5::text::timestamptz,$6,$7::text::timestamptz,$8) RETURNING id", str(identifier), kind, native.native_id, anchor, native.native_created_at.isoformat() if native.native_created_at is not None else None, native.owner_id, native.owner_created_at.isoformat() if native.owner_created_at is not None else None, safe_display_name(native.label, f"{kind.title()} {identifier.hex[:8]}"))
     target: Final = await _target(writer, identifier)
     return _json(PolicyTarget(id=target.id, kind=target.kind, label=target.label))
 
@@ -402,6 +427,16 @@ class NativeRequestPolicyStore:
         except (PrismaError, TimeoutError, ValidationError):
             return RequestPolicyFailure("unavailable")
 
+    async def verify_administrator(self, actor: PolicyActor) -> RequestPolicyFailure | None:
+        try:
+            async with self._transaction(read=True) as writer:
+                await _admin(writer, actor)
+        except _Abort as exc:
+            return exc.failure
+        except (PrismaError, TimeoutError, ValidationError):
+            return RequestPolicyFailure("unavailable")
+        return None
+
     async def write(
         self, actor: PolicyActor, kind: ResourceKind, operation: Literal["created", "updated", "deleted"],
         key: str, data: WriteInput | None, identifier: UUID | None = None, expected_version: int | None = None,
@@ -449,12 +484,17 @@ class NativeRequestPolicyStore:
                         projection: Final = "user_id AS native_id,created_at AT TIME ZONE 'UTC' AS native_created_at,NULL::text AS owner_id,NULL::timestamptz AS owner_created_at,user_alias AS label"
                         source: Final = '"LiteLLM_UserTable"'
                         condition: Final = "created_at IS NOT NULL AND (position(lower($1) in lower(user_id))>0 OR position(lower($1) in lower(coalesce(user_alias,'')))>0)"
+                    elif kind == "team":
+                        projection: Final = "team_id AS native_id,created_at AT TIME ZONE 'UTC' AS native_created_at,NULL::text AS owner_id,NULL::timestamptz AS owner_created_at,team_alias AS label"
+                        source: Final = '"LiteLLM_TeamTable"'
+                        condition: Final = "created_at IS NOT NULL AND team_id<>$2 AND position(lower($1) in lower(coalesce(team_alias,'')))>0"
                     else:
                         projection: Final = "k.token AS native_id,k.created_at AT TIME ZONE 'UTC' AS native_created_at,k.user_id AS owner_id,u.created_at AT TIME ZONE 'UTC' AS owner_created_at,k.key_alias AS label"
                         source: Final = '"LiteLLM_VerificationToken" k LEFT JOIN "LiteLLM_UserTable" u ON u.user_id=k.user_id'
                         condition: Final = "k.created_at IS NOT NULL AND (k.user_id IS NULL OR u.created_at IS NOT NULL) AND position(lower($1) in lower(coalesce(k.key_alias,'')))>0"
-                    total: Final = _COUNTS.validate_python(await writer.query_raw(f"SELECT count(*) AS total FROM {source} WHERE {condition}", q))[0].total
-                    natives: Final = _NATIVES.validate_python(await writer.query_raw(f"SELECT {projection} FROM {source} WHERE {condition} ORDER BY native_id LIMIT $2 OFFSET $3", q, limit, offset))
+                    parameters: Final = (q, UI_SESSION_TOKEN_TEAM_ID) if kind == "team" else (q,)
+                    total: Final = _COUNTS.validate_python(await writer.query_raw(f"SELECT count(*) AS total FROM {source} WHERE {condition}", *parameters))[0].total
+                    natives: Final = _NATIVES.validate_python(await writer.query_raw(f"SELECT {projection} FROM {source} WHERE {condition} ORDER BY native_id LIMIT ${len(parameters)+1} OFFSET ${len(parameters)+2}", *parameters, limit, offset))
                 items: Final = tuple([await _target_item(writer, kind, native) for native in natives])
                 return {"items": list(items), "total": total, "limit": limit, "offset": offset}
         except _Abort as exc:
@@ -469,11 +509,14 @@ class NativeRequestPolicyStore:
             if self._closed:
                 raise _Abort("unavailable")
             async with asyncio.timeout(2), _SLOTS:
-                rows: Final = _LOOKUPS.validate_python(await self._client.writer_db.query_raw(_LOOKUP_SQL, token_hash, user_id, model, trusted_master))
+                rows: Final = _LOOKUPS.validate_python(await self._client.writer_db.query_raw(_LOOKUP_SQL, token_hash, user_id, model, trusted_master, UI_SESSION_TOKEN_TEAM_ID))
                 if not rows or not rows[0].active or any(not rule.valid for rule in rows[0].rules):
                     raise _Abort("forbidden")
                 row: Final = rows[0]
                 user: Final = LiteLLM_UserTable.model_validate(row.user_data) if row.user_data else None
+                team: Final = _team(row.team_data)
+                member: Final = LiteLLM_TeamMembership.model_validate(row.team_membership_data) if row.team_membership_data else None
+                default_budget: Final = LiteLLM_BudgetTable.model_validate(row.default_budget_data) if row.default_budget_data else None
                 if trusted_master:
                     auth: Final = UserAPIKeyAuth(user_id=user_id, user_role=LitellmUserRoles.PROXY_ADMIN).model_copy(update={"api_key": LITELLM_PROXY_MASTER_KEY_ALIAS, "token": token_hash,"via_virtual_key": True})
                 else:
@@ -485,7 +528,8 @@ class NativeRequestPolicyStore:
                     })
                 policies: Final = tuple(ApplicablePolicy(rule.target_kind, rule.policy_id, rule.policy_version,
                     rule.definition, rule.prompt_text, rule.prompt_id, rule.prompt_version) for rule in row.rules)
-                return ResolvedRequestPolicies(auth, user, token_hash, policies)
+                return ResolvedRequestPolicies(auth, user, token_hash, policies, team=team, team_membership=member,
+                    team_member_default_budget=default_budget)
         except _Abort as exc:
             return exc.failure
         except (PrismaError, TimeoutError, ValidationError, ValueError):
@@ -497,32 +541,49 @@ class NativeRequestPolicyStore:
 
 _LOOKUP_SQL: Final = '''WITH identity AS (
     SELECT to_jsonb(k) AS key_data,to_jsonb(u)-'password'-'last_breach_check_at' AS user_data,
+    CASE WHEN t.team_id IS NULL THEN NULL::jsonb ELSE to_jsonb(t)||jsonb_build_object(
+        'litellm_model_table',to_jsonb(tm)||jsonb_build_object('model_aliases',tm.aliases),
+        'object_permission',to_jsonb(op)) END AS team_data,
+    CASE WHEN member.user_id IS NULL THEN NULL::jsonb ELSE to_jsonb(member)||jsonb_build_object(
+        'litellm_budget_table',to_jsonb(budget)) END AS team_membership_data,
+    to_jsonb(default_budget) AS default_budget_data,
     (k.blocked IS DISTINCT FROM true AND (k.expires IS NULL OR (k.expires AT TIME ZONE 'UTC')>clock_timestamp())
         AND (k.user_id IS NULL OR (u.user_id IS NOT NULL AND u.password_reset_required IS DISTINCT FROM true
-            AND u.metadata->'scim_active' IS DISTINCT FROM 'false'::jsonb))) AS active,
-    k.created_at AT TIME ZONE 'UTC' AS key_created_at,u.created_at AT TIME ZONE 'UTC' AS user_created_at
+            AND u.metadata->'scim_active' IS DISTINCT FROM 'false'::jsonb))
+        AND (k.team_id IS NULL OR k.team_id=$5 OR (t.team_id IS NOT NULL AND t.blocked IS DISTINCT FROM true))) AS active,
+    k.created_at AT TIME ZONE 'UTC' AS key_created_at,u.created_at AT TIME ZONE 'UTC' AS user_created_at,
+    t.created_at AT TIME ZONE 'UTC' AS team_created_at,k.team_id
     FROM "LiteLLM_VerificationToken" k LEFT JOIN "LiteLLM_UserTable" u ON u.user_id=k.user_id
+    LEFT JOIN "LiteLLM_TeamTable" t ON t.team_id=k.team_id AND k.team_id<>$5
+    LEFT JOIN "LiteLLM_ModelTable" tm ON tm.id=t.model_id
+    LEFT JOIN "LiteLLM_ObjectPermissionTable" op ON op.object_permission_id=t.object_permission_id
+    LEFT JOIN "LiteLLM_TeamMembership" member ON member.team_id=t.team_id AND member.user_id=k.user_id
+    LEFT JOIN "LiteLLM_BudgetTable" budget ON budget.budget_id=member.budget_id
+    LEFT JOIN "LiteLLM_BudgetTable" default_budget ON default_budget.budget_id=(CASE
+        WHEN jsonb_typeof(t.metadata)='string' THEN (t.metadata#>>'{}')::jsonb ELSE t.metadata END)->>'team_member_budget_id'
     WHERE NOT $4 AND k.token=$1 AND k.user_id IS NOT DISTINCT FROM $2
     UNION ALL
-    SELECT NULL::jsonb,to_jsonb(u)-'password'-'last_breach_check_at',
+    SELECT NULL::jsonb,to_jsonb(u)-'password'-'last_breach_check_at',NULL::jsonb,NULL::jsonb,NULL::jsonb,
         (u.user_id IS NULL OR (u.user_role='proxy_admin' AND u.password_reset_required IS DISTINCT FROM true
             AND u.metadata->'scim_active' IS DISTINCT FROM 'false'::jsonb)),
-        NULL::timestamptz,u.created_at AT TIME ZONE 'UTC'
+        NULL::timestamptz,u.created_at AT TIME ZONE 'UTC',NULL::timestamptz,NULL::text
     FROM (SELECT 1) seed LEFT JOIN "LiteLLM_UserTable" u ON u.user_id=$2 WHERE $4
 ), rules AS (
     SELECT t.kind AS target_kind,p.id AS policy_id,p.version AS policy_version,p.definition,p.prompt_id,
         s.version AS prompt_version,s.content AS prompt_text,
         coalesce((p.id IS NOT NULL AND p.enabled AND NOT p.deleted AND (p.prompt_id IS NULL OR (s.enabled AND NOT s.deleted))
-        AND (t.kind='model' OR (t.kind='user' AND t.native_created_at=i.user_created_at)
+        AND (t.kind='model' OR (t.kind='team' AND t.native_created_at=i.team_created_at)
+            OR (t.kind='user' AND t.native_created_at=i.user_created_at)
             OR (t.kind='key' AND t.native_created_at=i.key_created_at AND t.owner_id IS NOT DISTINCT FROM $2
                 AND t.owner_created_at IS NOT DISTINCT FROM i.user_created_at))),false) AS valid
     FROM identity i JOIN retail_request_policy_targets t
         ON (t.kind='model' AND t.native_id=$3) OR (t.kind='user' AND t.native_id=$2 AND i.user_data IS NOT NULL)
-        OR (t.kind='key' AND t.native_id=$1 AND NOT $4)
+        OR (t.kind='key' AND t.native_id=$1 AND NOT $4) OR (t.kind='team' AND t.native_id=i.team_id AND NOT $4)
     JOIN retail_request_policy_bindings b ON b.target_id=t.id AND b.enabled AND NOT b.deleted
     LEFT JOIN retail_request_policy_policies p ON p.id=b.policy_id
     LEFT JOIN retail_request_policy_prompts s ON s.id=p.prompt_id
 )
-SELECT i.key_data,i.user_data,i.active,coalesce((SELECT jsonb_agg(to_jsonb(r) ORDER BY
-    CASE r.target_kind WHEN 'model' THEN 0 WHEN 'user' THEN 1 ELSE 2 END) FROM rules r),'[]'::jsonb) AS rules
+SELECT i.key_data,i.user_data,i.team_data,i.team_membership_data,i.default_budget_data,i.active,
+    coalesce((SELECT jsonb_agg(to_jsonb(r) ORDER BY
+    CASE r.target_kind WHEN 'model' THEN 0 WHEN 'team' THEN 1 WHEN 'user' THEN 2 ELSE 3 END) FROM rules r),'[]'::jsonb) AS rules
 FROM identity i'''

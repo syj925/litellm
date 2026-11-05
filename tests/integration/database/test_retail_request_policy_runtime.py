@@ -1,3 +1,4 @@
+import importlib
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
@@ -13,7 +14,7 @@ from fastapi import HTTPException, Request
 import litellm
 from litellm.constants import LITELLM_PROXY_MASTER_KEY_ALIAS
 from litellm.proxy import proxy_server
-from litellm.proxy._types import UserAPIKeyAuth
+from litellm.proxy._types import ProxyException, UserAPIKeyAuth
 from litellm.proxy.retail import coordination_guard
 from litellm.proxy.retail import request_policy_runtime as runtime
 from litellm.proxy.retail.billing import RetailBilling
@@ -25,6 +26,7 @@ from tests.integration.database.test_retail_request_policy_store import (
     CUSTOMER_KEY,
     MODEL,
     PRIVATE,
+    TEAM,
     Client,
     DirectWriter,
     Fixture,
@@ -34,6 +36,7 @@ from tests.integration.database.test_retail_request_policy_store import (
     native,  # noqa: F401  # register the isolated PostgreSQL fixture
     rows,
 )
+from tests.unit.proxy.retail.test_api_jwt_native_auth import native_globals
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +108,50 @@ async def test_real_lookup_intersects_all_targets_and_keeps_private_prompt_out_o
         "model_info": {"id": "fixture-deployment"}}, "acompletion")
     assert final["messages"] == [{"role": "system", "content": "\n\n".join((PRIVATE, PRIVATE, PRIVATE))},
         {"role": "user", "content": "client request"}]
+    assert await rows(native, "SELECT * FROM retail_wallets") == [{"user_id": "ordinary-owner", "balance_nanos": 123456789}]
+
+
+@pytest.mark.asyncio
+async def test_real_team_policy_intersects_four_scopes_and_an_authorized_move_uses_only_current_parent(native: Fixture) -> None:
+    await rows(native, 'UPDATE "LiteLLM_VerificationToken" SET team_id=$2 WHERE token=$1 RETURNING token', CUSTOMER_KEY, TEAM)
+    for kind, cap in (("model", 500), ("team", 32), ("user", 200), ("key", 300)):
+        policy: Final = await created(native, PolicyCreate(name=kind, definition=Definition(max_output_tokens=cap)))
+        await assigned(native, kind, policy_id=UUID(str(policy["id"])))
+    source: Final = {"model": MODEL, "messages": [{"role": "user", "content": "client request"}]}
+    cached: Final = auth().model_copy(update={"team_id": "stale-cached-parent", "team_models": ["obsolete"], "team_rpm_limit": 999})
+    admitted: Final = await runtime.authorize_request_policies(request(), cached, source, "/v1/chat/completions")
+    assert admitted.team_id == TEAM and admitted.team_max_budget == 21
+    assert runtime.prepare_request_policy(admitted, source, "acompletion")["max_tokens"] == 32
+    await rows(native, '''UPDATE "LiteLLM_VerificationToken" SET team_id='fixture-native-team-two' WHERE token=$1 RETURNING token''', CUSTOMER_KEY)
+    moved: Final = await runtime.authorize_request_policies(request(), cached, source, "/v1/chat/completions")
+    assert moved.team_id == "fixture-native-team-two" and moved.team_max_budget == 22
+    assert runtime.prepare_request_policy(moved, source, "acompletion")["max_tokens"] == 200
+    assert await rows(native, "SELECT * FROM retail_wallets") == [{"user_id": "ordinary-owner", "balance_nanos": 123456789}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("restriction", ("team-model", "member-model", "member-budget", "default-budget"))
+async def test_real_joined_team_member_limits_reach_native_checks_before_any_wallet_work(
+    native: Fixture, restriction: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await rows(native, 'UPDATE "LiteLLM_VerificationToken" SET team_id=$2 WHERE token=$1 RETURNING token', CUSTOMER_KEY, TEAM)
+    await rows(native, '''INSERT INTO "LiteLLM_BudgetTable"(budget_id,max_budget,allowed_models,created_by,updated_by)
+        VALUES('member-budget',$1,$2,'fixture-admin','fixture-admin') RETURNING budget_id''',
+        1 if restriction == "member-budget" else None, ["revoked-model"] if restriction == "member-model" else [])
+    await rows(native, '''INSERT INTO "LiteLLM_TeamMembership"(user_id,team_id,budget_id,spend)
+        VALUES('ordinary-owner',$1,'member-budget',3) RETURNING team_id''', TEAM)
+    if restriction == "team-model":
+        await rows(native, '''UPDATE "LiteLLM_TeamTable" SET models=ARRAY['revoked-model'] WHERE team_id=$1 RETURNING team_id''', TEAM)
+    if restriction == "default-budget":
+        await rows(native, '''INSERT INTO "LiteLLM_BudgetTable"(budget_id,max_budget,created_by,updated_by)
+            VALUES('default-budget',1,'fixture-admin','fixture-admin') RETURNING budget_id''')
+        await rows(native, '''UPDATE "LiteLLM_TeamTable" SET metadata='{"team_member_budget_id":"default-budget"}' WHERE team_id=$1 RETURNING team_id''', TEAM)
+    admitted: Final = await runtime.authorize_request_policies(request(), auth(), {"model": MODEL}, "/v1/chat/completions")
+    assert runtime.request_policy_team_membership() is not None
+    native_globals(monkeypatch)
+    module: Final = importlib.import_module("litellm.proxy.auth.user_api_key_auth")
+    with pytest.raises((litellm.BudgetExceededError, HTTPException, ProxyException)):
+        await module.run_centralized_common_checks(admitted, request(), {"model": MODEL}, "/v1/chat/completions", force_virtual_key_checks=True)
     assert await rows(native, "SELECT * FROM retail_wallets") == [{"user_id": "ordinary-owner", "balance_nanos": 123456789}]
 
 

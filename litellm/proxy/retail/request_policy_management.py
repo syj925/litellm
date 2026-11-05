@@ -7,7 +7,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, St
 from .request_policy_types import Definition
 
 ResourceKind: TypeAlias = Literal["prompts", "policies", "bindings"]
-TargetKind: TypeAlias = Literal["user", "key", "model"]
+TargetKind: TypeAlias = Literal["user", "key", "model", "team"]
 
 
 @dataclass(frozen=True, slots=True)

@@ -39,7 +39,7 @@ def response(*, active: bool = True) -> tuple[Mapping[str, JsonValue], ...]:
     return ({"key_data": {"token": "a"*64,"user_id": "fresh-owner", "models": ["allowed-model"],
         "max_budget": 7,"metadata": {"team_scope": "retained"}},
         "user_data": {"user_id": "fresh-owner", "user_role": "customer","models": ["allowed-model"]},
-        "active": active,"rules": []},)
+        "team_data": None,"team_membership_data": None,"default_budget_data": None,"active": active,"rules": []},)
 
 
 @pytest.mark.asyncio
@@ -81,3 +81,15 @@ async def test_management_storage_failure_is_tagged_without_native_error_details
         PolicyCreate(name="Safe", definition=Definition()))
     assert result == RequestPolicyFailure("unavailable")
     assert "private-native-failure" not in repr(result)
+
+
+@pytest.mark.asyncio
+async def test_team_snapshot_accepts_prisma_json_roster_text_without_extra_reads() -> None:
+    data: Final = ({**response()[0], "team_data": {"team_id": "fixture-team", "models": ["allowed-model"],
+        "members_with_roles": '[{"role":"user","user_id":"fresh-owner"}]', "max_budget": 5}},)
+    reader: Final = Reader(data)
+    resolved: Final = await NativeRequestPolicyStore(Client(reader)).lookup("fresh-owner", "a"*64, "allowed-model")
+    assert isinstance(resolved, ResolvedRequestPolicies) and resolved.team is not None
+    assert resolved.team.team_id == "fixture-team" and resolved.team.max_budget == 5
+    assert resolved.team.members_with_roles[0].user_id == "fresh-owner"
+    assert len(reader.queries) == 1

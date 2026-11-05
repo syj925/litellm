@@ -23,11 +23,18 @@ BEGIN
         created_at timestamptz NOT NULL DEFAULT clock_timestamp(),updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
     );
     CREATE TABLE IF NOT EXISTS retail_request_policy_targets (
-        id uuid PRIMARY KEY,kind text NOT NULL CHECK(kind IN('user','key','model')),
+        id uuid PRIMARY KEY,kind text NOT NULL,
         native_id text NOT NULL,anchor text NOT NULL CHECK(anchor ~ '^[a-f0-9]{64}$'),
         native_created_at timestamptz,owner_id text,owner_created_at timestamptz,label text NOT NULL,
         UNIQUE(kind,native_id,anchor)
     );
+    IF NOT EXISTS(SELECT 1 FROM pg_constraint
+        WHERE conrelid='retail_request_policy_targets'::regclass
+        AND conname='retail_request_policy_targets_kind_v2_check') THEN
+        ALTER TABLE retail_request_policy_targets DROP CONSTRAINT IF EXISTS retail_request_policy_targets_kind_check;
+        ALTER TABLE retail_request_policy_targets ADD CONSTRAINT retail_request_policy_targets_kind_v2_check
+            CHECK(kind IN('user','key','model','team'));
+    END IF;
     CREATE INDEX IF NOT EXISTS retail_request_policy_target_identity ON retail_request_policy_targets(kind,native_id);
     CREATE TABLE IF NOT EXISTS retail_request_policy_bindings (
         id uuid PRIMARY KEY,target_id uuid NOT NULL REFERENCES retail_request_policy_targets(id),
@@ -77,5 +84,24 @@ BEGIN
     DROP TRIGGER IF EXISTS retail_request_policy_key_guard ON "LiteLLM_VerificationToken";
     CREATE TRIGGER retail_request_policy_key_guard BEFORE INSERT OR UPDATE OF token,user_id,created_at ON "LiteLLM_VerificationToken"
         FOR EACH ROW EXECUTE FUNCTION retail_request_policy_key_identity();
+    CREATE OR REPLACE FUNCTION retail_request_policy_team_identity() RETURNS trigger LANGUAGE plpgsql AS $team$
+    BEGIN
+        IF TG_OP='INSERT' THEN
+            IF EXISTS(SELECT 1 FROM retail_request_policy_targets t JOIN retail_request_policy_bindings b ON b.target_id=t.id
+                WHERE t.kind='team' AND t.native_id=NEW.team_id AND b.enabled AND NOT b.deleted) THEN
+                RAISE EXCEPTION 'A bound request-policy team cannot be recreated';
+            END IF;
+            RETURN NEW;
+        END IF;
+        IF (NEW.team_id IS DISTINCT FROM OLD.team_id OR NEW.created_at IS DISTINCT FROM OLD.created_at)
+            AND EXISTS(SELECT 1 FROM retail_request_policy_targets t JOIN retail_request_policy_bindings b ON b.target_id=t.id
+                WHERE t.kind='team' AND t.native_id=OLD.team_id AND b.enabled AND NOT b.deleted) THEN
+            RAISE EXCEPTION 'A bound request-policy team identity cannot change';
+        END IF;
+        RETURN NEW;
+    END $team$;
+    DROP TRIGGER IF EXISTS retail_request_policy_team_guard ON "LiteLLM_TeamTable";
+    CREATE TRIGGER retail_request_policy_team_guard BEFORE INSERT OR UPDATE OF team_id,created_at ON "LiteLLM_TeamTable"
+        FOR EACH ROW EXECUTE FUNCTION retail_request_policy_team_identity();
 END
 $request_policy$;

@@ -10,8 +10,16 @@ from starlette.applications import Starlette
 from starlette.routing import Match, Route
 from starlette.types import Scope
 
-from litellm.proxy._types import LiteLLM_UserTable, UserAPIKeyAuth
+from litellm.proxy._types import (
+    UI_TEAM_ID,
+    LiteLLM_BudgetTable,
+    LiteLLM_TeamMembership,
+    LiteLLM_TeamTableCachedObj,
+    LiteLLM_UserTable,
+    UserAPIKeyAuth,
+)
 from litellm.proxy.auth.route_checks import RouteChecks
+from litellm.proxy.auth.team_grants import team_grants
 from litellm.proxy.utils import hash_token_if_needed
 
 from .api_jwt_auth import api_jwt_compatible
@@ -75,6 +83,9 @@ class _Context:
     route: RouteKind | None
     compiled: CompiledRequestPolicy = field(repr=False)
     bound: bool
+    team: LiteLLM_TeamTableCachedObj | None = field(default=None, repr=False)
+    team_membership: LiteLLM_TeamMembership | None = field(default=None, repr=False)
+    team_member_default_budget: LiteLLM_BudgetTable | None = field(default=None, repr=False)
     prepared: _Prepared = field(default_factory=_Prepared, repr=False)
 
 
@@ -107,6 +118,13 @@ def request_policy_attested() -> bool:
     return _enabled() and _context.get() is not None
 
 
+def reset_request_policy_context() -> None:
+    from .request_policy_privacy import mark_private_policy_prompt
+
+    _context.set(None)
+    mark_private_policy_prompt(False)
+
+
 def request_policy_prompt_texts() -> tuple[str, ...]:
     context: Final = _context.get()
     return (context.compiled.prompt.get_secret_value(),) if context is not None and context.compiled.prompt else ()
@@ -115,6 +133,36 @@ def request_policy_prompt_texts() -> tuple[str, ...]:
 def request_policy_user() -> LiteLLM_UserTable | None:
     context: Final = _context.get()
     return context.user if _enabled() and context is not None else None
+
+
+def request_policy_team() -> LiteLLM_TeamTableCachedObj | None:
+    context: Final = _context.get()
+    return context.team if _enabled() and context is not None else None
+
+
+def request_policy_team_membership() -> LiteLLM_TeamMembership | None:
+    context: Final = _context.get()
+    return context.team_membership if _enabled() and context is not None else None
+
+
+def request_policy_team_member_default_budget() -> LiteLLM_BudgetTable | None:
+    context: Final = _context.get()
+    return context.team_member_default_budget if _enabled() and context is not None else None
+
+
+def _fresh_team_grants(resolved: ResolvedRequestPolicies) -> UserAPIKeyAuth:
+    team: Final = resolved.team
+    membership: Final = resolved.team_membership
+    if (resolved.auth.team_id in (None, UI_TEAM_ID)) != (team is None) or team is not None and (
+        team.team_id != resolved.auth.team_id or team.blocked
+    ) or membership is not None and (
+        membership.team_id != resolved.auth.team_id or membership.user_id != resolved.auth.user_id
+    ):
+        raise HTTPException(403, _FAILED)
+    defaults: Final = UserAPIKeyAuth()
+    cleared: Final = {name: getattr(defaults, name) for name in UserAPIKeyAuth.model_fields if name.startswith("team_")}
+    return resolved.auth.model_copy(update={**cleared, "team_id": resolved.auth.team_id,
+        **team_grants(team, membership, resolved.auth.user_id)})
 
 
 def request_policy_inference(route: str) -> bool:
@@ -193,8 +241,7 @@ async def authorize_request_policies(
 ) -> UserAPIKeyAuth:
     from .request_policy_privacy import mark_private_policy_prompt, private_policy_authority_io
 
-    _context.set(None)
-    mark_private_policy_prompt(False)
+    reset_request_policy_context()
     if not _enabled() or not request_policy_inference(route):
         return auth
     _require_environment()
@@ -217,7 +264,10 @@ async def authorize_request_policies(
     if isinstance(compiled, RequestPolicyFailure):
         raise HTTPException(403, _FAILED)
     route_kind: Final = _ROUTES.get(route) if request.method == "POST" else None
-    context: Final = _Context(resolved.auth, resolved.user, selected_model, route_kind, compiled, bool(resolved.policies))
+    fresh_auth: Final = _fresh_team_grants(resolved)
+    team: Final = LiteLLM_TeamTableCachedObj.model_validate(resolved.team.model_dump()) if resolved.team is not None else None
+    context: Final = _Context(fresh_auth, resolved.user, selected_model, route_kind, compiled, bool(resolved.policies),
+        team, resolved.team_membership, resolved.team_member_default_budget)
     _client_body(context, data)
     if context.bound and request.headers.get("x-litellm-disable-callbacks") is not None:
         raise HTTPException(400, _FAILED)
@@ -225,7 +275,13 @@ async def authorize_request_policies(
     if compiled.prompt is not None:
         mark_private_policy_prompt(True)
         request.scope[REQUEST_POLICY_PROMPT_MARKER] = True  # rebind-ok: trusted private marker must cross ASGI task boundaries
-    refreshed: Final = auth.model_copy(update=resolved.auth.model_dump(exclude_unset=True))
+    authority_fields: Final = {name: getattr(fresh_auth, name) for name in fresh_auth.model_fields_set
+        if UserAPIKeyAuth.model_fields[name].exclude is not True}
+    refreshed: Final = auth.model_copy(update={**authority_fields,
+        "org_id": fresh_auth.org_id, "organization_alias": fresh_auth.organization_alias,
+        "organization_max_budget": fresh_auth.organization_max_budget, "organization_tpm_limit": fresh_auth.organization_tpm_limit,
+        "organization_rpm_limit": fresh_auth.organization_rpm_limit, "organization_metadata": fresh_auth.organization_metadata,
+        "team_budget_snapshot": None, "org_budget_snapshot": None})
     return refreshed.model_copy(update={"metadata": {**(refreshed.metadata or {}), REQUEST_POLICY_PROMPT_MARKER: True}}) if compiled.prompt else refreshed
 
 
@@ -257,7 +313,7 @@ def require_request_policy_result(auth: UserAPIKeyAuth, *, inference: bool = Fal
             raise HTTPException(503, _UNAVAILABLE)
         return
     _require_environment()
-    if auth.user_id != context.auth.user_id or auth.user_role != context.auth.user_role or (
+    if auth.user_id != context.auth.user_id or auth.user_role != context.auth.user_role or auth.team_id != context.auth.team_id or (
         hash_token_if_needed(auth.token or auth.api_key or "") != hash_token_if_needed(context.auth.token or context.auth.api_key or "")
     ):
         raise HTTPException(403, _FAILED)

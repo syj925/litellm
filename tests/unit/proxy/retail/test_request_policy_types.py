@@ -65,3 +65,24 @@ def test_prompt_order_is_deterministic_private_and_bounded_in_utf8_bytes() -> No
     assert "private-model" not in repr(one) + repr(result)
     excessive: Final = ApplicablePolicy("key", UUID(int=3), 1, Definition(), "界" * 5462)
     assert compile_policies((excessive,)) == RequestPolicyFailure("capacity")
+
+
+def test_four_native_scopes_intersect_and_order_prompts_without_per_scope_overrides() -> None:
+    plans: Final = tuple(ApplicablePolicy(kind, UUID(int=index + 1), 1, Definition(
+        max_output_tokens=cap, temperature=0.5, allowed_routes=routes,
+    ), f"private-{kind}") for index, (kind, cap, routes) in enumerate((
+        ("key", 400, ("chat.completions", "responses")), ("user", 300, ("responses", "messages")),
+        ("team", 100, ("responses",)), ("model", 500, ("chat.completions", "responses", "messages")),
+    )))
+    result: Final = compile_policies(plans)
+    assert isinstance(result, CompiledRequestPolicy) and result.prompt is not None
+    assert result.max_output_tokens == 100 and result.allowed_routes == frozenset(("responses",))
+    assert result.prompt.get_secret_value() == "private-model\n\nprivate-team\n\nprivate-user\n\nprivate-key"
+    assert compile_policies((*plans, plans[2])) == RequestPolicyFailure("invalid")
+    assert compile_policies((policy("team", {"temperature": 0.5}), policy("user", {"temperature": 1.0}))) == RequestPolicyFailure("conflict")
+
+
+def test_four_scope_private_prompts_share_one_total_utf8_budget() -> None:
+    plans: Final = tuple(ApplicablePolicy(kind, UUID(int=index + 1), 1, Definition(), "界" * 1400)
+        for index, kind in enumerate(("model", "team", "user", "key")))
+    assert compile_policies(plans) == RequestPolicyFailure("capacity")

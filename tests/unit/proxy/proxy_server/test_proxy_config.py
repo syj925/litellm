@@ -3856,6 +3856,43 @@ async def test_ProxyConfig__get_hierarchical_router_settings_key_shadows_team_en
     team_lookup.assert_not_called()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("has_team", (True, False))
+async def test_policy_team_router_settings_cannot_fall_back_to_cached_team(
+    monkeypatch: pytest.MonkeyPatch, has_team: bool,
+) -> None:
+    from starlette.requests import Request
+
+    from litellm.constants import UI_SESSION_TOKEN_TEAM_ID
+    from litellm.proxy._types import LiteLLM_TeamTable, UserAPIKeyAuth
+    from litellm.proxy.retail import request_policy_runtime as runtime
+    from litellm.proxy.retail.request_policy_types import ResolvedRequestPolicies
+
+    monkeypatch.setenv("RETAIL_REQUEST_POLICIES_ENABLED", "true")
+    monkeypatch.setattr(runtime, "_require_environment", lambda: None)
+    current: Final = {"timeout": 7}
+    team: Final = LiteLLM_TeamTable(team_id="current-team", router_settings=current) if has_team else None
+    auth: Final = UserAPIKeyAuth(user_id="policy-user", user_role="customer", api_key="a" * 64, token="a" * 64,
+        team_id="current-team" if has_team else UI_SESSION_TOKEN_TEAM_ID)
+
+    async def lookup(identity: UserAPIKeyAuth, model: str) -> ResolvedRequestPolicies:
+        return ResolvedRequestPolicies(identity, None, "a" * 64, (), team=team)
+
+    stale: Final = AsyncMock(return_value=SimpleNamespace(router_settings={"timeout": 999}))
+    monkeypatch.setattr("litellm.proxy.proxy_server.get_team_object", stale)
+    request: Final = Request({"type": "http", "method": "POST", "path": "/v1/chat/completions", "headers": []})
+    admitted: Final = await runtime.authorize_request_policies(request, auth, {"model": "policy-model"},
+        "/v1/chat/completions", lookup=lookup)
+    try:
+        out: Final = await ProxyConfig()._get_hierarchical_router_settings(
+            user_api_key_dict=admitted, prisma_client=None, proxy_logging_obj=None)
+        assert out == (current if has_team else None)
+        stale.assert_not_called()
+    finally:
+        monkeypatch.setenv("RETAIL_REQUEST_POLICIES_ENABLED", "false")
+        await runtime.authorize_request_policies(request, auth, {}, "/v1/chat/completions", lookup=lookup)
+
+
 # ---------------------------------------------------------------------------
 # ProxyConfig._add_router_settings_from_db_config
 # ---------------------------------------------------------------------------

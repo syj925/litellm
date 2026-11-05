@@ -996,6 +996,9 @@ async def common_checks(
     request: Request,
     skip_budget_checks: bool = False,
     project_object: LiteLLM_ProjectTableCachedObj | None = None,
+    fresh_team_membership: LiteLLM_TeamMembership | None = None,
+    fresh_team_membership_loaded: bool = False,
+    fresh_team_member_default_budget: LiteLLM_BudgetTable | None = None,
 ) -> bool:
     """
     Common checks across jwt + key-based auth.
@@ -1036,7 +1039,7 @@ async def common_checks(
     )
     team_membership_loaded: Final = team_object is not None and membership_user_id is not None
     loaded_team_membership: Final = (
-        await get_team_membership(
+        fresh_team_membership if fresh_team_membership_loaded else await get_team_membership(
             user_id=membership_user_id,
             team_id=team_object.team_id,
             prisma_client=prisma_client,
@@ -1309,6 +1312,8 @@ async def common_checks(
                     proxy_logging_obj=proxy_logging_obj,
                     team_membership=loaded_team_membership,
                     team_membership_loaded=team_membership_loaded,
+                    fresh_default_budget=fresh_team_member_default_budget,
+                    fresh_default_budget_loaded=fresh_team_membership_loaded,
                 ),
                 check_end_user_budget(end_user_obj=end_user_object, route=route)
                 if end_user_object is not None and end_user_object.litellm_budget_table is not None
@@ -6215,6 +6220,8 @@ async def _check_team_member_budget(
     proxy_logging_obj: ProxyLogging,
     team_membership: LiteLLM_TeamMembership | None = None,
     team_membership_loaded: bool = False,
+    fresh_default_budget: LiteLLM_BudgetTable | None = None,
+    fresh_default_budget_loaded: bool = False,
 ):
     """Check if team member is over their max budget within the team."""
     if (
@@ -6243,7 +6250,7 @@ async def _check_team_member_budget(
         else:
             default_budget_id: Final = (team_object.metadata or {}).get("team_member_budget_id")
             if isinstance(default_budget_id, str):
-                default_budget: Final = await get_team_member_default_budget(
+                default_budget: Final = fresh_default_budget if fresh_default_budget_loaded else await get_team_member_default_budget(
                     budget_id=default_budget_id,
                     prisma_client=prisma_client,
                     user_api_key_cache=user_api_key_cache,

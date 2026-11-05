@@ -78084,7 +78084,7 @@ export interface operations {
     targets_retail_admin_request_policies_targets_get: {
         parameters: {
             query: {
-                kind: "user" | "key" | "model";
+                kind: "user" | "key" | "model" | "team";
                 q?: string;
                 limit?: number;
                 offset?: number;

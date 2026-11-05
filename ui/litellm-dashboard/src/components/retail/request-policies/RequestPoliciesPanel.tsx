@@ -27,6 +27,7 @@ import PolicyEditor from "./PolicyEditor";
 import PromptEditor from "./PromptEditor";
 import { PolicyWriteError } from "./PolicyShared";
 import type { PolicyBinding, PolicyResource, PolicySession, PolicyTab, RequestPolicy, SavedPrompt } from "./types";
+import { targetKindLabels } from "./types";
 
 const tabs = ["policies", "prompts", "bindings"] as const;
 const parsers = { tab: parseAsStringLiteral(tabs).withDefault("policies"), page: managementPageParser };
@@ -60,7 +61,8 @@ function CollectionEditor({
 const collectionDescriptions = {
   policies: "Restrict routes and output size, set request parameters, and attach a saved prompt.",
   prompts: "Reusable private prompts. The list contains metadata only; choose Edit to read prompt content.",
-  bindings: "Apply one policy to a user, virtual key, or public model. Restrictions from all matching targets combine.",
+  bindings:
+    "Apply one policy to a public model, Team, user, or virtual key. All matching restrictions combine in that order.",
 } as const;
 function DeleteResource({
   tab,
@@ -200,7 +202,9 @@ function Collection({
                       <TableCell className="max-w-80 break-words font-medium">
                         {resourceName(row)}
                         {"target_kind" in row && (
-                          <p className="text-xs font-normal text-muted-foreground">{row.target_kind}</p>
+                          <p className="text-xs font-normal text-muted-foreground">
+                            {targetKindLabels[row.target_kind]}
+                          </p>
                         )}
                       </TableCell>
                       {"policy_name" in row && <TableCell>{row.policy_name}</TableCell>}

@@ -17,6 +17,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.rows import dict_row
 from pydantic import JsonValue, TypeAdapter
 
+from litellm.constants import UI_SESSION_TOKEN_TEAM_ID
 from litellm.proxy._types import hash_token
 from litellm.proxy.retail.native_audit_store import ensure_native_schema
 from litellm.proxy.retail.request_policy_management import (
@@ -37,6 +38,7 @@ CUSTOMER_KEY: Final = hash_token("fixture-policy-customer")
 ACTOR: Final = PolicyActor("admin-owner", ADMIN_KEY)
 MODEL: Final = "fixture-public-model"
 PRIVATE: Final = "private-directory-prompt-data"
+TEAM: Final = "fixture-native-team-one"
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +91,35 @@ class TextDatetimeClient:
 
 
 @dataclass(frozen=True, slots=True)
+class TimestampWireWriter:
+    writer: Writer
+
+    async def query_raw(self, query: str, *args: object) -> object:
+        if query.startswith("INSERT INTO retail_request_policy_targets("):
+            for value in (args[4], args[6]):
+                if value is not None and not isinstance(value, str):
+                    raise TypeError("Target timestamps require stable text wire values")
+        return await self.writer.query_raw(query, *args)
+
+    async def execute_raw(self, query: str, *args: object) -> int:
+        return await self.writer.execute_raw(query, *args)
+
+
+@dataclass(frozen=True, slots=True)
+class TimestampWireClient:
+    client: Client
+
+    @property
+    def writer_db(self) -> DirectWriter:
+        return self.client.writer_db
+
+    @asynccontextmanager
+    async def tx(self, *, timeout: timedelta) -> AsyncIterator[TimestampWireWriter]:
+        async with self.client.tx(timeout=timeout) as writer:
+            yield TimestampWireWriter(writer)
+
+
+@dataclass(frozen=True, slots=True)
 class Fixture:
     client: Client
     store: NativeRequestPolicyStore
@@ -117,6 +148,17 @@ async def native(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Fixture]:
                 token text PRIMARY KEY,user_id text,models text[] DEFAULT '{}',blocked boolean,expires timestamp(3),
                 created_at timestamp(3) DEFAULT now(),spend float8 DEFAULT 0,max_budget float8,
                 key_alias text,team_id text,allowed_routes text[] DEFAULT '{}',metadata jsonb DEFAULT '{}');
+                CREATE TABLE "LiteLLM_TeamTable"(
+                team_id text PRIMARY KEY,team_alias text,created_at timestamp(3) NOT NULL DEFAULT now(),
+                blocked boolean NOT NULL DEFAULT false,models text[] DEFAULT '{}',spend float8 DEFAULT 0,
+                max_budget float8,max_parallel_requests integer,tpm_limit bigint,rpm_limit bigint,
+                members_with_roles jsonb DEFAULT '[]',metadata jsonb DEFAULT '{}',model_id integer,object_permission_id text);
+                CREATE TABLE "LiteLLM_ModelTable"(id integer PRIMARY KEY,aliases jsonb,created_by text,updated_by text);
+                CREATE TABLE "LiteLLM_ObjectPermissionTable"(object_permission_id text PRIMARY KEY,models text[],mcp_servers text[]);
+                CREATE TABLE "LiteLLM_BudgetTable"(budget_id text PRIMARY KEY,max_budget float8,allowed_models text[],
+                    tpm_limit bigint,rpm_limit bigint,max_parallel_requests integer,created_by text,updated_by text);
+                CREATE TABLE "LiteLLM_TeamMembership"(user_id text,team_id text,spend float8 DEFAULT 0,
+                    total_spend float8 DEFAULT 0,budget_id text,PRIMARY KEY(user_id,team_id));
                 CREATE TABLE retail_wallets(user_id text PRIMARY KEY,balance_nanos bigint);
                 INSERT INTO retail_wallets VALUES('ordinary-owner',123456789);
                 INSERT INTO "LiteLLM_UserTable"(user_id,user_role,password,user_alias) VALUES
@@ -125,6 +167,9 @@ async def native(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Fixture]:
             await writer.query_raw('''INSERT INTO "LiteLLM_VerificationToken"(token,user_id,key_alias,max_budget,models)
                 VALUES($1,'admin-owner','Admin session',100,ARRAY[$3]),
                 ($2,'ordinary-owner','Client key',7,ARRAY[$3]) RETURNING token''', ADMIN_KEY, CUSTOMER_KEY, MODEL)
+            await writer.query_raw('''INSERT INTO "LiteLLM_TeamTable"(team_id,team_alias,models,members_with_roles,max_budget)
+                VALUES($1,'Primary fixture team',ARRAY[$2],'[{"user_id":"ordinary-owner","role":"user"}]',21),
+                ('fixture-native-team-two','Secondary fixture team',ARRAY[$2],'[]',22) RETURNING team_id''', TEAM, MODEL)
         await ensure_native_schema(client)
         assert await store.initialize() is None
         yield Fixture(client, store)
@@ -146,7 +191,7 @@ async def created(native: Fixture, data: WriteInput, kind: str = "policies", *, 
 
 
 async def target(native: Fixture, kind: str, q: str = "") -> UUID:
-    assert kind in {"model", "user", "key"}
+    assert kind in {"model", "user", "key", "team"}
     reply: Final = success(await native.store.targets(ACTOR, kind, q=q))
     rows: Final = TypeAdapter(tuple[dict[str, JsonValue], ...]).validate_python(reply["items"])
     assert rows
@@ -160,7 +205,7 @@ async def policy(native: Fixture, *, prompt_id: UUID | None = None, enabled: boo
 
 
 async def assigned(native: Fixture, kind: str = "key", *, policy_id: UUID | None = None) -> Mapping[str, JsonValue]:
-    selected: Final = await target(native, kind, "Client" if kind == "key" else "ordinary" if kind == "user" else MODEL)
+    selected: Final = await target(native, kind, "Client" if kind == "key" else "ordinary" if kind == "user" else "Primary" if kind == "team" else MODEL)
     return await created(native, BindingCreate(target_id=selected, policy_id=policy_id or await policy(native)), "bindings")
 
 
@@ -193,11 +238,12 @@ async def test_three_applicable_rules_fresh_identity_and_no_private_prompt_in_me
 
 @pytest.mark.asyncio
 async def test_target_responses_have_opaque_ids_and_server_catalog_only(native: Fixture) -> None:
-    for kind in ("user", "key", "model"):
+    for kind in ("user", "key", "model", "team"):
         result: Final = success(await native.store.targets(ACTOR, kind))
         text: Final = json.dumps(result)
         assert CUSTOMER_KEY not in text and ADMIN_KEY not in text and "ordinary-owner" not in text
         assert "native_id" not in text and "owner_id" not in text and "anchor" not in text
+        assert TEAM not in text
     models: Final = success(await native.store.targets(ACTOR, "model", q="not-public"))
     assert models["items"] == [] and models["total"] == 0
     page: Final = success(await native.store.targets(ACTOR, "model", limit=1, offset=1))
@@ -428,9 +474,200 @@ async def test_list_pages_are_stable_bounded_and_do_not_fetch_prompt_content(nat
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind", ("user", "key"))
+@pytest.mark.parametrize("kind", ("user", "key", "team"))
 async def test_target_timestamps_accept_native_prisma_text_datetime_parameters(native: Fixture, kind: str) -> None:
     store: Final = NativeRequestPolicyStore(TextDatetimeClient(native.client), catalog=lambda: (MODEL,))
     reply: Final = success(await store.targets(ACTOR, kind))
     assert reply["total"] == 2
     assert len(TypeAdapter(tuple[dict[str, JsonValue], ...]).validate_python(reply["items"])) == 2
+
+
+@pytest.mark.asyncio
+async def test_mixed_target_timestamp_shapes_use_stable_wire_values_and_preserve_anchors(native: Fixture) -> None:
+    store: Final = NativeRequestPolicyStore(TimestampWireClient(native.client), catalog=lambda: (MODEL,))
+    for kind in ("model", "team", "user", "key", "key", "user", "team", "model"):
+        reply: Final = success(await store.targets(ACTOR, kind))
+        items: Final = TypeAdapter(tuple[dict[str, JsonValue], ...]).validate_python(reply["items"])
+        current: Final = tuple(sorted(str(item["id"]) for item in items))
+        assert len(current) == (1 if kind == "model" else 2)
+        assert all(set(item) == {"id", "kind", "label"} for item in items)
+        assert success(await store.targets(ACTOR, kind)) == reply
+    shape: Final = await rows(native, '''SELECT kind,count(*) AS total,
+        bool_and(native_created_at IS NULL) AS native_empty,
+        bool_and(owner_created_at IS NULL) AS owner_empty,
+        bool_and(owner_created_at IS NOT NULL) AS owner_present
+        FROM retail_request_policy_targets GROUP BY kind ORDER BY kind''')
+    assert shape == [
+        {"kind": "key", "total": 2, "native_empty": False, "owner_empty": False, "owner_present": True},
+        {"kind": "model", "total": 1, "native_empty": True, "owner_empty": True, "owner_present": False},
+        {"kind": "team", "total": 2, "native_empty": False, "owner_empty": True, "owner_present": False},
+        {"kind": "user", "total": 2, "native_empty": False, "owner_empty": True, "owner_present": False},
+    ]
+    assert await rows(native, "SELECT balance_nanos FROM retail_wallets") == [{"balance_nanos": 123456789}]
+
+
+@pytest.mark.asyncio
+async def test_four_scopes_use_current_key_team_and_a_single_fresh_authority_snapshot(native: Fixture) -> None:
+    await rows(native, 'UPDATE "LiteLLM_VerificationToken" SET team_id=$2 WHERE token=$1 RETURNING token', CUSTOMER_KEY, TEAM)
+    identifier: Final = await policy(native)
+    for kind in ("key", "user", "team", "model"):
+        await assigned(native, kind, policy_id=identifier)
+    result: Final = await native.store.lookup("ordinary-owner", CUSTOMER_KEY, MODEL)
+    assert isinstance(result, ResolvedRequestPolicies)
+    assert tuple(rule.target_kind for rule in result.policies) == ("model", "team", "user", "key")
+    assert result.auth.team_id == TEAM and result.team is not None and result.team.team_id == TEAM
+    assert result.team.max_budget == 21
+    assert TEAM not in repr(result)
+    await rows(native, 'UPDATE "LiteLLM_VerificationToken" SET team_id=\'fixture-native-team-two\' WHERE token=$1 RETURNING token', CUSTOMER_KEY)
+    moved: Final = await native.store.lookup("ordinary-owner", CUSTOMER_KEY, MODEL)
+    assert isinstance(moved, ResolvedRequestPolicies) and moved.team is not None
+    assert moved.team.team_id == "fixture-native-team-two" and moved.team.max_budget == 22
+    assert tuple(rule.target_kind for rule in moved.policies) == ("model", "user", "key")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bound", (False, True))
+@pytest.mark.parametrize("state", ("blocked", "deleted"))
+async def test_missing_and_blocked_current_team_fail_closed_with_or_without_binding(native: Fixture, bound: bool, state: str) -> None:
+    await rows(native, 'UPDATE "LiteLLM_VerificationToken" SET team_id=$2 WHERE token=$1 RETURNING token', CUSTOMER_KEY, TEAM)
+    if bound:
+        await assigned(native, "team")
+    if state == "blocked":
+        await rows(native, 'UPDATE "LiteLLM_TeamTable" SET blocked=true WHERE team_id=$1 RETURNING team_id', TEAM)
+    else:
+        await rows(native, 'DELETE FROM "LiteLLM_TeamTable" WHERE team_id=$1 RETURNING team_id', TEAM)
+    assert await native.store.lookup("ordinary-owner", CUSTOMER_KEY, MODEL) == RequestPolicyFailure("forbidden")
+
+
+@pytest.mark.asyncio
+async def test_bound_team_identity_and_deleted_identifier_cannot_be_reused_until_explicit_unassignment(native: Fixture) -> None:
+    binding: Final = await assigned(native, "team")
+    for change in ("created_at=created_at+interval '1 hour'", "team_id='attempted-rename'"):
+        with pytest.raises(psycopg.Error):
+            await rows(native, f'UPDATE "LiteLLM_TeamTable" SET {change} WHERE team_id=$1 RETURNING team_id', TEAM)
+    await rows(native, 'DELETE FROM "LiteLLM_TeamTable" WHERE team_id=$1 RETURNING team_id', TEAM)
+    with pytest.raises(psycopg.Error):
+        await rows(native, 'INSERT INTO "LiteLLM_TeamTable"(team_id,team_alias) VALUES($1,\'Recreated team\') RETURNING team_id', TEAM)
+    success(await native.store.write(ACTOR, "bindings", "deleted", "unassign-retired-team", None, UUID(str(binding["id"])), 1))
+    await rows(native, 'INSERT INTO "LiteLLM_TeamTable"(team_id,team_alias) VALUES($1,\'Recreated team\') RETURNING team_id', TEAM)
+    fresh_target: Final = await target(native, "team", "Recreated")
+    assert str(fresh_target) != binding["target_id"]
+
+
+@pytest.mark.asyncio
+async def test_tampered_team_anchor_cannot_silently_drop_its_binding(native: Fixture) -> None:
+    await rows(native, 'UPDATE "LiteLLM_VerificationToken" SET team_id=$2 WHERE token=$1 RETURNING token', CUSTOMER_KEY, TEAM)
+    await assigned(native, "team")
+    async with native.client.tx(timeout=timedelta(seconds=8)) as writer:
+        await writer.execute_raw('ALTER TABLE "LiteLLM_TeamTable" DISABLE TRIGGER retail_request_policy_team_guard')
+        await writer.query_raw('UPDATE "LiteLLM_TeamTable" SET created_at=created_at+interval \'1 hour\' WHERE team_id=$1 RETURNING team_id', TEAM)
+        await writer.execute_raw('ALTER TABLE "LiteLLM_TeamTable" ENABLE TRIGGER retail_request_policy_team_guard')
+    assert await native.store.lookup("ordinary-owner", CUSTOMER_KEY, MODEL) == RequestPolicyFailure("forbidden")
+
+
+@pytest.mark.asyncio
+async def test_team_related_alias_permission_and_member_budget_are_fresh_and_cleared_after_key_moves(native: Fixture) -> None:
+    async with native.client.tx(timeout=timedelta(seconds=8)) as writer:
+        await writer.query_raw('''INSERT INTO "LiteLLM_ModelTable"(id,aliases,created_by,updated_by)
+            VALUES(1,'{"visible-alias":"fixture-public-model"}','fixture','fixture') RETURNING id''')
+        await writer.query_raw('''INSERT INTO "LiteLLM_ObjectPermissionTable"(object_permission_id,models,mcp_servers)
+            VALUES('fixture-permissions',ARRAY[$1],ARRAY['fixture-mcp']) RETURNING object_permission_id''', MODEL)
+        await writer.query_raw('''INSERT INTO "LiteLLM_BudgetTable"(budget_id,max_budget,allowed_models,tpm_limit,rpm_limit)
+            VALUES('fixture-member-budget',4,ARRAY[$1],17,3) RETURNING budget_id''', MODEL)
+        await writer.query_raw('''INSERT INTO "LiteLLM_TeamMembership"(user_id,team_id,budget_id)
+            VALUES('ordinary-owner',$1,'fixture-member-budget') RETURNING user_id''', TEAM)
+        await writer.query_raw('''UPDATE "LiteLLM_TeamTable" SET model_id=1,object_permission_id='fixture-permissions'
+            WHERE team_id=$1 RETURNING team_id''', TEAM)
+        await writer.query_raw('UPDATE "LiteLLM_VerificationToken" SET team_id=$2 WHERE token=$1 RETURNING token', CUSTOMER_KEY, TEAM)
+    result: Final = await native.store.lookup("ordinary-owner", CUSTOMER_KEY, MODEL)
+    assert isinstance(result, ResolvedRequestPolicies) and result.team is not None
+    assert result.team.litellm_model_table is not None and result.team.litellm_model_table.model_aliases == {"visible-alias": MODEL}
+    assert result.team.object_permission is not None and result.team.object_permission.mcp_servers == ["fixture-mcp"]
+    assert result.team_membership is not None and result.team_membership.litellm_budget_table is not None
+    assert result.team_membership.litellm_budget_table.max_budget == 4
+    assert result.team_membership.litellm_budget_table.rpm_limit == 3
+    await rows(native, 'UPDATE "LiteLLM_VerificationToken" SET team_id=NULL WHERE token=$1 RETURNING token', CUSTOMER_KEY)
+    moved: Final = await native.store.lookup("ordinary-owner", CUSTOMER_KEY, MODEL)
+    assert isinstance(moved, ResolvedRequestPolicies) and moved.team is None and moved.team_membership is None
+
+
+@pytest.mark.asyncio
+async def test_r15_six_table_schema_upgrade_preserves_existing_targets_bindings_receipts_and_wallets(native: Fixture) -> None:
+    binding: Final = await assigned(native)
+    before: Final = await rows(native, '''SELECT
+        (SELECT count(*) FROM retail_request_policy_receipts) AS receipts,
+        (SELECT count(*) FROM retail_request_policy_targets) AS targets,
+        (SELECT count(*) FROM retail_request_policy_bindings) AS bindings''')
+    async with native.client.tx(timeout=timedelta(seconds=8)) as writer:
+        await writer.execute_raw('''ALTER TABLE retail_request_policy_targets DROP CONSTRAINT retail_request_policy_targets_kind_v2_check;
+            ALTER TABLE retail_request_policy_targets ADD CONSTRAINT retail_request_policy_targets_kind_check CHECK(kind IN('user','key','model'))''')
+    assert await native.store.initialize() is None
+    assert await rows(native, '''SELECT
+        (SELECT count(*) FROM retail_request_policy_receipts) AS receipts,
+        (SELECT count(*) FROM retail_request_policy_targets) AS targets,
+        (SELECT count(*) FROM retail_request_policy_bindings) AS bindings''') == before
+    assert success(await native.store.get_resource(ACTOR, "bindings", UUID(str(binding["id"])))) == binding
+    team_binding: Final = await assigned(native, "team")
+    assert team_binding["target_kind"] == "team"
+    assert await rows(native, "SELECT * FROM retail_wallets") == [{"user_id": "ordinary-owner", "balance_nanos": 123456789}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("encoded_metadata", (False, True))
+async def test_default_member_budget_is_part_of_same_team_snapshot_and_does_not_return_after_deletion(native: Fixture, encoded_metadata: bool) -> None:
+    await rows(native, '''INSERT INTO "LiteLLM_BudgetTable"(budget_id,max_budget,allowed_models,rpm_limit)
+        VALUES('default-member',3,ARRAY[$1],2) RETURNING budget_id''', MODEL)
+    metadata: Final = {"team_member_budget_id": "default-member"}
+    payload: Final = json.dumps(json.dumps(metadata)) if encoded_metadata else json.dumps(metadata)
+    await rows(native, 'UPDATE "LiteLLM_TeamTable" SET metadata=$2::jsonb WHERE team_id=$1 RETURNING team_id', TEAM, payload)
+    await rows(native, 'UPDATE "LiteLLM_VerificationToken" SET team_id=$2 WHERE token=$1 RETURNING token', CUSTOMER_KEY, TEAM)
+    result: Final = await native.store.lookup("ordinary-owner", CUSTOMER_KEY, MODEL)
+    assert isinstance(result, ResolvedRequestPolicies) and result.team_member_default_budget is not None
+    assert result.team_member_default_budget.rpm_limit == 2 and result.team_member_default_budget.max_budget == 3
+    await rows(native, 'DELETE FROM "LiteLLM_BudgetTable" WHERE budget_id=\'default-member\' RETURNING budget_id')
+    removed: Final = await native.store.lookup("ordinary-owner", CUSTOMER_KEY, MODEL)
+    assert isinstance(removed, ResolvedRequestPolicies) and removed.team_member_default_budget is None
+
+
+@pytest.mark.asyncio
+async def test_reserved_ui_team_is_never_an_entity_target_and_preserves_native_session_scope(native: Fixture) -> None:
+    await rows(native, 'UPDATE "LiteLLM_VerificationToken" SET team_id=$2 WHERE token=$1 RETURNING token', CUSTOMER_KEY, UI_SESSION_TOKEN_TEAM_ID)
+    session: Final = await native.store.lookup("ordinary-owner", CUSTOMER_KEY, MODEL)
+    assert isinstance(session, ResolvedRequestPolicies) and session.auth.team_id == UI_SESSION_TOKEN_TEAM_ID
+    assert session.team is None and session.team_membership is None
+    await rows(native, 'INSERT INTO "LiteLLM_TeamTable"(team_id,team_alias,blocked) VALUES($1,\'Reserved UI fixture\',true) RETURNING team_id', UI_SESSION_TOKEN_TEAM_ID)
+    listed: Final = success(await native.store.targets(ACTOR, "team", q="Reserved UI"))
+    assert listed["items"] == [] and listed["total"] == 0
+    identifier: Final = uuid4()
+    await rows(native, '''INSERT INTO retail_request_policy_targets(id,kind,native_id,anchor,native_created_at,label)
+        SELECT $1::uuid,'team',team_id,$2,created_at AT TIME ZONE 'UTC','Reserved' FROM "LiteLLM_TeamTable"
+        WHERE team_id=$3 RETURNING id''', str(identifier), "a"*64, UI_SESSION_TOKEN_TEAM_ID)
+    assigned_policy: Final = await policy(native)
+    assert await native.store.write(ACTOR, "bindings", "created", "bind-reserved-team",
+        BindingCreate(target_id=identifier, policy_id=assigned_policy)) == RequestPolicyFailure("forbidden")
+
+
+@pytest.mark.asyncio
+async def test_native_administrator_verification_is_fresh_read_only_and_creates_no_audit_receipts(native: Fixture) -> None:
+    assert await native.store.verify_administrator(ACTOR) is None
+    assert await native.store.verify_administrator(PolicyActor(None, None, True)) is None
+    await rows(native, 'UPDATE "LiteLLM_UserTable" SET user_role=\'customer\' WHERE user_id=\'admin-owner\' RETURNING user_id')
+    assert await native.store.verify_administrator(ACTOR) == RequestPolicyFailure("forbidden")
+    assert await rows(native, "SELECT count(*) AS total FROM retail_request_policy_receipts") == [{"total": 0}]
+    assert await rows(native, "SELECT count(*) AS total FROM retail_native_audit_outbox") == [{"total": 0}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("transition", ("blocked", "deleted"))
+async def test_concurrent_team_lifecycle_reads_one_committed_snapshot_and_rejects_following_requests(native: Fixture, transition: str) -> None:
+    await rows(native, 'UPDATE "LiteLLM_VerificationToken" SET team_id=$2 WHERE token=$1 RETURNING token', CUSTOMER_KEY, TEAM)
+    await assigned(native, "team")
+    async with native.client.tx(timeout=timedelta(seconds=8)) as writer:
+        if transition == "blocked":
+            await writer.query_raw('UPDATE "LiteLLM_TeamTable" SET blocked=true WHERE team_id=$1 RETURNING team_id', TEAM)
+        else:
+            await writer.query_raw('DELETE FROM "LiteLLM_TeamTable" WHERE team_id=$1 RETURNING team_id', TEAM)
+        concurrent: Final = await native.store.lookup("ordinary-owner", CUSTOMER_KEY, MODEL)
+        assert isinstance(concurrent, ResolvedRequestPolicies) and concurrent.team is not None
+        assert concurrent.team.blocked is False and tuple(rule.target_kind for rule in concurrent.policies) == ("team",)
+    assert await native.store.lookup("ordinary-owner", CUSTOMER_KEY, MODEL) == RequestPolicyFailure("forbidden")

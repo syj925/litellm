@@ -2359,6 +2359,9 @@ async def validate_resolved_virtual_key(  # noqa: C901  # Preserve ordering of e
     end_user_params: dict[str, object],
     _end_user_object: LiteLLM_EndUserTable | None,
     fresh_user: LiteLLM_UserTable | None = None,
+    fresh_team: LiteLLM_TeamTableCachedObj | None = None,
+    fresh_team_membership: LiteLLM_TeamMembership | None = None,
+    fresh_team_loaded: bool = False,
 ) -> UserAPIKeyAuth:
     from litellm.proxy.proxy_server import (
         litellm_proxy_admin_name,
@@ -2401,7 +2404,8 @@ async def validate_resolved_virtual_key(  # noqa: C901  # Preserve ordering of e
             llm_router=llm_router,
         )
         await _prefetch_referenced_auth_objects(
-            valid_token, end_user_id=end_user_id, user_api_key_cache=user_api_key_cache, prisma_client=prisma_client
+            valid_token, end_user_id=end_user_id, user_api_key_cache=user_api_key_cache, prisma_client=prisma_client,
+            fresh_team_loaded=fresh_team_loaded,
         )
 
         # Check 2. If user_id for this token is in budget - done in common_checks()
@@ -2463,11 +2467,11 @@ async def validate_resolved_virtual_key(  # noqa: C901  # Preserve ordering of e
             if prisma_client is not None and _user_id is not None and _team_id is not None:
                 _cache_key: Final = team_membership_auth_cache_key(team_id=_team_id, user_id=_user_id)
 
-                team_member_info = await user_api_key_cache.async_get_cache(
+                team_member_info = fresh_team_membership if fresh_team_loaded else await user_api_key_cache.async_get_cache(  # rebind-ok: reuse current policy membership instead of an earlier cached badge
                     key=_cache_key,
                     model_type=LiteLLM_TeamMembership,
                 )
-                if team_member_info is None:
+                if team_member_info is None and not fresh_team_loaded:
                     # read from DB
                     _db_member: Final = await TeamMembershipRepository(prisma_client).table.find_first(
                         where={
@@ -2640,7 +2644,9 @@ async def validate_resolved_virtual_key(  # noqa: C901  # Preserve ordering of e
                         )
 
         # Check 6: Additional Common Checks across jwt + key auth
-        if valid_token.team_id is not None:
+        if fresh_team_loaded:
+            _team_obj = fresh_team  # rebind-ok: the joined native Team is authoritative for this policy admission
+        elif valid_token.team_id is not None:
             try:
                 if valid_token.team_id == UI_TEAM_ID:
                     raise TeamNotFoundError(team_id=UI_TEAM_ID)
@@ -2988,8 +2994,19 @@ async def run_centralized_common_checks(
         if end_user_id is not None and key_end_user_budget_id is not None:
             user_api_key_auth_obj.end_user_id = end_user_id
 
+    from litellm.proxy.retail.request_policy_runtime import (
+        request_policy_attested,
+        request_policy_team,
+        request_policy_team_member_default_budget,
+        request_policy_team_membership,
+        request_policy_user,
+    )
+
+    policy_attested: Final = request_policy_attested()
     fetch_coros: Final = []
-    if user_api_key_auth_obj.team_id is not None and user_api_key_auth_obj.team_id != UI_TEAM_ID:
+    if policy_attested:
+        fetch_coros.append(_safe_fetch("team", _known_request_policy_team(request_policy_team())))
+    elif user_api_key_auth_obj.team_id is not None and user_api_key_auth_obj.team_id != UI_TEAM_ID:
         fetch_coros.append(
             _safe_fetch(
                 "team",
@@ -3006,7 +3023,6 @@ async def run_centralized_common_checks(
         fetch_coros.append(_safe_fetch("team", _noop_none()))
 
     from litellm.proxy.retail.api_jwt_auth import api_jwt_user
-    from litellm.proxy.retail.request_policy_runtime import request_policy_user
     from litellm.proxy.retail.scim_identity import scim_identity_user
 
     authoritative_user: Final = request_policy_user() or scim_identity_user(request) or api_jwt_user(request)
@@ -3226,6 +3242,9 @@ async def run_centralized_common_checks(
             valid_token=user_api_key_auth_obj,
             skip_budget_checks=skip_budget_checks,
             project_object=project_object,
+            fresh_team_membership=request_policy_team_membership() if policy_attested else None,
+            fresh_team_membership_loaded=policy_attested,
+            fresh_team_member_default_budget=request_policy_team_member_default_budget() if policy_attested else None,
         )
         if not skip_budget_checks:
             await _check_team_model_budget(
@@ -3267,6 +3286,10 @@ _run_centralized_common_checks: Final = run_centralized_common_checks
 
 async def _known_api_jwt_user(user: LiteLLM_UserTable) -> LiteLLM_UserTable:
     return user
+
+
+async def _known_request_policy_team(team: LiteLLM_TeamTableCachedObj | None) -> LiteLLM_TeamTableCachedObj | None:
+    return team
 
 
 async def _noop_none() -> None:
@@ -3542,12 +3565,14 @@ async def _prefetch_referenced_auth_objects(
     end_user_id: str | None,
     user_api_key_cache: UserApiKeyCache,
     prisma_client: PrismaClient | None,
+    fresh_team_loaded: bool = False,
 ) -> None:
     """Warm every object and spend counter the checks below will read, in one MGET each (one DB query when cold).
     Runs after the key's model access check so a denied request costs no more than it did before."""
     bind_admission_counter_keys(valid_token, end_user_id=end_user_id or None)
     await prefetch_auth_objects(
-        refs=AuthObjectRefs.from_token(valid_token),
+        refs=AuthObjectRefs(organization_id=valid_token.org_id, project_id=valid_token.project_id)
+        if fresh_team_loaded else AuthObjectRefs.from_token(valid_token),
         user_api_key_cache=user_api_key_cache,
         prisma_client=prisma_client,
     )
@@ -3603,6 +3628,9 @@ async def user_api_key_auth(
     """
     Parent function to authenticate user api key / jwt token.
     """
+    from litellm.proxy.retail.request_policy_runtime import reset_request_policy_context
+
+    reset_request_policy_context()
 
     # Create the SERVER span and stash it on request.state BEFORE reading the
     # body. _read_request_body can raise ProxyException for malformed JSON;
@@ -3730,6 +3758,8 @@ async def revalidate_request_policy_key(
 ) -> UserAPIKeyAuth:
     from litellm.proxy.retail.request_policy_runtime import (
         request_policy_revalidate_key,
+        request_policy_team,
+        request_policy_team_membership,
         request_policy_user,
         restore_request_policy_proofs,
     )
@@ -3740,6 +3770,7 @@ async def revalidate_request_policy_key(
         request=request, request_data=dict(data), valid_token=auth, api_key=auth.api_key or "", route=route,
         start_time=datetime.now(timezone.utc), parent_otel_span=auth.parent_otel_span,
         end_user_id=auth.end_user_id, end_user_params={}, _end_user_object=None, fresh_user=request_policy_user(),
+        fresh_team=request_policy_team(), fresh_team_membership=request_policy_team_membership(), fresh_team_loaded=True,
     )
     return restore_request_policy_proofs(auth, checked)
 
@@ -4147,6 +4178,9 @@ async def authorize_internal_virtual_key(
 ) -> UserAPIKeyAuth:
     """Authorize a server-owned job against its persisted virtual-key assignment, never a client-supplied bearer hash."""
     from litellm.proxy.proxy_server import prisma_client, proxy_logging_obj, user_api_key_cache
+    from litellm.proxy.retail.request_policy_runtime import reset_request_policy_context
+
+    reset_request_policy_context()
 
     identity: Final = IdentityStore.key_from_principal(
         await IdentityStore(prisma_client, user_api_key_cache, proxy_logging_obj=proxy_logging_obj).resolve(

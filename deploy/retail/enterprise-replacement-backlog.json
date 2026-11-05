@@ -351,14 +351,16 @@
       "implementation_notes": "R15独立账号/Key/公开模型请求策略、保存提示词、版本化绑定、管理员页面及原生执行已限定本地验收。三接口实际参数/提示词/结算、双worker即时变更与模型撤权、错误回显与回调隐私均通过；Responses低于16上限提前拒绝。主本地接入但默认关闭，未改生产或原生商业门禁；组织继承、通用护栏与任意路由配置仍未完成。",
       "implemented_scope": [
         "Independent versioned admin CRUD, metadata-only prompt lists and explicit admin prompt editing",
-        "One opaque binding per native user, exact Virtual Key or exact public model; no added model permission or wallet entitlement",
+        "One opaque binding per native Team, user, exact Virtual Key or exact public model; no added model permission, membership or wallet entitlement",
         "Chat/Responses/Messages HTTP policy intersection, output cap, fixed parameters, current writer authority and final deployment checks",
         "Paused bound policy/prompt denies traffic; disabled binding stops applying that binding; feature OFF stops module enforcement",
         "Protected prompt diagnostics and same-transaction native audit; no prompt content in audit events",
-        "Unknown raw/pass-through HTTP denied and WebSocket/realtime closed with 1008 while enabled"
+        "Unknown raw/pass-through HTTP denied and WebSocket/realtime closed with 1008 while enabled",
+        "R16 bounded model -> native Team -> user -> key intersection from the current writer Key parent, with the existing combined 16KiB prompt bound",
+        "R16 fresh global-admin-only Key parent changes while enabled, Team identity tombstones and safe opaque Team target management; no organization/project inheritance or preview endpoint"
       ],
       "remaining_scope": [
-        "Team, organization and project policy scopes, inheritance and generic commercial policy compatibility",
+        "Organization and project policy scopes, inheritance and generic commercial policy compatibility",
         "General commercial guardrail plugins, content-moderation providers and arbitrary route public/admin-only controls",
         "WebSocket/realtime, Batch/background, raw/pass-through and additional inference protocol enforcement",
         "Prompt workflow product features and any guarantee against model instruction echo; not a secret vault",
