@@ -118,6 +118,7 @@ export interface RetailConfig {
   org_finance_enabled?: boolean;
   org_finance_delegation_enabled?: boolean;
   native_audit_enabled?: boolean;
+  request_policies_enabled?: boolean;
 }
 
 export class RetailRequestError extends Error {
@@ -170,7 +171,8 @@ export async function retailRequest<T>(path: string, token: string | null, optio
   } catch (error) {
     if (!(error instanceof ApiError)) throw error;
     throw new RetailRequestError(
-      responseMessage(error.body) ?? `The request could not be completed (${error.status}).`, error.status,
+      responseMessage(error.body) ?? `The request could not be completed (${error.status}).`,
+      error.status,
     );
   }
 }

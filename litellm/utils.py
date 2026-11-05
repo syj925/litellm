@@ -545,6 +545,10 @@ def print_verbose(
     logger_only: bool = False,
     log_level: Literal["DEBUG", "INFO", "ERROR"] = "DEBUG",
 ):
+    from litellm.proxy.retail.request_policy_privacy import policy_diagnostics_private
+
+    if policy_diagnostics_private():
+        return
     try:
         if log_level == "DEBUG":
             verbose_logger.debug(print_statement)
@@ -1488,6 +1492,13 @@ async def async_pre_call_deployment_hook(kwargs: dict[str, Any], call_type: str)
             if result is not None:
                 modified_kwargs = result
 
+    if os.environ.get("RETAIL_REQUEST_POLICIES_ENABLED", "false").lower() == "true":
+        from litellm.proxy.retail.request_policy_runtime import final_request_policy_deployment
+        from litellm.router_utils.managed_credential_errors import mark_credential_dispatch
+
+        enforced: Final = final_request_policy_deployment(modified_kwargs, call_type)
+        mark_credential_dispatch()
+        return dict(enforced)
     return modified_kwargs
 
 

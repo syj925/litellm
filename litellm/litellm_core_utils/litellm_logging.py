@@ -106,6 +106,11 @@ from litellm.litellm_core_utils.logging_utils import (
 from litellm.litellm_core_utils.model_param_helper import ModelParamHelper
 from litellm.litellm_core_utils.ptu_pricing import is_spilled_over_ptu_request
 from litellm.litellm_core_utils.redact_messages import (
+    private_callback_exception,
+    private_callback_logging,
+    private_callback_payload,
+    private_callback_redaction,
+    private_logging_active,
     redact_message_input_output_from_custom_logger,
     redact_message_input_output_from_logging,
     redact_streaming_responses_for_custom_logger,
@@ -1442,7 +1447,7 @@ class Logging(LiteLLMLoggingBaseClass):
             if getattr(self, "logger_fn", None) and callable(self.logger_fn):
                 try:
                     self.logger_fn(
-                        self.model_call_details
+                        private_callback_payload(self.logger_fn, self.model_call_details, None)[0]
                     )  # Expectation: any logger function passed in by the user should accept a dict object
                 except Exception as e:
                     verbose_logger.exception(
@@ -1467,23 +1472,24 @@ class Logging(LiteLLMLoggingBaseClass):
             callbacks: Final = litellm.input_callback + (self.dynamic_input_callbacks or [])
             for callback in callbacks:
                 try:
+                    callback_details, _callback_result = private_callback_payload(callback, self.model_call_details, None)
                     if callback == "supabase" and supabaseClient is not None:
                         verbose_logger.debug("reaches supabase for logging!")
-                        model = self.model_call_details["model"]
-                        messages = self.model_call_details["input"]
+                        input_model: Final = callback_details["model"]
+                        messages = callback_details["input"]
                         verbose_logger.debug("supabaseClient: %s", supabaseClient)
                         supabaseClient.input_log_event(
-                            model=model,
+                            model=input_model,
                             messages=messages,
-                            end_user=self.model_call_details.get("user", "default"),
+                            end_user=callback_details.get("user", "default"),
                             litellm_call_id=self.litellm_params["litellm_call_id"],
                             print_verbose=print_verbose,
                         )
                     elif callback == "sentry" and add_breadcrumb:
                         try:
-                            details_to_log = copy.deepcopy(self.model_call_details)
+                            details_to_log = copy.deepcopy(callback_details)
                         except Exception:
-                            details_to_log = self.model_call_details
+                            details_to_log = callback_details
                         if litellm.turn_off_message_logging:
                             # make a copy of the _model_Call_details and log it
                             details_to_log.pop("messages", None)
@@ -1499,14 +1505,14 @@ class Logging(LiteLLMLoggingBaseClass):
                     elif isinstance(callback, CustomLogger):  # custom logger class
                         callback.log_pre_api_call(
                             model=self.model,
-                            messages=self.messages,
-                            kwargs=self.model_call_details,
+                            messages=callback_details.get("messages", []) if private_callback_redaction(callback, self.model_call_details) else self.messages,
+                            kwargs=callback_details,
                         )
                     elif callable(callback) and customLogger is not None:  # custom logger functions
                         customLogger.log_input_event(
                             model=self.model,
-                            messages=self.messages,
-                            kwargs=self.model_call_details,
+                            messages=callback_details.get("messages", []) if private_callback_redaction(callback, self.model_call_details) else self.messages,
+                            kwargs=callback_details,
                             print_verbose=print_verbose,
                             callback_func=callback,
                         )
@@ -1516,12 +1522,12 @@ class Logging(LiteLLMLoggingBaseClass):
                         "LiteLLM.Logging: is sentry capture exception initialized %s", capture_exception
                     )
                     if capture_exception:  # log this error to sentry for debugging
-                        capture_exception(e)
+                        capture_exception(private_callback_exception(e, self.model_call_details))
         except Exception as e:
             verbose_logger.exception("LiteLLM.LoggingError: [Non-Blocking] Exception occurred while logging %s", e)
             verbose_logger.error("LiteLLM.Logging: is sentry capture exception initialized %s", capture_exception)
             if capture_exception:  # log this error to sentry for debugging
-                capture_exception(e)
+                capture_exception(private_callback_exception(e, self.model_call_details))
 
         if self.raw_request_only:
             raise RawRequestCaptured()
@@ -1625,13 +1631,13 @@ class Logging(LiteLLMLoggingBaseClass):
             if getattr(self, "logger_fn", None) and callable(self.logger_fn):
                 try:
                     self.logger_fn(
-                        self.model_call_details
+                        private_callback_payload(self.logger_fn, self.model_call_details, None)[0]
                     )  # Expectation: any logger function passed in by the user should accept a dict object
                 except Exception as e:
                     verbose_logger.exception(
                         "LiteLLM.LoggingError: [Non-Blocking] Exception occurred while logging %s", e
                     )
-            original_response = redact_message_input_output_from_logging(
+            original_response = original_response if private_logging_active(self.model_call_details) else redact_message_input_output_from_logging(  # rebind-ok: retain legacy logging result flow while private callbacks use isolated copies
                 model_call_details=(self.model_call_details if hasattr(self, "model_call_details") else {}),
                 result=original_response,
             )
@@ -1640,12 +1646,13 @@ class Logging(LiteLLMLoggingBaseClass):
             callbacks: Final = litellm.input_callback + (self.dynamic_input_callbacks or [])
             for callback in callbacks:
                 try:
+                    callback_details, _callback_result = private_callback_payload(callback, self.model_call_details, None)
                     if callback == "sentry" and add_breadcrumb:
                         verbose_logger.debug("reaches sentry breadcrumbing")
                         try:
-                            details_to_log = copy.deepcopy(self.model_call_details)
+                            details_to_log = copy.deepcopy(callback_details)
                         except Exception:
-                            details_to_log = self.model_call_details
+                            details_to_log = callback_details
                         if litellm.turn_off_message_logging:
                             # make a copy of the _model_Call_details and log it
                             details_to_log.pop("messages", None)
@@ -1659,7 +1666,7 @@ class Logging(LiteLLMLoggingBaseClass):
                         )
                     elif isinstance(callback, CustomLogger):  # custom logger class
                         callback.log_post_api_call(
-                            kwargs=self.model_call_details,
+                            kwargs=callback_details,
                             response_obj=None,
                             start_time=self.start_time,
                             end_time=None,
@@ -1673,7 +1680,7 @@ class Logging(LiteLLMLoggingBaseClass):
                         "LiteLLM.Logging: is sentry capture exception initialized %s", capture_exception
                     )
                     if capture_exception:  # log this error to sentry for debugging
-                        capture_exception(e)
+                        capture_exception(private_callback_exception(e, self.model_call_details))
         except Exception as e:
             verbose_logger.exception("LiteLLM.LoggingError: [Non-Blocking] Exception occurred while logging %s", e)
 
@@ -2844,7 +2851,7 @@ class Logging(LiteLLMLoggingBaseClass):
         """Restores trace_id/session_id contextvars once this attempt's own success
         logging (including any nested calls its callbacks trigger) is fully done."""
         try:
-            with post_response_phase():
+            with post_response_phase(), private_callback_logging(self.model_call_details):
                 return self._success_handler_body(
                     result=result, start_time=start_time, end_time=end_time, cache_hit=cache_hit, **kwargs
                 )
@@ -2912,7 +2919,7 @@ class Logging(LiteLLMLoggingBaseClass):
             )
 
             ## REDACT MESSAGES ##
-            result = redact_message_input_output_from_logging(
+            result = result if private_logging_active(self.model_call_details) else redact_message_input_output_from_logging(  # rebind-ok: retain legacy logging result flow while private callbacks use isolated copies  # rebind-ok: retain legacy logging result flow while private callbacks use isolated copies
                 model_call_details=(self.model_call_details if hasattr(self, "model_call_details") else {}),
                 result=result,
             )
@@ -2937,15 +2944,18 @@ class Logging(LiteLLMLoggingBaseClass):
                         call_type=self.call_type,
                     )
                 elif isinstance(callback, CustomLogger):
-                    self.model_call_details, result = callback.logging_hook(
-                        kwargs=self.model_call_details,
-                        result=result,
-                        call_type=self.call_type,
-                    )
+                    if private_callback_redaction(callback, self.model_call_details):
+                        hook_details, hook_result = private_callback_payload(callback, self.model_call_details, result)
+                        callback.logging_hook(kwargs=dict(hook_details), result=hook_result, call_type=self.call_type)
+                    else:
+                        self.model_call_details, result = callback.logging_hook(  # rebind-ok: preserve trusted accounting hook semantics
+                            kwargs=self.model_call_details, result=result, call_type=self.call_type,
+                        )
 
             self.mark_logging_complete(event_type="sync_success")
             for callback in callbacks:
                 try:
+                    callback_details, callback_result = private_callback_payload(callback, self.model_call_details, result)
                     should_run = self.should_run_callback(
                         callback=callback,
                         litellm_params=litellm_params,
@@ -2956,15 +2966,15 @@ class Logging(LiteLLMLoggingBaseClass):
                     if callback == "promptlayer" and promptLayerLogger is not None:
                         print_verbose("reaches promptlayer for logging!")
                         promptLayerLogger.log_event(
-                            kwargs=self.model_call_details,
-                            response_obj=result,
+                            kwargs=callback_details,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             print_verbose=print_verbose,
                         )
                     if callback == "supabase" and supabaseClient is not None:
                         print_verbose("reaches supabase for logging!")
-                        kwargs = self.model_call_details
+                        kwargs = callback_details  # rebind-ok: preserve the legacy integration adapter on isolated callback data
 
                         # this only logs streaming once, complete_streaming_response exists i.e when stream ends
                         if self.stream:
@@ -2972,7 +2982,7 @@ class Logging(LiteLLMLoggingBaseClass):
                                 continue
                             else:
                                 print_verbose("reaches supabase for streaming logging!")
-                                result = kwargs["complete_streaming_response"]
+                                callback_result = kwargs["complete_streaming_response"]
 
                         model = kwargs["model"]
                         messages = kwargs["messages"]
@@ -2982,7 +2992,7 @@ class Logging(LiteLLMLoggingBaseClass):
                             model=model,
                             messages=messages,
                             end_user=optional_params.get("user", "default"),
-                            response_obj=result,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             litellm_call_id=(
@@ -2995,8 +3005,8 @@ class Logging(LiteLLMLoggingBaseClass):
                     if callback == "wandb" and weightsBiasesLogger is not None:
                         print_verbose("reaches wandb for logging!")
                         weightsBiasesLogger.log_event(
-                            kwargs=self.model_call_details,
-                            response_obj=result,
+                            kwargs=callback_details,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             print_verbose=print_verbose,
@@ -3004,7 +3014,7 @@ class Logging(LiteLLMLoggingBaseClass):
                     if callback == "logfire" and logfireLogger is not None:
                         verbose_logger.debug("reaches logfire for success logging!")
                         kwargs = {}
-                        for k, v in self.model_call_details.items():
+                        for k, v in callback_details.items():
                             if k != "original_response":  # copy.deepcopy raises errors as this could be a coroutine
                                 kwargs[k] = v
 
@@ -3014,11 +3024,11 @@ class Logging(LiteLLMLoggingBaseClass):
                                 continue
                             else:
                                 print_verbose("reaches logfire for streaming logging!")
-                                result = kwargs["complete_streaming_response"]
+                                callback_result = kwargs["complete_streaming_response"]
 
                         logfireLogger.log_event(
-                            kwargs=self.model_call_details,
-                            response_obj=result,
+                            kwargs=callback_details,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             print_verbose=print_verbose,
@@ -3028,7 +3038,7 @@ class Logging(LiteLLMLoggingBaseClass):
                     if callback == "lunary" and lunaryLogger is not None:
                         print_verbose("reaches lunary for logging!")
                         model = self.model
-                        kwargs = self.model_call_details
+                        kwargs = callback_details  # rebind-ok: preserve the legacy integration adapter on isolated callback data
 
                         input = kwargs.get("messages", kwargs.get("input", None))
 
@@ -3039,7 +3049,7 @@ class Logging(LiteLLMLoggingBaseClass):
                             if "complete_streaming_response" not in kwargs:
                                 continue
                             else:
-                                result = kwargs["complete_streaming_response"]
+                                callback_result = kwargs["complete_streaming_response"]
 
                         lunaryLogger.log_event(
                             type=type,
@@ -3048,9 +3058,9 @@ class Logging(LiteLLMLoggingBaseClass):
                             model=model,
                             input=input,
                             user_id=kwargs.get("user", None),
-                            # user_props=self.model_call_details.get("user_props", None),
+                            # user_props=callback_details.get("user_props", None),
                             extra=kwargs.get("optional_params", {}),
-                            response_obj=result,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             run_id=self.litellm_call_id,
@@ -3059,8 +3069,8 @@ class Logging(LiteLLMLoggingBaseClass):
                     if callback == "helicone" and heliconeLogger is not None:
                         print_verbose("reaches helicone for logging!")
                         model = self.model
-                        messages = self.model_call_details["input"]
-                        kwargs = self.model_call_details
+                        messages = callback_details["input"]
+                        kwargs = callback_details  # rebind-ok: preserve the legacy integration adapter on isolated callback data
 
                         # this only logs streaming once, complete_streaming_response exists i.e when stream ends
                         if self.stream:
@@ -3068,12 +3078,12 @@ class Logging(LiteLLMLoggingBaseClass):
                                 continue
                             else:
                                 print_verbose("reaches helicone for streaming logging!")
-                                result = kwargs["complete_streaming_response"]
+                                callback_result = kwargs["complete_streaming_response"]
 
                         heliconeLogger.log_success(
                             model=model,
                             messages=messages,
-                            response_obj=result,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             print_verbose=print_verbose,
@@ -3083,7 +3093,7 @@ class Logging(LiteLLMLoggingBaseClass):
                         global langFuseLogger
                         print_verbose("reaches langfuse for success logging!")
                         kwargs = {}
-                        for k, v in self.model_call_details.items():
+                        for k, v in callback_details.items():
                             if k != "original_response":  # copy.deepcopy raises errors as this could be a coroutine
                                 kwargs[k] = v
                         # this only logs streaming once, complete_streaming_response exists i.e when stream ends
@@ -3096,7 +3106,7 @@ class Logging(LiteLLMLoggingBaseClass):
                                 continue
                             else:
                                 print_verbose("reaches langfuse for streaming logging!")
-                                result = kwargs["complete_streaming_response"]
+                                callback_result = kwargs["complete_streaming_response"]
 
                         langfuse_logger_to_use = LangFuseHandler.get_langfuse_logger_for_request(
                             globalLangfuseLogger=langFuseLogger,
@@ -3106,7 +3116,7 @@ class Logging(LiteLLMLoggingBaseClass):
                         if langfuse_logger_to_use is not None:
                             _response = langfuse_logger_to_use.log_event_on_langfuse(
                                 kwargs=kwargs,
-                                response_obj=result,
+                                response_obj=callback_result,
                                 start_time=start_time,
                                 end_time=end_time,
                                 user_id=kwargs.get("user", None),
@@ -3121,7 +3131,7 @@ class Logging(LiteLLMLoggingBaseClass):
                                     )
                     if callback == "greenscale" and greenscaleLogger is not None:
                         kwargs = {}
-                        for k, v in self.model_call_details.items():
+                        for k, v in callback_details.items():
                             if k != "original_response":  # copy.deepcopy raises errors as this could be a coroutine
                                 kwargs[k] = v
                         # this only logs streaming once, complete_streaming_response exists i.e when stream ends
@@ -3134,34 +3144,34 @@ class Logging(LiteLLMLoggingBaseClass):
                                 continue
                             else:
                                 print_verbose("reaches greenscale for streaming logging!")
-                                result = kwargs["complete_streaming_response"]
+                                callback_result = kwargs["complete_streaming_response"]
 
                         greenscaleLogger.log_event(
                             kwargs=kwargs,
-                            response_obj=result,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             print_verbose=print_verbose,
                         )
                     if callback == "athina" and athinaLogger is not None:
                         deep_copy = {}
-                        for k, v in self.model_call_details.items():
+                        for k, v in callback_details.items():
                             deep_copy[k] = v
                         athinaLogger.log_event(
                             kwargs=deep_copy,
-                            response_obj=result,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             print_verbose=print_verbose,
                         )
                     if callback == "traceloop":
                         deep_copy = {}
-                        for k, v in self.model_call_details.items():
+                        for k, v in callback_details.items():
                             if k != "original_response":
                                 deep_copy[k] = v
                         traceloopLogger.log_event(
                             kwargs=deep_copy,
-                            response_obj=result,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             user_id=kwargs.get("user", None),
@@ -3172,11 +3182,11 @@ class Logging(LiteLLMLoggingBaseClass):
                         if s3Logger is None:
                             s3Logger = S3Logger()
                         if self.stream:
-                            if "complete_streaming_response" in self.model_call_details:
+                            if "complete_streaming_response" in callback_details:
                                 print_verbose("S3Logger Logger: Got Stream Event - Completed Stream Response")
                                 s3Logger.log_event(
-                                    kwargs=self.model_call_details,
-                                    response_obj=self.model_call_details["complete_streaming_response"],
+                                    kwargs=callback_details,
+                                    response_obj=callback_details["complete_streaming_response"],
                                     start_time=start_time,
                                     end_time=end_time,
                                     print_verbose=print_verbose,
@@ -3185,8 +3195,8 @@ class Logging(LiteLLMLoggingBaseClass):
                                 print_verbose("S3Logger Logger: Got Stream Event - No complete stream response as yet")
                         else:
                             s3Logger.log_event(
-                                kwargs=self.model_call_details,
-                                response_obj=result,
+                                kwargs=callback_details,
+                                response_obj=callback_result,
                                 start_time=start_time,
                                 end_time=end_time,
                                 print_verbose=print_verbose,
@@ -3199,8 +3209,8 @@ class Logging(LiteLLMLoggingBaseClass):
                             openMeterLogger = OpenMeterLogger()
                         if self.stream and complete_streaming_response is None:
                             openMeterLogger.log_stream_event(
-                                kwargs=self.model_call_details,
-                                response_obj=result,
+                                kwargs=callback_details,
+                                response_obj=callback_result,
                                 start_time=start_time,
                                 end_time=end_time,
                             )
@@ -3209,10 +3219,10 @@ class Logging(LiteLLMLoggingBaseClass):
                                 self.model_call_details["complete_response"] = self.model_call_details.get(
                                     "complete_streaming_response", {}
                                 )
-                                result = self.model_call_details["complete_response"]
+                                callback_result = callback_details.get("complete_streaming_response", {})
                             openMeterLogger.log_success_event(
-                                kwargs=self.model_call_details,
-                                response_obj=result,
+                                kwargs=callback_details,
+                                response_obj=callback_result,
                                 start_time=start_time,
                                 end_time=end_time,
                             )
@@ -3224,8 +3234,8 @@ class Logging(LiteLLMLoggingBaseClass):
                     ):  # custom logger class
                         if self.stream and complete_streaming_response is None:
                             callback.log_stream_event(
-                                kwargs=self.model_call_details,
-                                response_obj=result,
+                                kwargs=callback_details,
+                                response_obj=callback_result,
                                 start_time=start_time,
                                 end_time=end_time,
                             )
@@ -3234,11 +3244,11 @@ class Logging(LiteLLMLoggingBaseClass):
                                 self.model_call_details["complete_response"] = self.model_call_details.get(
                                     "complete_streaming_response", {}
                                 )
-                                result = self.model_call_details["complete_response"]
+                                callback_result = callback_details.get("complete_streaming_response", {})
 
                             callback.log_success_event(
-                                kwargs=self.model_call_details,
-                                response_obj=result,
+                                kwargs=callback_details,
+                                response_obj=callback_result,
                                 start_time=start_time,
                                 end_time=end_time,
                             )
@@ -3248,8 +3258,8 @@ class Logging(LiteLLMLoggingBaseClass):
                         print_verbose(f"success callbacks: Running Custom Callback Function - {callback}")
 
                         customLogger.log_event(
-                            kwargs=self.model_call_details,
-                            response_obj=result,
+                            kwargs=callback_details,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             print_verbose=print_verbose,
@@ -3262,12 +3272,15 @@ class Logging(LiteLLMLoggingBaseClass):
                     )
                     print_verbose(f"LiteLLM.Logging: is sentry capture exception initialized {capture_exception}")
                     if capture_exception:  # log this error to sentry for debugging
-                        capture_exception(e)
+                        capture_exception(private_callback_exception(e, self.model_call_details))
                     # Track callback logging failures in Prometheus
                     try:
                         self._handle_callback_failure(callback=callback)
                     except Exception:
                         pass
+                if not private_logging_active(self.model_call_details):
+                    result = callback_result  # rebind-ok: preserve ordinary SDK callback ordering  # rebind-ok: preserve ordinary SDK callback ordering
+
         except Exception as e:
             verbose_logger.exception(
                 "LiteLLM.LoggingError: [Non-Blocking] Exception occurred while success logging %s",
@@ -3285,7 +3298,7 @@ class Logging(LiteLLMLoggingBaseClass):
         """Restores trace_id/session_id contextvars once this attempt's own success
         logging (including any nested calls its callbacks trigger) is fully done."""
         try:
-            with post_response_phase():
+            with post_response_phase(), private_callback_logging(self.model_call_details):
                 return await self._async_success_handler_body(
                     result=result, start_time=start_time, end_time=end_time, cache_hit=cache_hit, **kwargs
                 )
@@ -3488,7 +3501,7 @@ class Logging(LiteLLMLoggingBaseClass):
             global_callbacks=litellm._async_success_callback,
         )
 
-        result = redact_message_input_output_from_logging(
+        result = result if private_logging_active(self.model_call_details) else redact_message_input_output_from_logging(  # rebind-ok: retain legacy logging result flow while private callbacks use isolated copies
             model_call_details=(self.model_call_details if hasattr(self, "model_call_details") else {}),
             result=result,
         )
@@ -3516,14 +3529,17 @@ class Logging(LiteLLMLoggingBaseClass):
                         call_type=self.call_type,
                     )
                 elif isinstance(callback, CustomLogger):
-                    result = redact_message_input_output_from_custom_logger(
-                        result=result, litellm_logging_obj=self, custom_logger=callback
-                    )
-                    self.model_call_details, result = await callback.async_logging_hook(
-                        kwargs=self.model_call_details,
-                        result=result,
-                        call_type=self.call_type,
-                    )
+                    if private_callback_redaction(callback, self.model_call_details):
+                        hook_details, hook_result = private_callback_payload(callback, self.model_call_details, result)
+                        await callback.async_logging_hook(kwargs=dict(hook_details), result=hook_result, call_type=self.call_type)
+                    else:
+                        if not private_logging_active(self.model_call_details):
+                            result = redact_message_input_output_from_custom_logger(  # rebind-ok: preserve ordinary SDK callback redaction
+                                result=result, litellm_logging_obj=self, custom_logger=callback
+                            )
+                        self.model_call_details, result = await callback.async_logging_hook(  # rebind-ok: preserve trusted accounting hook semantics
+                            kwargs=self.model_call_details, result=result, call_type=self.call_type,
+                        )
             except Exception:  # noqa: BLE001  # one failing hook must not skip later callbacks (slot release)
                 verbose_logger.error(
                     "LiteLLM.LoggingError: [Non-Blocking] Exception occurred in async_logging_hook %s",
@@ -3544,26 +3560,27 @@ class Logging(LiteLLMLoggingBaseClass):
             if not should_run:
                 continue
             try:
+                callback_details, callback_result = private_callback_payload(callback, self.model_call_details, result)
                 if callback == "openmeter" and openMeterLogger is not None:
                     if self.stream is True:
-                        if "async_complete_streaming_response" in self.model_call_details:
+                        if "async_complete_streaming_response" in callback_details:
                             await openMeterLogger.async_log_success_event(
-                                kwargs=self.model_call_details,
-                                response_obj=self.model_call_details["async_complete_streaming_response"],
+                                kwargs=callback_details,
+                                response_obj=callback_details["async_complete_streaming_response"],
                                 start_time=start_time,
                                 end_time=end_time,
                             )
                         else:
                             await openMeterLogger.async_log_stream_event(  # [TODO]: move this to being an async log stream event function
-                                kwargs=self.model_call_details,
-                                response_obj=result,
+                                kwargs=callback_details,
+                                response_obj=callback_result,
                                 start_time=start_time,
                                 end_time=end_time,
                             )
                     else:
                         await openMeterLogger.async_log_success_event(
-                            kwargs=self.model_call_details,
-                            response_obj=result,
+                            kwargs=callback_details,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                         )
@@ -3571,14 +3588,14 @@ class Logging(LiteLLMLoggingBaseClass):
                 if isinstance(callback, CustomLogger):  # custom logger class
                     from litellm.integrations.shadow_eval_logger import ShadowEvalLogger
 
-                    model_call_details: dict = self.model_call_details
+                    initial_callback_details: Final = callback_details
                     ##################################
                     # call redaction hook for custom logger
-                    model_call_details = callback.redact_standard_logging_payload_from_model_call_details(
-                        model_call_details=model_call_details
+                    redacted_callback_details: Final = callback.redact_standard_logging_payload_from_model_call_details(
+                        model_call_details=initial_callback_details
                     )
-                    model_call_details = redact_streaming_responses_for_custom_logger(
-                        model_call_details=model_call_details, custom_logger=callback
+                    model_call_details: Final = redact_streaming_responses_for_custom_logger(
+                        model_call_details=redacted_callback_details, custom_logger=callback
                     )
                     ##################################
                     if isinstance(callback, ShadowEvalLogger) and (
@@ -3588,7 +3605,7 @@ class Logging(LiteLLMLoggingBaseClass):
                             kwargs=model_call_details,
                             response_obj=model_call_details["async_complete_streaming_response"]
                             if self.stream
-                            else result,
+                            else callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             guardrail_snapshot=self.shadow_eval_request_snapshot,
@@ -3604,14 +3621,14 @@ class Logging(LiteLLMLoggingBaseClass):
                         else:
                             await callback.async_log_stream_event(  # [TODO]: move this to being an async log stream event function
                                 kwargs=model_call_details,
-                                response_obj=result,
+                                response_obj=callback_result,
                                 start_time=start_time,
                                 end_time=end_time,
                             )
                     else:
                         await callback.async_log_success_event(
                             kwargs=model_call_details,
-                            response_obj=result,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                         )
@@ -3620,10 +3637,10 @@ class Logging(LiteLLMLoggingBaseClass):
                     if customLogger is None:
                         customLogger = CustomLogger()
                     if self.stream:
-                        if "async_complete_streaming_response" in self.model_call_details:
+                        if "async_complete_streaming_response" in callback_details:
                             await customLogger.async_log_event(
-                                kwargs=self.model_call_details,
-                                response_obj=self.model_call_details["async_complete_streaming_response"],
+                                kwargs=callback_details,
+                                response_obj=callback_details["async_complete_streaming_response"],
                                 start_time=start_time,
                                 end_time=end_time,
                                 print_verbose=print_verbose,
@@ -3631,8 +3648,8 @@ class Logging(LiteLLMLoggingBaseClass):
                             )
                     else:
                         await customLogger.async_log_event(
-                            kwargs=self.model_call_details,
-                            response_obj=result,
+                            kwargs=callback_details,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             print_verbose=print_verbose,
@@ -3643,11 +3660,11 @@ class Logging(LiteLLMLoggingBaseClass):
                     if dynamoLogger is None:
                         dynamoLogger = DyanmoDBLogger()
                     if self.stream:
-                        if "async_complete_streaming_response" in self.model_call_details:
+                        if "async_complete_streaming_response" in callback_details:
                             print_verbose("DynamoDB Logger: Got Stream Event - Completed Stream Response")
                             await dynamoLogger.async_log_event(
-                                kwargs=self.model_call_details,
-                                response_obj=self.model_call_details["async_complete_streaming_response"],
+                                kwargs=callback_details,
+                                response_obj=callback_details["async_complete_streaming_response"],
                                 start_time=start_time,
                                 end_time=end_time,
                                 print_verbose=print_verbose,
@@ -3656,8 +3673,8 @@ class Logging(LiteLLMLoggingBaseClass):
                             print_verbose("DynamoDB Logger: Got Stream Event - No complete stream response as yet")
                     else:
                         await dynamoLogger.async_log_event(
-                            kwargs=self.model_call_details,
-                            response_obj=result,
+                            kwargs=callback_details,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             print_verbose=print_verbose,
@@ -3668,6 +3685,9 @@ class Logging(LiteLLMLoggingBaseClass):
                     traceback.format_exc(),
                 )
                 self._handle_callback_failure(callback=callback)
+
+            if not private_logging_active(self.model_call_details):
+                result = callback_result  # rebind-ok: preserve ordinary SDK callback ordering
         await flush_post_call_redis_batches()
 
     def _handle_callback_failure(self, callback: object):
@@ -3768,10 +3788,11 @@ class Logging(LiteLLMLoggingBaseClass):
         model_group: Final = metadata.get("model_group") or None
         for callback in litellm._async_failure_callback:
             if isinstance(callback, CustomLogger):  # custom logger class
+                callback_details, _callback_result = private_callback_payload(callback, self.model_call_details, None)
                 await callback.log_model_group_rate_limit_error(
-                    exception=exception,
+                    exception=RuntimeError(REDACTED_BY_LITELLM) if private_callback_redaction(callback, self.model_call_details) else exception,
                     original_model_group=model_group,
-                    kwargs=self.model_call_details,
+                    kwargs=callback_details,
                 )
 
     def failure_handler(
@@ -3784,12 +3805,13 @@ class Logging(LiteLLMLoggingBaseClass):
         """Restores trace_id/session_id contextvars once this attempt's own failure
         logging (including any nested calls its callbacks trigger) is fully done."""
         try:
-            return self._failure_handler_body(
-                exception=exception,
-                traceback_exception=traceback_exception,
-                start_time=start_time,
-                end_time=end_time,
-            )
+            with private_callback_logging(getattr(self, "model_call_details", {})):
+                return self._failure_handler_body(
+                    exception=exception,
+                    traceback_exception=traceback_exception,
+                    start_time=start_time,
+                    end_time=end_time,
+                )
         finally:
             self._restore_correlation_context()
 
@@ -3820,13 +3842,16 @@ class Logging(LiteLLMLoggingBaseClass):
 
             result: object = None  # result sent to all loggers, init this to None incase it's not created
 
-            result = redact_message_input_output_from_logging(
+            result = result if private_logging_active(self.model_call_details) else redact_message_input_output_from_logging(  # rebind-ok: retain legacy logging result flow while private callbacks use isolated copies  # rebind-ok: retain legacy logging result flow while private callbacks use isolated copies
                 model_call_details=(self.model_call_details if hasattr(self, "model_call_details") else {}),
                 result=result,
             )
             self.mark_logging_complete(event_type="sync_failure")
             for callback in callbacks:
                 try:
+                    callback_details, callback_result = private_callback_payload(callback, self.model_call_details, result)
+                    callback_exception: Final = callback_details.get("exception", exception)
+                    callback_traceback: Final = REDACTED_BY_LITELLM if private_callback_redaction(callback, self.model_call_details) else traceback_exception
                     should_run = self.should_run_callback(
                         callback=callback,
                         litellm_params=litellm_params,
@@ -3839,18 +3864,18 @@ class Logging(LiteLLMLoggingBaseClass):
 
                         model = self.model
 
-                        input = self.model_call_details["input"]
+                        input = callback_details["input"]
 
                         _type = "embed" if self.call_type == CallTypes.embedding.value else "llm"
 
                         lunaryLogger.log_event(
-                            kwargs=self.model_call_details,
+                            kwargs=callback_details,
                             type=_type,
                             event="error",
-                            user_id=self.model_call_details.get("user", "default"),
+                            user_id=callback_details.get("user", "default"),
                             model=model,
                             input=input,
-                            error=traceback_exception,
+                            error=callback_traceback,
                             run_id=self.litellm_call_id,
                             start_time=start_time,
                             end_time=end_time,
@@ -3859,7 +3884,7 @@ class Logging(LiteLLMLoggingBaseClass):
                     if callback == "sentry":
                         print_verbose("sending exception to sentry")
                         if capture_exception:
-                            capture_exception(exception)
+                            capture_exception(callback_exception)
                         else:
                             print_verbose(f"capture exception not initialized: {capture_exception}")
                     elif callback == "supabase" and supabaseClient is not None:
@@ -3867,12 +3892,12 @@ class Logging(LiteLLMLoggingBaseClass):
                         print_verbose(f"supabaseClient: {supabaseClient}")
                         supabaseClient.log_event(
                             model=self.model if hasattr(self, "model") else "",
-                            messages=self.messages,
-                            end_user=self.model_call_details.get("user", "default"),
-                            response_obj=result,
+                            messages=callback_details.get("messages", []) if private_logging_active(self.model_call_details) else self.messages,
+                            end_user=callback_details.get("user", "default"),
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
-                            litellm_call_id=self.model_call_details["litellm_call_id"],
+                            litellm_call_id=callback_details["litellm_call_id"],
                             print_verbose=print_verbose,
                         )
                     if callable(callback):  # custom logger functions
@@ -3880,8 +3905,8 @@ class Logging(LiteLLMLoggingBaseClass):
                         if customLogger is None:
                             customLogger = CustomLogger()
                         customLogger.log_event(
-                            kwargs=self.model_call_details,
-                            response_obj=result,
+                            kwargs=callback_details,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             print_verbose=print_verbose,
@@ -3895,14 +3920,14 @@ class Logging(LiteLLMLoggingBaseClass):
                         callback.log_failure_event(
                             start_time=start_time,
                             end_time=end_time,
-                            response_obj=result,
-                            kwargs=self.model_call_details,
+                            response_obj=callback_result,
+                            kwargs=callback_details,
                         )
                     if callback == "langfuse":
                         global langFuseLogger
                         verbose_logger.debug("reaches langfuse for logging failure")
                         kwargs = {}
-                        for k, v in self.model_call_details.items():
+                        for k, v in callback_details.items():
                             if k != "original_response":  # copy.deepcopy raises errors as this could be a coroutine
                                 kwargs[k] = v
                         # this only logs streaming once, complete_streaming_response exists i.e when stream ends
@@ -3916,7 +3941,7 @@ class Logging(LiteLLMLoggingBaseClass):
                             end_time=end_time,
                             response_obj=None,
                             user_id=kwargs.get("user", None),
-                            status_message=str(exception),
+                            status_message=str(callback_exception),
                             level="ERROR",
                             kwargs=kwargs,
                         )
@@ -3933,23 +3958,23 @@ class Logging(LiteLLMLoggingBaseClass):
                             start_time=start_time,
                             end_time=end_time,
                             response_obj=None,
-                            user_id=self.model_call_details.get("user", None),
+                            user_id=callback_details.get("user", None),
                             print_verbose=print_verbose,
-                            status_message=str(exception),
+                            status_message=str(callback_exception),
                             level="ERROR",
-                            kwargs=self.model_call_details,
+                            kwargs=callback_details,
                         )
                     if callback == "logfire" and logfireLogger is not None:
                         verbose_logger.debug("reaches logfire for failure logging!")
                         kwargs = {}
-                        for k, v in self.model_call_details.items():
+                        for k, v in callback_details.items():
                             if k != "original_response":  # copy.deepcopy raises errors as this could be a coroutine
                                 kwargs[k] = v
-                        kwargs["exception"] = exception
+                        kwargs["exception"] = callback_exception
 
                         logfireLogger.log_event(
                             kwargs=kwargs,
-                            response_obj=result,
+                            response_obj=callback_result,
                             start_time=start_time,
                             end_time=end_time,
                             level=LogfireLevel.ERROR.value,
@@ -3962,7 +3987,7 @@ class Logging(LiteLLMLoggingBaseClass):
                     )
                     print_verbose(f"LiteLLM.Logging: is sentry capture exception initialized {capture_exception}")
                     if capture_exception:  # log this error to sentry for debugging
-                        capture_exception(e)
+                        capture_exception(private_callback_exception(e, self.model_call_details))
         except Exception as e:
             verbose_logger.exception(
                 "LiteLLM.LoggingError: [Non-Blocking] Exception occurred while failure logging %s", e
@@ -3978,12 +4003,13 @@ class Logging(LiteLLMLoggingBaseClass):
         """Restores trace_id/session_id contextvars once this attempt's own failure
         logging (including any nested calls its callbacks trigger) is fully done."""
         try:
-            return await self._async_failure_handler_body(
-                exception=exception,
-                traceback_exception=traceback_exception,
-                start_time=start_time,
-                end_time=end_time,
-            )
+            with private_callback_logging(getattr(self, "model_call_details", {})):
+                return await self._async_failure_handler_body(
+                    exception=exception,
+                    traceback_exception=traceback_exception,
+                    start_time=start_time,
+                    end_time=end_time,
+                )
         finally:
             self._restore_correlation_context()
 
@@ -4019,7 +4045,8 @@ class Logging(LiteLLMLoggingBaseClass):
         self.mark_logging_complete(event_type="async_failure")
         for callback in callbacks:
             try:
-                litellm_params = self.model_call_details.get("litellm_params", {})
+                callback_details, callback_result = private_callback_payload(callback, self.model_call_details, result)
+                litellm_params = callback_details.get("litellm_params", {})
                 should_run = self.should_run_callback(
                     callback=callback,
                     litellm_params=litellm_params,
@@ -4029,8 +4056,8 @@ class Logging(LiteLLMLoggingBaseClass):
                     continue
                 if isinstance(callback, CustomLogger):  # custom logger class
                     await callback.async_log_failure_event(
-                        kwargs=self.model_call_details,
-                        response_obj=result,
+                        kwargs=callback_details,
+                        response_obj=callback_result,
                         start_time=start_time,
                         end_time=end_time,
                     )
@@ -4039,8 +4066,8 @@ class Logging(LiteLLMLoggingBaseClass):
                     if customLogger is None:
                         customLogger = CustomLogger()
                     await customLogger.async_log_event(
-                        kwargs=self.model_call_details,
-                        response_obj=result,
+                        kwargs=callback_details,
+                        response_obj=callback_result,
                         start_time=start_time,
                         end_time=end_time,
                         print_verbose=print_verbose,
@@ -6940,7 +6967,8 @@ def get_standard_logging_object_payload(
 def emit_standard_logging_payload(payload: StandardLoggingPayload):
     if os.getenv("LITELLM_PRINT_STANDARD_LOGGING_PAYLOAD"):
         try:
-            print(json.dumps(payload, indent=4, default=str), flush=True)  # noqa: T201
+            diagnostic_payload: Final = private_callback_payload(None, payload, None)[0]
+            print(json.dumps(diagnostic_payload, indent=4, default=str), flush=True)  # noqa: T201  # explicit operator diagnostic output
         except Exception as e:  # noqa: BLE001 # Safe catch-all for verbose logging
             verbose_logger.exception("Error serializing standard logging payload for debug output: %s", e)
 

@@ -418,6 +418,13 @@ def _message(value: object, status_code: int, param: str | None, code: object) -
 
 
 def _error_object(error: Mapping[str, object], status_code: int, request_id: str | None) -> Mapping[str, JsonValue]:
+    from .request_policy_privacy import policy_prompt_private
+
+    if policy_prompt_private():
+        return {
+            "message": _default_message(status_code), "type": _default_type(status_code),
+            "param": None, "code": str(status_code),
+        }
     kind: Final = error.get("type")
     code: Final = error.get("code")
     public_code: Final[JsonValue] = (
@@ -479,6 +486,13 @@ def customer_error_payload(
     safe: Final = dict(_error_object(error, resolved_status, request_id))
     identifier: Final = _request_id(request_id)
     if is_responses_error:
+        from .request_policy_privacy import policy_prompt_private
+
+        envelope: Final = (
+            {"id": "resp_policy_error", "object": "response",
+             "status": "failed" if document.get("type") == "response.failed" else "incomplete"}
+            if policy_prompt_private() else _clean_envelope(response)
+        )
         return _json(
             {
                 "type": document["type"],
@@ -487,7 +501,7 @@ def customer_error_payload(
                     if isinstance(document.get("sequence_number"), int)
                     else {}
                 ),
-                "response": {**_clean_envelope(response), "error": safe},
+                "response": {**envelope, "error": safe},
             }
         )
     return _json(
@@ -500,7 +514,13 @@ def customer_error_payload(
 
 
 def _clean_envelope(payload: Mapping[str, object]) -> Mapping[str, object]:
-    clean: Final = {key: value for key, value in payload.items() if key not in _PRIVATE_FIELDS}
+    from .request_policy_privacy import policy_prompt_private
+
+    private_fields: Final = (
+        _PRIVATE_FIELDS | {"instructions", "system", "input", "messages", "prompt"}
+        if policy_prompt_private() else _PRIVATE_FIELDS
+    )
+    clean: Final = {key: value for key, value in payload.items() if key not in private_fields}
     usage: Final = clean.get("usage")
     return {
         **clean,

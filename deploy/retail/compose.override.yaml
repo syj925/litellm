@@ -26,6 +26,7 @@ services:
       RETAIL_SCIM_ENABLED: "${RETAIL_SCIM_ENABLED:-false}"
       RETAIL_SCIM_CONFIG: "${RETAIL_SCIM_CONFIG:-}"
       RETAIL_SCIM_TOKEN: "${RETAIL_SCIM_TOKEN:-}"
+      RETAIL_REQUEST_POLICIES_ENABLED: "${RETAIL_REQUEST_POLICIES_ENABLED:-false}"
       LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_ENABLED: "${LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_ENABLED:-false}"
       LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_INTERVAL_SECONDS: "${LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_INTERVAL_SECONDS:-60}"
       LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_BATCH_SIZE: "${LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_BATCH_SIZE:-1000}"
@@ -67,6 +68,8 @@ services:
       - ../litellm/litellm/router.py:/app/.venv/lib/python3.13/site-packages/litellm/router.py:ro
       - ../litellm/litellm/router_utils/managed_credential_errors.py:/app/.venv/lib/python3.13/site-packages/litellm/router_utils/managed_credential_errors.py:ro
       - ../litellm/litellm/litellm_core_utils/request_trace_transport.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/request_trace_transport.py:ro
+      - ../litellm/litellm/litellm_core_utils/redact_messages.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/redact_messages.py:ro
+      - ../litellm/litellm/_logging.py:/app/.venv/lib/python3.13/site-packages/litellm/_logging.py:ro
       - ../litellm/litellm/litellm_core_utils/logging_worker.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/logging_worker.py:ro
       - ../litellm/litellm/litellm_core_utils/streaming_handler.py:/app/.venv/lib/python3.13/site-packages/litellm/litellm_core_utils/streaming_handler.py:ro
       - ../litellm/litellm/llms/custom_httpx/http_handler.py:/app/.venv/lib/python3.13/site-packages/litellm/llms/custom_httpx/http_handler.py:ro

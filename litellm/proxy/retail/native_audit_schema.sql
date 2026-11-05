@@ -13,7 +13,10 @@ BEGIN
         action TEXT NOT NULL CHECK (action IN ('native_key.rotated','native_password.changed','native_session.revoked',
           'native_identity.configured','native_identity.signed_in','native_api_identity.configured',
           'native_scim.configured','native_scim.user_created','native_scim.user_updated','native_scim.user_deleted',
-          'native_scim.group_created','native_scim.group_updated','native_scim.group_deleted')),
+          'native_scim.group_created','native_scim.group_updated','native_scim.group_deleted',
+            'native_request_policy.prompt_created','native_request_policy.prompt_updated','native_request_policy.prompt_deleted',
+            'native_request_policy.policy_created','native_request_policy.policy_updated','native_request_policy.policy_deleted',
+            'native_request_policy.binding_created','native_request_policy.binding_updated','native_request_policy.binding_deleted')),
         resource_id UUID NOT NULL,
         affected_count BIGINT NOT NULL CHECK (affected_count>=0),
         occurred_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
@@ -30,16 +33,20 @@ BEGIN
     );
     IF NOT EXISTS (SELECT 1 FROM pg_constraint
         WHERE conrelid='retail_native_audit_outbox'::regclass
-          AND conname='retail_native_audit_outbox_action_v5_check') THEN
+          AND conname='retail_native_audit_outbox_action_v6_check') THEN
         ALTER TABLE retail_native_audit_outbox DROP CONSTRAINT IF EXISTS retail_native_audit_outbox_action_check;
         ALTER TABLE retail_native_audit_outbox DROP CONSTRAINT IF EXISTS retail_native_audit_outbox_action_v2_check;
         ALTER TABLE retail_native_audit_outbox DROP CONSTRAINT IF EXISTS retail_native_audit_outbox_action_v3_check;
         ALTER TABLE retail_native_audit_outbox DROP CONSTRAINT IF EXISTS retail_native_audit_outbox_action_v4_check;
-        ALTER TABLE retail_native_audit_outbox ADD CONSTRAINT retail_native_audit_outbox_action_v5_check
+        ALTER TABLE retail_native_audit_outbox DROP CONSTRAINT IF EXISTS retail_native_audit_outbox_action_v5_check;
+        ALTER TABLE retail_native_audit_outbox ADD CONSTRAINT retail_native_audit_outbox_action_v6_check
           CHECK (action IN ('native_key.rotated','native_password.changed','native_session.revoked',
             'native_identity.configured','native_identity.signed_in','native_api_identity.configured',
             'native_scim.configured','native_scim.user_created','native_scim.user_updated','native_scim.user_deleted',
-            'native_scim.group_created','native_scim.group_updated','native_scim.group_deleted'));
+            'native_scim.group_created','native_scim.group_updated','native_scim.group_deleted',
+            'native_request_policy.prompt_created','native_request_policy.prompt_updated','native_request_policy.prompt_deleted',
+            'native_request_policy.policy_created','native_request_policy.policy_updated','native_request_policy.policy_deleted',
+            'native_request_policy.binding_created','native_request_policy.binding_updated','native_request_policy.binding_deleted'));
     END IF;
     CREATE INDEX IF NOT EXISTS retail_native_audit_outbox_queue
       ON retail_native_audit_outbox(next_attempt_at,occurred_at,id) WHERE state IN ('pending','processing');

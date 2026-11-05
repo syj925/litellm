@@ -22,6 +22,7 @@ export const pageDescriptions: Record<string, string> = {
   reports: "Export a fixed time window of your account ledger with exact billing totals",
   "operation-audit": "Review redacted organization and report management events",
   "business-labels": "Classify supported gateway objects with separate business labels and provenance",
+  "request-policies": "Manage gateway request restrictions, private saved prompts, and target bindings",
   "wallet-admin": "Manage customer wallets and account billing settings",
   "model-pricing": "Manage site-wide model base prices and cache duration rates separately from customer discounts",
   agents: "Create and manage AI agents",

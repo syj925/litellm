@@ -23,6 +23,15 @@ NativeAuditAction: TypeAlias = Literal[
     "native_api_identity.configured",
     "native_scim.configured", "native_scim.user_created", "native_scim.user_updated", "native_scim.user_deleted",
     "native_scim.group_created", "native_scim.group_updated", "native_scim.group_deleted",
+    "native_request_policy.prompt_created",
+    "native_request_policy.prompt_updated",
+    "native_request_policy.prompt_deleted",
+    "native_request_policy.policy_created",
+    "native_request_policy.policy_updated",
+    "native_request_policy.policy_deleted",
+    "native_request_policy.binding_created",
+    "native_request_policy.binding_updated",
+    "native_request_policy.binding_deleted",
 ]
 NativeAuditFailure: TypeAlias = Literal["bridge_unavailable", "integrity_conflict"]
 

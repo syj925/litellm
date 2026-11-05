@@ -310,6 +310,13 @@ class RetailBilling(CustomLogger):
         _active_reservation.set(None)
         reset_credential_dispatch()
         reset_pool_routing()
+        from .request_policy_runtime import prepare_request_policy
+
+        return await self._prepare_enforced_request(user_api_key_dict, prepare_request_policy(user_api_key_dict, data, call_type), call_type)
+
+    async def _prepare_enforced_request(  # noqa: C901  # preserve the existing prepaid flow behind the policy adapter
+        self, user_api_key_dict: UserAPIKeyAuth, data: Mapping[str, object], call_type: str,
+    ) -> Mapping[str, object]:
         policy: Final = _resource_policy(user_api_key_dict)
         exempt: Final = (
             str(user_api_key_dict.user_role) in {"proxy_admin", "LitellmUserRoles.PROXY_ADMIN"}
@@ -441,8 +448,10 @@ class RetailBilling(CustomLogger):
                 )
             )
             try:
+                from .request_policy_runtime import request_policy_quote_data
+
                 quote: Final = reserve_quote(
-                    snapshot, data, output_limit, minimum_input_tokens=1_000_000 if opaque_input else 0
+                    snapshot, request_policy_quote_data(data), output_limit, minimum_input_tokens=1_000_000 if opaque_input else 0
                 )
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
@@ -486,7 +495,10 @@ class RetailBilling(CustomLogger):
 
     async def async_pre_call_deployment_hook(self, kwargs: Mapping[str, object], call_type: object) -> None:
         guard_pool_deployment(kwargs)
-        mark_credential_dispatch()
+        from .request_policy_runtime import request_policy_attested
+
+        if not request_policy_attested():
+            mark_credential_dispatch()
 
     async def async_post_call_failure_deployment_hook(
         self,

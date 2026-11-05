@@ -34,6 +34,8 @@
 
 [SCIM Groups 验收记录](validation/r14-2026-11-05.md) 保存组成员、访问限制、永久撤销、有界分页及双 worker 业务验证证据
 
+[自有请求策略与保存提示词](request-policies.md) 说明账号、Key、公开模型约束、三种 HTTP 接口、管理员页面、脱敏与默认关闭边界
+
 本地通过 bind mount 更新源码或静态 UI 时，Compose 配置不变的 up 不会自动重启 Python worker。沿用实际的 env-file 和 compose 文件上下文，使用 `up -d --force-recreate --no-deps --no-build --pull never litellm`，再核对启动时间、两个 worker、健康检查和数据库结构。覆盖文件 hash 一致只证明磁盘内容相同，不能单独证明进程已经加载新版本
 
 [OIDC 控制台验收记录](validation/r11-2026-11-04.md) 保存协议、原生事务、跨 worker、恢复不复活、日志脱敏及真实浏览器回调的本地证据

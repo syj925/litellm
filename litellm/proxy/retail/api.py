@@ -9,8 +9,8 @@ from typing import Annotated, Final, Literal, TypeAlias
 from uuid import uuid4
 
 import psycopg
-from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Request
+from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 from pydantic import (
     AliasChoices,
     AwareDatetime,
@@ -594,6 +594,7 @@ async def config() -> dict[str, JsonValue]:
         organization_finance_enabled,
         organizations_enabled,
         report_export_enabled,
+        request_policies_enabled,
     )
 
     return {
@@ -611,6 +612,7 @@ async def config() -> dict[str, JsonValue]:
         "audit_delivery_enabled": audit_delivery_enabled(),
         "org_finance_enabled": organization_finance_enabled(),
         "org_finance_delegation_enabled": organization_finance_delegation_enabled(),
+        "request_policies_enabled": request_policies_enabled(),
     }
 
 

@@ -54,6 +54,15 @@ _ALLOWED_ACTIONS: Final = frozenset(
         "native_scim.group_created",
         "native_scim.group_updated",
         "native_scim.group_deleted",
+        "native_request_policy.prompt_created",
+        "native_request_policy.prompt_updated",
+        "native_request_policy.prompt_deleted",
+        "native_request_policy.policy_created",
+        "native_request_policy.policy_updated",
+        "native_request_policy.policy_deleted",
+        "native_request_policy.binding_created",
+        "native_request_policy.binding_updated",
+        "native_request_policy.binding_deleted",
     )
 )
 _ALLOWED_FIELDS: Final = frozenset(

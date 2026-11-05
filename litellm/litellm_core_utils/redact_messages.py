@@ -10,9 +10,16 @@
 import asyncio
 import copy
 import inspect
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import replace
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Final
+from uuid import UUID
+
+from pydantic import BaseModel
 
 import litellm
 from litellm.constants import REDACTED_BY_LITELLM
@@ -38,6 +45,92 @@ if TYPE_CHECKING:
     LiteLLMLoggingObject = _LiteLLMLoggingObject
 else:
     LiteLLMLoggingObject = Any
+
+
+_PRIVATE_TEXT_FIELDS: Final = frozenset((
+    "instructions", "system", "system_instruction", "systeminstruction", "input", "prompt", "content", "text",
+    "arguments", "refusal", "reasoning_content", "thinking", "error_str", "error_message", "traceback",
+    "traceback_exception", "complete_input_dict", "raw_request", "raw_response", "original_response",
+    "request_body", "raw_request_body", "response_body", "body", "error", "exception", "error_information",
+    "status_details", "message", "detail", "details",
+))
+
+
+def private_logging_active(details: object) -> bool:
+    from litellm.proxy.retail.request_policy_privacy import policy_prompt_private
+
+    return policy_prompt_private(details)
+
+
+@contextmanager
+def private_callback_logging(details: object) -> Iterator[None]:
+    if not private_logging_active(details):
+        yield
+        return
+    from litellm.proxy.retail.request_policy_privacy import private_policy_authority_io
+
+    with private_policy_authority_io():
+        yield
+
+
+def private_callback_redaction(callback: object, details: object) -> bool:
+    if not private_logging_active(details):
+        return False
+    from litellm.proxy.retail.billing import RetailBilling
+
+    return not isinstance(callback, RetailBilling)
+
+
+def private_callback_exception(error: Exception, details: object) -> Exception:
+    return RuntimeError(REDACTED_BY_LITELLM) if private_logging_active(details) else error
+
+
+def _private_diagnostic_field(key: str, value: object, depth: int) -> object:
+    if key.lower() in _PRIVATE_TEXT_FIELDS and not (key == "message" and isinstance(value, (Mapping, BaseModel))):
+        return REDACTED_BY_LITELLM
+    return _private_diagnostic_value(value, depth)
+
+
+def _private_diagnostic_value(value: object, depth: int = 0) -> object:
+    if depth > 24:
+        return REDACTED_BY_LITELLM
+    if isinstance(value, BaseException):
+        return RuntimeError(REDACTED_BY_LITELLM)
+    if isinstance(value, BaseModel):
+        fields: Final = (*type(value).model_fields, *(value.model_extra or {}))
+        projected: Final = {
+            key: _private_diagnostic_field(key, getattr(value, key, None), depth + 1)
+            for key in fields
+        }
+        result: Final = value.model_copy(update=projected)
+        private: Final = getattr(value, "__pydantic_private__", None)
+        if isinstance(private, Mapping):
+            object.__setattr__(result, "__pydantic_private__", _private_diagnostic_value(private, depth + 1))
+        hidden: Final = getattr(value, "_hidden_params", None)
+        if isinstance(hidden, Mapping):
+            object.__setattr__(result, "_hidden_params", _private_diagnostic_value(hidden, depth + 1))
+        return result
+    if isinstance(value, Mapping):
+        return {
+            key: _private_diagnostic_field(str(key), item, depth + 1)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_private_diagnostic_value(item, depth + 1) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_private_diagnostic_value(item, depth + 1) for item in value)
+    if isinstance(value, (str, int, float, bool, type(None), date, datetime, time, timedelta, Enum, Decimal, UUID)):
+        return value
+    return REDACTED_BY_LITELLM
+
+
+def private_callback_payload(
+    callback: object, details: Mapping[str, object], result: object,
+) -> tuple[Mapping[str, object], object]:
+    if not private_callback_redaction(callback, details):
+        return details, result
+    return ({key: _private_diagnostic_field(key, value, 1) for key, value in details.items()},
+        REDACTED_BY_LITELLM if isinstance(result, (str, bytes)) else _private_diagnostic_value(result))
 
 
 def redact_message_input_output_from_custom_logger(
@@ -355,6 +448,10 @@ def should_redact_message_logging(model_call_details: dict) -> bool:
     2. Headers (litellm-disable-message-redaction / litellm-enable-message-redaction)
     3. Global setting (litellm.turn_off_message_logging)
     """
+    from litellm.proxy.retail.request_policy_privacy import policy_prompt_private
+
+    if policy_prompt_private(model_call_details):
+        return True
     litellm_params: Final = model_call_details.get("litellm_params", {})
 
     metadata_field: Final = get_metadata_variable_name_from_kwargs(litellm_params)

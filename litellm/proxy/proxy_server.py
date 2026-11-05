@@ -20727,8 +20727,10 @@ if os.getenv("RETAIL_PORTAL_ENABLED", "false").lower() == "true":
     from litellm.proxy.retail.key_rotation import router as retail_key_rotation_router
     from litellm.proxy.retail.model_discovery import router as model_discovery_router
     from litellm.proxy.retail.pools import router as resource_pools_router
+    from litellm.proxy.retail.request_policy_privacy import RequestPolicyIngressMiddleware
     from litellm.proxy.retail.trace_middleware import RequestTraceMiddleware
 
+    app.add_middleware(RequestPolicyIngressMiddleware)
     app.add_middleware(RequestTraceMiddleware)
     app.include_router(retail_router)
     app.include_router(retail_control_plane_router)

@@ -37,6 +37,7 @@ type ManagementConfig = RetailConfig & {
   model_budgets_enabled?: boolean;
   audit_delivery_enabled?: boolean;
   org_finance_enabled?: boolean;
+  request_policies_enabled?: boolean;
 };
 export type ManagementFeature =
   | "organization_management_enabled"
@@ -45,7 +46,8 @@ export type ManagementFeature =
   | "object_metadata_enabled"
   | "model_budgets_enabled"
   | "audit_delivery_enabled"
-  | "org_finance_enabled";
+  | "org_finance_enabled"
+  | "request_policies_enabled";
 
 export function ManagementFeatureGate({
   feature,

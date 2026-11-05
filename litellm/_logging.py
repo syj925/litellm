@@ -1097,6 +1097,10 @@ def _enable_debugging():
 
 
 def print_verbose(print_statement):
+    from litellm.proxy.retail.request_policy_privacy import policy_diagnostics_private
+
+    if policy_diagnostics_private():
+        return
     try:
         if set_verbose:
             print(redact_secrets(str(print_statement)))  # noqa: T201

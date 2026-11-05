@@ -10,6 +10,16 @@ const customer: DashboardAccessContext = {
 };
 
 describe("dashboard role boundaries", () => {
+  it.each([
+    ["proxy_admin", false, true],
+    ["Admin", false, true],
+    ["proxy_admin", true, false],
+    ["proxy_admin_viewer", false, false],
+    ["Internal User", false, false],
+    ["Org Admin", false, false],
+  ] as const)("guards the request-policy route for %s, viewer=%s", (userRole, isViewOnly, expected) => {
+    expect(canAccessDashboardRoute("request-policies", { ...customer, userRole, isViewOnly })).toBe(expected);
+  });
   it("keeps a native customer on ordinary portal routes after session role normalization", () => {
     const context = { ...customer, userRole: effectiveSessionRole("customer") };
     expect(canAccessDashboardRoute("organization-finance", context)).toBe(true);

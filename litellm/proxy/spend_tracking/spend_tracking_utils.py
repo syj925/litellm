@@ -808,6 +808,9 @@ def get_logging_payload(
     # Extract agent_id for A2A requests (set directly on model_call_details)
     agent_id: Final[str | None] = kwargs.get("agent_id") or metadata.get("agent_id")
 
+    from litellm.proxy.retail.request_policy_privacy import policy_prompt_private, private_policy_log_value
+
+    private_prompt: Final = policy_prompt_private(kwargs) or policy_prompt_private(standard_logging_payload)
     try:
         payload: Final[SpendLogsPayload] = SpendLogsPayload(
             request_id=str(id),
@@ -821,7 +824,7 @@ def get_logging_payload(
             user=metadata.get("user_api_key_user_id", "") or "",
             team_id=metadata.get("user_api_key_team_id", "") or "",
             organization_id=metadata.get("user_api_key_org_id") or "",
-            metadata=safe_dumps(clean_metadata),
+            metadata=safe_dumps(private_policy_log_value(clean_metadata) if private_prompt else clean_metadata),
             cache_key=cache_key,
             spend=kwargs.get("response_cost", 0),
             total_tokens=usage.get("total_tokens", standard_logging_total_tokens),
@@ -837,11 +840,11 @@ def get_logging_payload(
             billing_agent_id=clean_metadata.get("billing_agent_id"),
             requester_ip_address=clean_metadata.get("requester_ip_address", None),
             custom_llm_provider=custom_llm_provider or "",
-            messages=_get_messages_for_spend_logs_payload(
+            messages="{}" if private_prompt else _get_messages_for_spend_logs_payload(
                 standard_logging_payload=standard_logging_payload, metadata=metadata
             ),
-            response=_get_response_for_spend_logs_payload(payload=standard_logging_payload, kwargs=kwargs),
-            proxy_server_request=_get_proxy_server_request_for_spend_logs_payload(
+            response="{}" if private_prompt else _get_response_for_spend_logs_payload(payload=standard_logging_payload, kwargs=kwargs),
+            proxy_server_request="{}" if private_prompt else _get_proxy_server_request_for_spend_logs_payload(
                 metadata=metadata,
                 litellm_params=(
                     _placeholder_stored_request_body(litellm_params, persisted_model_group, raw_model)

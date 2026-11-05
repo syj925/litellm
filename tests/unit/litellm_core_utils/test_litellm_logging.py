@@ -10,6 +10,7 @@ import sys
 import time
 import traceback
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
+from contextvars import Context
 from datetime import datetime as datetime_standard_logging, datetime as datetime_unit_test, datetime as dt_object
 from importlib.machinery import ModuleSpec
 from types import MappingProxyType, ModuleType
@@ -11818,3 +11819,174 @@ def test_standard_logging_payload_reports_the_deployment_entry_the_request_was_b
         )
     finally:
         litellm.model_cost.pop(deployment_id, None)
+
+
+class _PrivatePolicyCollector(CustomLogger):
+    def __init__(self) -> None:
+        super().__init__()
+        self.received: tuple[tuple[str, Mapping[str, object], object], ...] = ()
+
+    def logging_hook(self, kwargs: Mapping[str, object], result: object, call_type: str) -> tuple[Mapping[str, object], object]:
+        self.received = (*self.received, ("hook", kwargs, result))
+        return {**kwargs, "response_cost": 999}, result
+
+    async def async_logging_hook(self, kwargs: Mapping[str, object], result: object, call_type: str) -> tuple[Mapping[str, object], object]:
+        return self.logging_hook(kwargs, result, call_type)
+
+    def log_pre_api_call(self, model: str, messages: object, kwargs: Mapping[str, object]) -> None:
+        self.received = (*self.received, ("pre", kwargs, messages))
+
+    def log_post_api_call(self, kwargs: Mapping[str, object], response_obj: object, start_time: object, end_time: object) -> None:
+        self.received = (*self.received, ("post", kwargs, response_obj))
+
+    def log_success_event(self, kwargs: Mapping[str, object], response_obj: object, start_time: object, end_time: object) -> None:
+        self.received = (*self.received, ("success", kwargs, response_obj))
+
+    async def async_log_success_event(self, kwargs: Mapping[str, object], response_obj: object, start_time: object, end_time: object) -> None:
+        self.log_success_event(kwargs, response_obj, start_time, end_time)
+
+    def log_failure_event(self, kwargs: Mapping[str, object], response_obj: object, start_time: object, end_time: object) -> None:
+        self.received = (*self.received, ("failure", kwargs, response_obj))
+
+    async def async_log_failure_event(self, kwargs: Mapping[str, object], response_obj: object, start_time: object, end_time: object) -> None:
+        self.log_failure_event(kwargs, response_obj, start_time, end_time)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("event", ("sync_success", "async_success", "sync_failure", "async_failure"))
+async def test_private_policy_diagnostic_dispatch_uses_independent_copies_and_retains_financial_facts(
+    monkeypatch: pytest.MonkeyPatch, event: str,
+) -> None:
+    private: Final = "Synthetic private policy instruction and reflected error"
+    model: Final = "fixture-private-policy-callback"
+    monkeypatch.setitem(litellm.model_cost, model, {"input_cost_per_token": 0.01,
+        "output_cost_per_token": 0.02, "litellm_provider": "openai", "mode": "chat"})
+    collector: Final = _PrivatePolicyCollector()
+    for name in ("input_callback", "success_callback", "failure_callback", "_async_success_callback", "_async_failure_callback"):
+        monkeypatch.setattr(litellm, name, [collector])
+    logging_obj: Final = Logging(model=model, messages=[{"role": "system", "content": private}],
+        stream=False, call_type="acompletion" if event.startswith("async") else "completion",
+        start_time=time.time(), litellm_call_id="private-callback-fixture", function_id="private-callback-fixture")
+    error: Final = RuntimeError(private)
+    logging_obj.model_call_details.update({"instructions": private,"response_cost": 0.25,
+        "litellm_params": {"acompletion": event.startswith("async"),"metadata": {"retail_request_policy_prompt": True}},
+        "metadata": {"retail_request_policy_prompt": True},"optional_params": {},
+        "error_str": private,"exception": error,"traceback_exception": private})
+    response: Final = ModelResponse(model=model, choices=[{"message": {"role": "assistant", "content": private}}],
+        usage={"prompt_tokens": 11, "completion_tokens": 3, "total_tokens": 14})
+    if event == "sync_success":
+        logging_obj.success_handler(response)
+    elif event == "async_success":
+        await logging_obj.async_success_handler(response)
+    elif event == "sync_failure":
+        logging_obj.failure_handler(error, private)
+    else:
+        await logging_obj.async_failure_handler(error, private)
+    relevant: Final = tuple(row for row in collector.received if row[0] == ("success" if "success" in event else "failure"))
+    assert relevant, collector.received
+    assert all(private not in str(row) for row in collector.received)
+    assert logging_obj.model_call_details["instructions"] == private
+    assert logging_obj.model_call_details["response_cost"] != 999
+    assert response.choices[0].message.content == private
+    assert all(row[1] is not logging_obj.model_call_details for row in collector.received)
+
+
+def test_private_policy_standard_payload_stdout_redacts_text_preserves_usage(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from litellm.litellm_core_utils.litellm_logging import emit_standard_logging_payload
+
+    monkeypatch.setenv("LITELLM_PRINT_STANDARD_LOGGING_PAYLOAD", "true")
+    private: Final = "Synthetic instruction not for stdout"
+    payload: Final = {"metadata": {"retail_request_policy_prompt": True}, "error_str": private,
+        "response": {"instructions": private}, "prompt_tokens": 11,"response_cost": 0.25}
+    emit_standard_logging_payload(payload)
+    output: Final = capsys.readouterr().out
+    assert private not in output
+    document: Final = json.loads(output)
+    assert document["prompt_tokens"] == 11 and document["response_cost"] == 0.25
+    assert payload["response"]["instructions"] == private
+
+
+@pytest.mark.parametrize("event", ("pre", "post"))
+def test_private_policy_input_diagnostics_do_not_receive_prompt_or_raw_body(
+    monkeypatch: pytest.MonkeyPatch, event: str,
+) -> None:
+    private: Final = "Synthetic managed prompt for input diagnostics"
+    collector: Final = _PrivatePolicyCollector()
+    monkeypatch.setattr(litellm, "input_callback", [collector])
+    logging_obj: Final = Logging(model="fixture-policy-diagnostics", messages=[{"role": "system", "content": private}],
+        stream=False, call_type="completion", start_time=time.time(), litellm_call_id="input-diagnostics", function_id="input-diagnostics")
+    logging_obj.update_environment_variables(litellm_params={"metadata": {"retail_request_policy_prompt": True}}, optional_params={})
+    if event == "pre":
+        logging_obj.pre_call(input=private, api_key="", additional_args={"complete_input_dict": {"instructions": private}})
+    else:
+        logging_obj.post_call(original_response={"instructions": private, "usage": {"input_tokens": 11}})
+    relevant: Final = tuple(row for row in collector.received if row[0] == event)
+    assert relevant and all(private not in str(row) for row in relevant)
+    if event == "post":
+        assert private in logging_obj.model_call_details["original_response"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("event", ("sync_success", "async_success", "sync_failure", "async_failure"))
+async def test_private_policy_finance_keeps_raw_facts_without_logging_in_an_empty_worker_context(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, event: str,
+) -> None:
+    from litellm.proxy.retail.billing import RetailBilling
+    from litellm.proxy.retail.request_policy_privacy import install_request_policy_private_filter
+
+    class FailingFinance(RetailBilling):
+        def __init__(self) -> None:
+            super().__init__()
+            self.seen: tuple[Mapping[str, object], object] | None = None
+
+        def log_success_event(self, kwargs: Mapping[str, object], response_obj: object, start_time: object, end_time: object) -> None:
+            self.seen = (kwargs, response_obj)
+            raise RuntimeError(str(kwargs["instructions"]))
+
+        async def async_log_success_event(self, kwargs: Mapping[str, object], response_obj: object, start_time: object, end_time: object) -> None:
+            self.log_success_event(kwargs, response_obj, start_time, end_time)
+
+        def log_failure_event(self, kwargs: Mapping[str, object], response_obj: object, start_time: object, end_time: object) -> None:
+            self.log_success_event(kwargs, response_obj, start_time, end_time)
+
+        async def async_log_failure_event(self, kwargs: Mapping[str, object], response_obj: object, start_time: object, end_time: object) -> None:
+            self.log_success_event(kwargs, response_obj, start_time, end_time)
+
+    private: Final = "Synthetic private finance exception in a worker without inherited context"
+    model: Final = "fixture-private-finance-context"
+    monkeypatch.setitem(litellm.model_cost, model, {"input_cost_per_token": 0.01,
+        "output_cost_per_token": 0.02,"litellm_provider": "openai","mode": "chat"})
+    finance: Final = FailingFinance()
+    for name in ("input_callback", "success_callback", "failure_callback", "_async_success_callback", "_async_failure_callback"):
+        monkeypatch.setattr(litellm, name, [finance])
+    caplog.set_level(logging.DEBUG)
+    install_request_policy_private_filter()
+    logger: Final = Logging(model=model, messages=[{"role": "system", "content": private}], stream=False,
+        call_type="acompletion" if event.startswith("async") else "completion", start_time=time.time(),
+        litellm_call_id="finance-context-fixture", function_id="finance-context-fixture")
+    logger.model_call_details.update({"instructions": private,"response_cost": 0.25,
+        "litellm_params": {"acompletion": event.startswith("async"),"metadata": {"retail_request_policy_prompt": True}},
+        "metadata": {"retail_request_policy_prompt": True},"optional_params": {}})
+    response: Final = ModelResponse(model=model, choices=[{"message": {"role": "assistant", "content": private}}],
+        usage={"prompt_tokens": 11,"completion_tokens": 3,"total_tokens": 14})
+    error: Final = RuntimeError(private)
+    empty: Final = Context()
+    if event == "sync_success":
+        empty.run(logger.success_handler, response)
+    elif event == "sync_failure":
+        empty.run(logger.failure_handler, error, private)
+    else:
+        coroutine: Final = logger.async_success_handler(response) if event == "async_success" else logger.async_failure_handler(error, private)
+        await asyncio.create_task(coroutine, context=empty)
+    assert finance.seen is not None and finance.seen[0] is logger.model_call_details
+    assert finance.seen[0]["instructions"] == private
+    assert finance.seen[0]["response_cost"] != 999
+    if "success" in event:
+        assert finance.seen[1] is response
+    else:
+        assert finance.seen[0]["exception"] is error
+    assert private not in caplog.text
+    empty.run(logging.getLogger("ordinary-after-private-worker").warning, "ordinary diagnostic still visible")
+    assert "ordinary diagnostic still visible" in caplog.text

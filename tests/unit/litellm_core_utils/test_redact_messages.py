@@ -28,6 +28,7 @@ from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
 from litellm.litellm_core_utils.redact_messages import (
     _redact_responses_api_output,
     perform_redaction,
+    private_callback_payload,
     redact_streaming_responses_for_custom_logger,
     redacted_standard_logging_payload,
     should_redact_message_logging,
@@ -1678,3 +1679,41 @@ async def test_redaction_with_metadata_completion_api():
     response = standard_logging_payload["response"]
     assert response["choices"][0]["message"]["content"] == "redacted-by-litellm"
     assert standard_logging_payload["messages"][0]["content"] == "redacted-by-litellm"
+
+
+def test_private_callback_projection_copies_prompt_and_error_fields_without_changing_accounting_facts() -> None:
+    from litellm.proxy.retail.billing import RetailBilling
+
+    private: Final = "Synthetic managed instruction never for diagnostics"
+    error: Final = RuntimeError(private)
+    response: Final = ModelResponse(choices=[{"message": {"role": "assistant", "content": private}}],
+        usage={"prompt_tokens": 11, "completion_tokens": 3, "total_tokens": 14})
+    response._hidden_params = {"original_response": private, "response_cost": 0.25}
+    details: Final = {"metadata": {"retail_request_policy_prompt": True}, "instructions": private,
+        "messages": [{"role": "system", "content": private}], "response_cost": 0.25,
+        "exception": error, "traceback_exception": private, "error_str": private,
+        "standard_logging_object": {"response": {"instructions": private, "input": private,
+            "system": private, "output": [{"content": [{"text": private}]}],
+            "usage": {"input_tokens": 11,"output_tokens": 3}},
+            "error_information": {"message": private,"error_message": private,"traceback": private,"error_code": "400"},
+            "status_details": {"message": private}},
+        "raw_request_typed_dict": {"raw_request_body": private},
+        "async_complete_streaming_response": response}
+    projected, observed = private_callback_payload(CustomLogger(), details, response)
+    assert projected is not details and observed is not response
+    assert private not in str(projected) and private not in str(observed)
+    assert projected["response_cost"] == details["response_cost"]
+    assert isinstance(observed, ModelResponse) and observed.usage.total_tokens == 14
+    assert observed._hidden_params["response_cost"] == 0.25
+    assert private not in str(getattr(observed, "__pydantic_private__", None))
+    assert response.choices[0].message.content == private and details["exception"] is error
+    original, finance_response = private_callback_payload(RetailBilling(), details, response)
+    assert original is details and finance_response is response
+    assert original["exception"] is error and original["response_cost"] == 0.25
+
+
+def test_private_callback_projection_is_identity_for_ordinary_sdk_requests() -> None:
+    details: Final = {"messages": [{"role": "user", "content": "ordinary input"}],"response_cost": 0.25}
+    result: Final = {"instructions": "ordinary SDK instruction", "output": []}
+    projected, observed = private_callback_payload(CustomLogger(), details, result)
+    assert projected is details and observed is result

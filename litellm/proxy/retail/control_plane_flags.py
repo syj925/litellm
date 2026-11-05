@@ -35,6 +35,15 @@ def scim_enabled() -> bool:
     )
 
 
+def request_policies_enabled() -> bool:
+    return (
+        native_audit_enabled()
+        and os.environ.get("RETAIL_REQUIRE_COORDINATION_REDIS", "false").lower() == "true"
+        and os.environ.get("RETAIL_BILLING_ENABLED", "false").lower() == "true"
+        and os.environ.get("RETAIL_REQUEST_POLICIES_ENABLED", "false").lower() == "true"
+    )
+
+
 def organizations_enabled() -> bool:
     return operation_audit_enabled() and os.environ.get("RETAIL_ORGANIZATIONS_ENABLED", "false").lower() == "true"
 

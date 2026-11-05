@@ -83,6 +83,10 @@ class _CustomerResponse:
         self._body_limit = _JSON_LIMIT
 
     async def send(self, message: Message) -> None:
+        if self._scope.get("retail_request_policy_prompt") is True:
+            from .request_policy_privacy import mark_private_policy_prompt
+
+            mark_private_policy_prompt(True)
         if message["type"] == "http.response.start":
             await self._response_start(message)
             return
@@ -106,7 +110,8 @@ class _CustomerResponse:
             (key, value) for key, value in message.get("headers", []) if key.lower() != b"cache-control"
         ] + [(b"cache-control", b"no-store")]} if private_cache else message
         inference: Final = _inference_scope(self._scope)
-        self._active = not _admin_scope(self._scope) and (inference or self._status >= 400)
+        private_prompt: Final = self._scope.get("retail_request_policy_prompt") is True
+        self._active = (private_prompt or not _admin_scope(self._scope)) and (inference or self._status >= 400)
         if not self._active:
             await self._send(start)
             return

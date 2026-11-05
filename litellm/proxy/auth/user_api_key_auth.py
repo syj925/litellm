@@ -3006,9 +3006,10 @@ async def run_centralized_common_checks(
         fetch_coros.append(_safe_fetch("team", _noop_none()))
 
     from litellm.proxy.retail.api_jwt_auth import api_jwt_user
+    from litellm.proxy.retail.request_policy_runtime import request_policy_user
     from litellm.proxy.retail.scim_identity import scim_identity_user
 
-    authoritative_user: Final = scim_identity_user(request) or api_jwt_user(request)
+    authoritative_user: Final = request_policy_user() or scim_identity_user(request) or api_jwt_user(request)
     if authoritative_user is not None:
         fetch_coros.append(_safe_fetch("user", _known_api_jwt_user(authoritative_user)))
     elif user_api_key_auth_obj.user_id is not None:
@@ -3636,14 +3637,25 @@ async def user_api_key_auth(
             )
             from litellm.proxy.retail.oidc_sessions import fresh_oidc_session, oidc_request_key
 
-            user_api_key_auth_obj: Final = await fresh_oidc_session(
+            session_auth: Final = await fresh_oidc_session(
                 built_auth, oidc_request_key(request, api_key), route, request.method,
             )
             from litellm.proxy.retail.api_jwt_auth import require_api_jwt_result
             from litellm.proxy.retail.scim_identity import require_scim_identity_result
 
-            require_api_jwt_result(request, user_api_key_auth_obj)
-            require_scim_identity_result(request, user_api_key_auth_obj)
+            require_api_jwt_result(request, session_auth)
+            require_scim_identity_result(request, session_auth)
+            from litellm.proxy.retail.request_policy_runtime import (
+                authorize_request_policies,
+                request_policy_inference,
+                require_request_policy_result,
+            )
+
+            policy_auth: Final = (
+                await authorize_request_policies(request, session_auth, request_data, route)
+                if body_parse_exception is None else session_auth
+            )
+            user_api_key_auth_obj: Final = await revalidate_request_policy_key(request, policy_auth, request_data, route)
         except Exception:
             # The body was read first, so a caller who sent both a malformed body and
             # a rejected key used to get the 400; the response is unchanged, and the
@@ -3677,6 +3689,7 @@ async def user_api_key_auth(
             if recovered_auth_obj is not None:
                 require_api_jwt_result(request, recovered_auth_obj)
                 require_scim_identity_result(request, recovered_auth_obj)
+                require_request_policy_result(recovered_auth_obj, inference=request_policy_inference(route))
                 return recovered_auth_obj
 
     # Identity is now resolved. Seed it AFTER the auth span closes so the Baggage
@@ -3708,7 +3721,27 @@ async def user_api_key_auth(
     except Exception as e:
         verbose_proxy_logger.warning("Principal projection at auth seam failed (non-fatal): %s", e)
 
+    require_request_policy_result(user_api_key_auth_obj, inference=request_policy_inference(route))
     return user_api_key_auth_obj
+
+
+async def revalidate_request_policy_key(
+    request: Request, auth: UserAPIKeyAuth, data: Mapping[str, object], route: str,
+) -> UserAPIKeyAuth:
+    from litellm.proxy.retail.request_policy_runtime import (
+        request_policy_revalidate_key,
+        request_policy_user,
+        restore_request_policy_proofs,
+    )
+
+    if not request_policy_revalidate_key(auth):
+        return auth
+    checked: Final = await validate_resolved_virtual_key(
+        request=request, request_data=dict(data), valid_token=auth, api_key=auth.api_key or "", route=route,
+        start_time=datetime.now(timezone.utc), parent_otel_span=auth.parent_otel_span,
+        end_user_id=auth.end_user_id, end_user_params={}, _end_user_object=None, fresh_user=request_policy_user(),
+    )
+    return restore_request_policy_proofs(auth, checked)
 
 
 async def _return_user_api_key_auth_obj(
@@ -4134,9 +4167,17 @@ async def authorize_internal_virtual_key(
         end_user_params={},
         _end_user_object=None,
     )
-    auth.budget_reservation = None
+    from litellm.proxy.retail.request_policy_runtime import (
+        authorize_request_policies,
+        request_policy_inference,
+        require_request_policy_result,
+    )
+
+    admitted_policy_auth: Final = await authorize_request_policies(request, auth, request_data, route)
+    policy_auth: Final = await revalidate_request_policy_key(request, admitted_policy_auth, request_data, route)
+    policy_auth.budget_reservation = None
     recovered: Final = await _authorize_authenticated_request(
-        user_api_key_auth_obj=auth,
+        user_api_key_auth_obj=policy_auth,
         request=request,
         request_data=request_data,
         route=route,
@@ -4144,8 +4185,10 @@ async def authorize_internal_virtual_key(
         force_virtual_key_checks=True,
     )
     if recovered is not None:
+        require_request_policy_result(recovered, inference=request_policy_inference(route))
         return recovered
-    _seed_request_destinations(auth, request)
-    auth.request_route = route
-    request.state.principal = _resolve_request_principal(request, auth)
-    return auth
+    require_request_policy_result(policy_auth, inference=request_policy_inference(route))
+    _seed_request_destinations(policy_auth, request)
+    policy_auth.request_route = route
+    request.state.principal = _resolve_request_principal(request, policy_auth)  # rebind-ok: retain native principal projection after authoritative policy checks
+    return policy_auth

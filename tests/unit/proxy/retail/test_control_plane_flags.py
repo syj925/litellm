@@ -14,8 +14,35 @@ from litellm.proxy.retail.control_plane_flags import (
     organization_finance_enabled,
     organizations_enabled,
     report_export_enabled,
+    request_policies_enabled,
     scim_enabled,
 )
+
+
+@pytest.mark.parametrize("disabled", (
+    "RETAIL_OPERATION_AUDIT_ENABLED", "RETAIL_NATIVE_AUDIT_ENABLED", "RETAIL_REQUIRE_COORDINATION_REDIS",
+    "RETAIL_BILLING_ENABLED", "RETAIL_REQUEST_POLICIES_ENABLED",
+))
+def test_request_policies_require_each_explicit_safety_dependency(
+    monkeypatch: pytest.MonkeyPatch, disabled: str,
+) -> None:
+    for name in (
+        "RETAIL_OPERATION_AUDIT_ENABLED", "RETAIL_NATIVE_AUDIT_ENABLED", "RETAIL_REQUIRE_COORDINATION_REDIS",
+        "RETAIL_BILLING_ENABLED", "RETAIL_REQUEST_POLICIES_ENABLED",
+    ):
+        monkeypatch.setenv(name, "true")
+    assert request_policies_enabled() is True
+    monkeypatch.setenv(disabled, "false")
+    assert request_policies_enabled() is False
+
+
+def test_request_policies_default_to_disabled_without_touching_other_features(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("RETAIL_REQUEST_POLICIES_ENABLED", raising=False)
+    monkeypatch.setenv("RETAIL_OPERATION_AUDIT_ENABLED", "true")
+    monkeypatch.setenv("RETAIL_NATIVE_AUDIT_ENABLED", "true")
+    monkeypatch.setenv("RETAIL_BILLING_ENABLED", "true")
+    monkeypatch.setenv("RETAIL_REQUIRE_COORDINATION_REDIS", "true")
+    assert request_policies_enabled() is False and native_audit_enabled() is True
 
 
 @pytest.mark.parametrize("enabled", (False, True))

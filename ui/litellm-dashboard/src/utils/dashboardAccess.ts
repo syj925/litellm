@@ -52,6 +52,7 @@ const retailAdminPages = new Set([
   "business-labels",
   "audit-delivery",
   "organization-consumption",
+  "request-policies",
 ]);
 
 export const isProxyDashboardRole = (role: string): boolean => proxyRoles.has(roleKey(role));

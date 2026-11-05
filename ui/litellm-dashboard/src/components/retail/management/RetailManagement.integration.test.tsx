@@ -262,6 +262,15 @@ const addedAuditActions = [
   ["native_scim.group_created", "Directory group created"],
   ["native_scim.group_updated", "Directory group updated"],
   ["native_scim.group_deleted", "Directory group removed"],
+  ["native_request_policy.prompt_created", "Saved prompt created"],
+  ["native_request_policy.prompt_updated", "Saved prompt updated"],
+  ["native_request_policy.prompt_deleted", "Saved prompt deleted"],
+  ["native_request_policy.policy_created", "Request policy created"],
+  ["native_request_policy.policy_updated", "Request policy updated"],
+  ["native_request_policy.policy_deleted", "Request policy deleted"],
+  ["native_request_policy.binding_created", "Policy binding created"],
+  ["native_request_policy.binding_updated", "Policy binding updated"],
+  ["native_request_policy.binding_deleted", "Policy binding deleted"],
 ] as const;
 
 it.each(addedAuditActions)("filters and labels the controlled admin audit action %s", async (action, label) => {
@@ -322,6 +331,20 @@ it.each(addedAuditActions)("filters and labels the controlled admin audit action
 
 it.each([
   { role: "Internal User", viewer: false, action: "finance_grant.updated" },
+  ...[
+    "prompt_created",
+    "prompt_updated",
+    "prompt_deleted",
+    "policy_created",
+    "policy_updated",
+    "policy_deleted",
+    "binding_created",
+    "binding_updated",
+    "binding_deleted",
+  ].flatMap((name) => [
+    { role: "Internal User", viewer: false, action: `native_request_policy.${name}` },
+    { role: "Admin", viewer: true, action: `native_request_policy.${name}` },
+  ]),
   { role: "Admin", viewer: true, action: "finance_grant.updated" },
   { role: "Internal User", viewer: false, action: "native_identity.configured" },
   { role: "Admin", viewer: true, action: "native_identity.configured" },
