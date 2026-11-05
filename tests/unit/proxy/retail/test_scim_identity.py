@@ -57,6 +57,14 @@ async def test_nonmanaged_identity_adds_no_authority_read_or_environment_depende
 
 
 @pytest.mark.asyncio
+async def test_nonmanaged_directory_and_session_ignore_group_settings_and_unavailable_authority() -> None:
+    source: Final = Reader(RuntimeError("group authority must not run"))
+    await identity.require_scim_directory_user(source, "ordinary-user", lock=True)
+    await identity.require_scim_session(source, "ordinary-user", _HASH)
+    assert source.calls == ()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("presented", (_RAW, _HASH))
 async def test_exact_native_projection_retains_key_limits_and_fresh_customer_without_bearer_scope(presented: str) -> None:
     source: Final = Reader((row(),))

@@ -22,6 +22,7 @@ NativeAuditAction: TypeAlias = Literal[
     "native_identity.configured", "native_identity.signed_in",
     "native_api_identity.configured",
     "native_scim.configured", "native_scim.user_created", "native_scim.user_updated", "native_scim.user_deleted",
+    "native_scim.group_created", "native_scim.group_updated", "native_scim.group_deleted",
 ]
 NativeAuditFailure: TypeAlias = Literal["bridge_unavailable", "integrity_conflict"]
 

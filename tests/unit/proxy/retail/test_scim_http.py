@@ -11,6 +11,14 @@ from pydantic import SecretStr
 from starlette.types import Receive, Scope, Send
 
 from litellm.proxy.retail.scim_config import ScimConfig, ScimSetup
+from litellm.proxy.retail.scim_groups_protocol import (
+    GROUP_SCHEMA,
+    GroupList,
+    GroupProfile,
+    GroupQuery,
+    GroupRecord,
+    group_etag,
+)
 from litellm.proxy.retail.scim_http import ScimHttpApplication
 from litellm.proxy.retail.scim_middleware import ScimIngressMiddleware
 from litellm.proxy.retail.scim_protocol import (
@@ -32,6 +40,10 @@ RECORD: Final = ScimRecord(
     external_id="private-external", user_name="private-directory-name", display_name="Private Directory Name",
     active=True, version=1, credential_revision=UUID(int=2),
     created_at=datetime.fromtimestamp(0, timezone.utc), updated_at=datetime.fromtimestamp(0, timezone.utc),
+)
+GROUP: Final = GroupRecord(
+    id=UUID(int=3), namespace=RECORD.namespace, external_id="private-group-id", display_name="Private Group",
+    members=(RECORD.id,), version=1, created_at=RECORD.created_at, updated_at=RECORD.updated_at,
 )
 
 
@@ -81,6 +93,41 @@ class Authority:
 
     async def close(self) -> None:
         self.closed = True
+
+
+class GroupAuthority(Authority):
+    def __init__(self) -> None:
+        super().__init__()
+        self.group_profile: GroupProfile | None = None
+        self.group_query: GroupQuery | None = None
+        self.group_replace = False
+
+    async def list_groups(self, setup: ScimSetup, query: GroupQuery) -> GroupList | ScimFailure:
+        self.calls += 1
+        self.group_query = query
+        return GroupList(resources=(GROUP,) if query.count else (), total=1, start_index=query.start_index)
+
+    async def get_group(self, setup: ScimSetup, identifier: UUID) -> GroupRecord | ScimFailure:
+        self.calls += 1
+        return GROUP if identifier == GROUP.id else ScimFailure(404)
+
+    async def create_group(self, setup: ScimSetup, profile: GroupProfile) -> GroupRecord | ScimFailure:
+        self.calls += 1
+        self.group_profile = profile
+        return GROUP.model_copy(update=profile.model_dump())
+
+    async def update_group(
+        self, setup: ScimSetup, identifier: UUID, body: bytes, *, replace: bool, if_match: str | None,
+    ) -> GroupRecord | ScimFailure:
+        self.calls += 1
+        self.last_match = if_match
+        self.group_replace = replace
+        return GROUP if if_match == group_etag(GROUP) else ScimFailure(412)
+
+    async def delete_group(self, setup: ScimSetup, identifier: UUID, if_match: str | None) -> ScimFailure | None:
+        self.calls += 1
+        self.last_match = if_match
+        return None if if_match == group_etag(GROUP) else ScimFailure(412)
 
 
 class NativeApp:
@@ -218,3 +265,86 @@ async def test_resource_versions_and_empty_delete_response_preserve_http_contrac
         deleted: Final = await client.delete(BASE + "/Users/" + str(RECORD.id), headers={"Authorization": "Bearer " + TOKEN, "If-Match": etag(RECORD)})
     assert response.status_code == 412 and response.json()["status"] == "412"
     assert deleted.status_code == 204 and deleted.content == b"" and store.last_match == etag(RECORD)
+
+
+@pytest.mark.asyncio
+async def test_groups_creation_and_query_routes_keep_directory_identity_private() -> None:
+    store: Final = GroupAuthority()
+    native: Final = NativeApp()
+    headers: Final = {"Authorization": "Bearer " + TOKEN}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=fixture_app(store, native)), base_url=ORIGIN) as client:
+        created: Final = await client.post(BASE + "/Groups", headers=headers, json={
+            "schemas": [GROUP_SCHEMA], "externalId": GROUP.external_id, "displayName": GROUP.display_name,
+            "members": [{"value": str(RECORD.id)}],
+        })
+        assert created.status_code == 201, created.text
+        assert store.group_profile == GroupProfile(
+            external_id=GROUP.external_id, display_name=GROUP.display_name, members=(RECORD.id,),
+        )
+        assert created.headers["Location"] == ORIGIN + BASE + "/Groups/" + str(GROUP.id)
+        assert created.headers["ETag"] == group_etag(GROUP) and RECORD.user_id not in created.text
+        listed: Final = await client.get(BASE + "/Groups?count=0", headers=headers)
+        assert listed.status_code == 200 and listed.json()["Resources"] == [] and listed.json()["totalResults"] == 1
+        searched: Final = await client.post(BASE + "/Groups/.search", headers=headers, json={
+            "schemas": ["urn:ietf:params:scim:api:messages:2.0:SearchRequest"],
+            "filter": 'externalId eq "private-group-id"',
+        })
+        assert searched.status_code == 200 and searched.json()["Resources"][0]["id"] == str(GROUP.id)
+        assert store.group_query is not None and store.group_query.filter_field == "external_id"
+    assert native.calls == 0 and store.calls == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ("GET", "PATCH", "PUT", "DELETE"))
+async def test_group_resource_dispatch_preserves_etag_and_delete_contract(method: str) -> None:
+    store: Final = GroupAuthority()
+    headers: Final = {"Authorization": "Bearer " + TOKEN, "If-Match": group_etag(GROUP)}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=fixture_app(store)), base_url=ORIGIN) as client:
+        response: Final = await client.request(
+            method, BASE + "/Groups/" + str(GROUP.id), headers=headers,
+            **({"json": {}} if method in {"PATCH", "PUT"} else {}),
+        )
+    assert response.status_code == (204 if method == "DELETE" else 200), response.text
+    if method == "DELETE":
+        assert response.content == b"" and store.last_match == group_etag(GROUP)
+    else:
+        assert response.headers["ETag"] == group_etag(GROUP) and response.json()["id"] == str(GROUP.id)
+    assert store.group_replace == (method == "PUT") and store.calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ("PATCH", "PUT", "DELETE"))
+async def test_group_stale_versions_are_returned_without_success_projection(method: str) -> None:
+    store: Final = GroupAuthority()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=fixture_app(store)), base_url=ORIGIN) as client:
+        response: Final = await client.request(
+            method, BASE + "/Groups/" + str(GROUP.id),
+            headers={"Authorization": "Bearer " + TOKEN, "If-Match": 'W/"stale"'},
+            **({"json": {}} if method != "DELETE" else {}),
+        )
+    assert response.status_code == 412 and response.json()["status"] == "412" and store.calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path,status", (
+    ("/Groups?filter=unsupported", 400), ("/Groups?count=1&count=2", 400),
+    ("/Groups/invalid", 404), ("/Groups/" + str(GROUP.id) + "?count=1", 400),
+))
+async def test_group_invalid_target_or_query_rejects_before_authority(path: str, status: int) -> None:
+    store: Final = GroupAuthority()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=fixture_app(store)), base_url=ORIGIN) as client:
+        response: Final = await client.get(BASE + path, headers={"Authorization": "Bearer " + TOKEN})
+    assert response.status_code == status and store.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_group_discovery_is_authenticated_and_fenced_like_users() -> None:
+    store: Final = GroupAuthority()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=fixture_app(store)), base_url=ORIGIN) as client:
+        for path in ("/ResourceTypes/Group", "/Schemas/" + GROUP_SCHEMA):
+            unauthorized: Final = await client.get(BASE + path)
+            assert unauthorized.status_code == 401 and store.calls == 0
+        resource: Final = await client.get(BASE + "/ResourceTypes/Group", headers={"Authorization": "Bearer " + TOKEN})
+        schema: Final = await client.get(BASE + "/Schemas/" + GROUP_SCHEMA, headers={"Authorization": "Bearer " + TOKEN})
+    assert resource.status_code == schema.status_code == 200 and store.calls == 2
+    assert resource.json()["schema"] == GROUP_SCHEMA and schema.json()["id"] == GROUP_SCHEMA

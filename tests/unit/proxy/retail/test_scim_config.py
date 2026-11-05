@@ -141,3 +141,40 @@ def test_config_file_bound_is_checked_before_parsing_and_includes_whitespace(tmp
 
 def test_deeply_nested_configuration_is_an_optional_failure_instead_of_a_startup_exception(tmp_path: Path) -> None:
     assert load_scim_setup(environment(tmp_path / "identity.json", "[" * 1100 + "]" * 1100)) == ScimFailure(503)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    (
+        {"max_groups": 0},
+        {"max_groups": 1001},
+        {"max_groups": True},
+        {"max_groups": "1"},
+        {"max_memberships": 0},
+        {"max_memberships": 100001},
+        {"max_memberships": True},
+        {"max_memberships": "10"},
+        {"access_group_external_ids": ["a", "a"]},
+        {"access_group_external_ids": [""]},
+        {"access_group_external_ids": ["a\nb"]},
+        {"access_group_external_ids": ["成员"]},
+        {"access_group_external_ids": ["x" * 256]},
+        {"access_group_external_ids": [str(i) for i in range(129)]},
+    ),
+)
+def test_group_capacity_and_access_list_are_bounded_explicit_configuration(changes: Mapping[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        configuration(changes)
+
+
+def test_group_defaults_and_every_access_policy_change_are_covered_by_the_authority_digest() -> None:
+    initial: Final = configuration()
+    assert initial.max_groups == 1000 and initial.max_memberships == 100000 and initial.access_group_external_ids == ()
+    original: Final = ScimSetup(initial, SecretStr(_TOKEN)).digest()
+    for changes in ({"max_groups": 9}, {"max_memberships": 7}, {"access_group_external_ids": ["Allowed"]}):
+        assert ScimSetup(configuration(changes), SecretStr(_TOKEN)).digest() != original
+    groups: Final = configuration({"access_group_external_ids": ["Case", "case"]})
+    assert groups.access_group_external_ids == ("Case", "case")
+    assert "Case" not in repr(groups)
+    with pytest.raises(ValidationError):
+        groups.access_group_external_ids = ()

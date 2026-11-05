@@ -14,6 +14,15 @@ from pydantic import JsonValue
 from starlette.types import Receive, Scope, Send
 
 from .coordination_guard import request_path
+from .scim_groups_protocol import (
+    GroupRecord,
+    group_etag,
+    parse_group_create,
+    parse_group_query,
+    parse_group_search,
+    render_group,
+    render_group_list,
+)
 from .scim_middleware import SCIM_BASE, SCIM_SCOPE_KEY, ScimCredential
 from .scim_protocol import (
     ScimFailure,
@@ -199,10 +208,66 @@ async def _single_user(service: ScimService, scope: Scope, path: str, body: byte
     return _failed(ScimFailure(405))
 
 
+def _group_reply(record: GroupRecord, service: ScimService, status: int = 200) -> _Reply:
+    location: Final = f"{service.setup.config.public_origin}{SCIM_BASE}/Groups/{record.id}"
+    return _Reply(status, render_group(record, service.setup.config), (
+        (b"etag", group_etag(record).encode()), (b"location", location.encode("ascii")),
+    ))
+
+
+async def _group_collection(service: ScimService, scope: Scope, path: str, body: bytes) -> _Reply | None:
+    method: Final = scope.get("method", "")
+    if path == "/Groups" and method == "GET":
+        try:
+            params: Final = tuple(parse_qsl(scope.get("query_string", b"").decode("ascii"), keep_blank_values=True, max_num_fields=16))
+        except (UnicodeError, ValueError):
+            return _failed(ScimFailure(400, "invalidValue"))
+        query: Final = parse_group_query(params)
+        if isinstance(query, ScimFailure):
+            return _failed(query)
+        listed: Final = await service.store.list_groups(service.setup, query)
+        return _failed(listed) if isinstance(listed, ScimFailure) else _Reply(200, render_group_list(listed, service.setup.config))
+    if path == "/Groups/.search" and method == "POST":
+        search_query: Final = parse_group_search(body)
+        if isinstance(search_query, ScimFailure):
+            return _failed(search_query)
+        searched: Final = await service.store.list_groups(service.setup, search_query)
+        return _failed(searched) if isinstance(searched, ScimFailure) else _Reply(200, render_group_list(searched, service.setup.config))
+    if path == "/Groups" and method == "POST":
+        profile: Final = parse_group_create(body)
+        if isinstance(profile, ScimFailure):
+            return _failed(profile)
+        created: Final = await service.store.create_group(service.setup, profile)
+        return _failed(created) if isinstance(created, ScimFailure) else _group_reply(created, service, 201)
+    return None
+
+
+async def _single_group(service: ScimService, scope: Scope, path: str, body: bytes) -> _Reply:
+    identifier: Final = _identifier(path[len("/Groups/"):])
+    if isinstance(identifier, ScimFailure):
+        return _failed(identifier)
+    method: Final = scope.get("method", "")
+    if_match: Final = _header(scope, b"if-match")
+    if isinstance(if_match, ScimFailure):
+        return _failed(if_match)
+    if method == "GET":
+        found: Final = await service.store.get_group(service.setup, identifier)
+        return _failed(found) if isinstance(found, ScimFailure) else _group_reply(found, service)
+    if method in {"PATCH", "PUT"}:
+        updated: Final = await service.store.update_group(
+            service.setup, identifier, body, replace=method == "PUT", if_match=if_match,
+        )
+        return _failed(updated) if isinstance(updated, ScimFailure) else _group_reply(updated, service)
+    if method == "DELETE":
+        removed: Final = await service.store.delete_group(service.setup, identifier, if_match)
+        return _failed(removed) if isinstance(removed, ScimFailure) else _Reply(204, None)
+    return _failed(ScimFailure(405))
+
+
 async def _dispatch(service: ScimService, scope: Scope, body: bytes) -> _Reply:
     path: Final = request_path(scope)[len(SCIM_BASE):]
     method: Final = scope.get("method", "")
-    if (path != "/Users" or method != "GET") and scope.get("query_string", b""):
+    if (path not in {"/Users", "/Groups"} or method != "GET") and scope.get("query_string", b""):
         return _failed(ScimFailure(400, "invalidValue"))
     if method == "GET":
         discovery: Final = _discovery(path, service)
@@ -211,6 +276,9 @@ async def _dispatch(service: ScimService, scope: Scope, body: bytes) -> _Reply:
         if discovery is not None:
             checked: Final = await service.store.list_users(service.setup, ScimQuery(count=0))
             return _failed(checked) if isinstance(checked, ScimFailure) else _Reply(200, discovery)
+    if path == "/Groups" or path.startswith("/Groups/"):
+        groups: Final = await _group_collection(service, scope, path, body)
+        return groups if groups is not None else await _single_group(service, scope, path, body)
     collection: Final = await _collection(service, scope, path, body)
     return collection if collection is not None else await _single_user(service, scope, path, body)
 

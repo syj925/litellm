@@ -75,3 +75,5 @@ R11 的 [自有 OIDC](oidc-sign-in.md) 在同一 outbox 另外接入 `native_ide
 R12 的 [API access JWT](api-access-jwt.md) 再接入 `native_api_identity.configured`，仅记录配置变更的元数据；token 验签或每次推理不是本动作。旧三动作、五动作 schema 兼容扩展为六动作，旧行及设置保持原样；只有全部 API 与桥接 worker 已支持新动作后才启用该功能。普通组织成员不能查询这类全站事件。
 
 R13 的 [SCIM Users](scim-provisioning.md) 接入 `native_scim.configured`、`native_scim.user_created`、`native_scim.user_updated`、`native_scim.user_deleted`。目录数据和原生账号同步变更与意图同事务，事件仍只保存服务器操作者、受影响数量和随机操作 ID。旧三、五、六动作约束升级为十动作，不改写旧行。受管 Key 轮换先完成同事务凭据变更再写审计，以保持目录资源与审计的锁顺序；任何失败仍整体回滚
+
+R14 的 [SCIM Groups](scim-provisioning.md#组与访问限制) 另接入 group_created、group_updated、group_deleted 三个 native_scim 动作，升级为十三动作约束。组与成员写入、凭据撤销和 outbox 同事务，组名、成员 ID 和外部标识不进入事件。删除 User 导致的成员清理记一个 group_updated 事件，affected_count 是受影响组数，再记 user_deleted。所有相关 worker 升级完成后再启用组功能

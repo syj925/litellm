@@ -20,6 +20,12 @@ _SCOPE: Final = "retail_scim_identity"
 _SLOTS: Final = asyncio.Semaphore(4)
 _FAILED: Final = "Account credential authentication failed"
 _UNAVAILABLE: Final = "Account authority is temporarily unavailable"
+_GROUP_ACCESS: Final = ''' AND EXISTS (
+    SELECT 1 FROM retail_scim_settings s WHERE s.singleton AND s.namespace=r.namespace
+    AND (cardinality(s.access_group_external_ids)=0 OR EXISTS (
+        SELECT 1 FROM retail_scim_groups g JOIN retail_scim_group_members m ON m.group_id=g.id
+        WHERE m.user_resource_id=r.id AND NOT m.removed AND g.namespace=r.namespace AND NOT g.deleted
+        AND g.external_id=ANY(s.access_group_external_ids))))'''
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +97,8 @@ async def _read_identity(reader: NativeAuditWriter, target_hash: str, user_id: s
         AND p.credential_revision=r.credential_revision
         WHERE k.token=$1 AND k.user_id=$2 AND u.user_role='customer'
         AND u.password_reset_required IS DISTINCT FROM true AND k.blocked IS DISTINCT FROM true
-        AND (k.expires IS NULL OR (k.expires AT TIME ZONE 'UTC')>clock_timestamp())''', target_hash, user_id,
+        AND (k.expires IS NULL OR (k.expires AT TIME ZONE 'UTC')>clock_timestamp())''' + _GROUP_ACCESS,
+        target_hash, user_id,
     ))
     if len(rows) != 1:
         raise HTTPException(401, _FAILED)
@@ -173,7 +180,8 @@ async def require_scim_directory_user(reader: NativeAuditWriter, user_id: str, *
     rows: Final = _DIRECTORY.validate_python(await reader.query_raw(
         '''SELECT r.user_id FROM retail_scim_users r JOIN "LiteLLM_UserTable" u ON u.user_id=r.user_id
         WHERE r.user_id=$1 AND r.active AND NOT r.deleted AND u.user_role='customer'
-        AND u.password_reset_required IS DISTINCT FROM true''' + (" FOR SHARE OF r" if lock else ""), user_id,
+        AND u.password_reset_required IS DISTINCT FROM true''' + _GROUP_ACCESS
+        + (" FOR SHARE OF r" if lock else ""), user_id,
     ))
     if len(rows) != 1 or rows[0].user_id != user_id:
         raise HTTPException(401, _FAILED)

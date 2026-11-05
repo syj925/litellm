@@ -23,7 +23,21 @@ class ScimConfig(BaseModel):
     generation: StrictInt = Field(ge=1, le=9007199254740991)
     public_origin: str = Field(min_length=1, max_length=2048, repr=False)
     max_users: StrictInt = Field(default=1000, ge=1, le=10000)
+    max_groups: StrictInt = Field(default=1000, ge=1, le=1000)
+    max_memberships: StrictInt = Field(default=100000, ge=1, le=100000)
+    access_group_external_ids: tuple[str, ...] = Field(default=(), max_length=128, repr=False)
     allow_loopback_http: StrictBool = False
+
+    @field_validator("access_group_external_ids")
+    @classmethod
+    def explicit_access_groups(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(frozenset(value)) != len(value) or any(
+            not 1 <= len(identifier) <= 255
+            or any(ord(character) < 32 or ord(character) > 126 for character in identifier)
+            for identifier in value
+        ):
+            raise ValueError("Invalid directory access groups")
+        return value
 
     @field_validator("namespace")
     @classmethod

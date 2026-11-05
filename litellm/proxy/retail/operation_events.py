@@ -51,6 +51,9 @@ _ALLOWED_ACTIONS: Final = frozenset(
         "native_scim.user_created",
         "native_scim.user_updated",
         "native_scim.user_deleted",
+        "native_scim.group_created",
+        "native_scim.group_updated",
+        "native_scim.group_deleted",
     )
 )
 _ALLOWED_FIELDS: Final = frozenset(

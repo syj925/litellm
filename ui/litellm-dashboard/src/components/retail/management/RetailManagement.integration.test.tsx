@@ -259,6 +259,9 @@ const addedAuditActions = [
   ["native_scim.user_created", "Directory user created"],
   ["native_scim.user_updated", "Directory user updated"],
   ["native_scim.user_deleted", "Directory user removed"],
+  ["native_scim.group_created", "Directory group created"],
+  ["native_scim.group_updated", "Directory group updated"],
+  ["native_scim.group_deleted", "Directory group removed"],
 ] as const;
 
 it.each(addedAuditActions)("filters and labels the controlled admin audit action %s", async (action, label) => {
@@ -334,6 +337,12 @@ it.each([
   { role: "Admin", viewer: true, action: "native_scim.user_updated" },
   { role: "Internal User", viewer: false, action: "native_scim.user_deleted" },
   { role: "Admin", viewer: true, action: "native_scim.user_deleted" },
+  { role: "Internal User", viewer: false, action: "native_scim.group_created" },
+  { role: "Admin", viewer: true, action: "native_scim.group_created" },
+  { role: "Internal User", viewer: false, action: "native_scim.group_updated" },
+  { role: "Admin", viewer: true, action: "native_scim.group_updated" },
+  { role: "Internal User", viewer: false, action: "native_scim.group_deleted" },
+  { role: "Admin", viewer: true, action: "native_scim.group_deleted" },
 ])(
   "strips $action and limits audit actions to organizations for $role (viewer=$viewer)",
   async ({ role, viewer, action }) => {

@@ -401,7 +401,7 @@ def test_public_projection_has_standard_metadata_but_no_native_authority_or_cred
     }
 
 
-def test_discovery_only_advertises_implemented_users_index_filter_patch_and_etag_features() -> None:
+def test_discovery_only_advertises_implemented_resources_index_filter_patch_and_etag_features() -> None:
     config: Final = ScimConfig(namespace="directory", generation=1, public_origin="https://gateway.test")
     advertised: Final = service_provider_config(config)
     assert isinstance(advertised, dict) and advertised["bulk"] == {
@@ -413,5 +413,6 @@ def test_discovery_only_advertises_implemented_users_index_filter_patch_and_etag
     assert advertised["filter"] == {"supported": True, "maxResults": 100}
     resources: Final = resource_types(config)
     schemas: Final = schema_documents(config)
-    assert isinstance(resources, dict) and resources["totalResults"] == 1 and "Group" not in json.dumps(resources)
-    assert isinstance(schemas, dict) and schemas["totalResults"] == 1 and "password" not in json.dumps(schemas)
+    assert isinstance(resources, dict) and resources["totalResults"] == 2
+    assert {row["id"] for row in resources["Resources"]} == {"User", "Group"}
+    assert isinstance(schemas, dict) and schemas["totalResults"] == 2 and "password" not in json.dumps(schemas)

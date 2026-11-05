@@ -26,11 +26,16 @@ def native_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_native_builder_refreshes_proof_before_cached_admin_shortcut_and_injects_owner_limits(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("directory_access", (False, True))
+async def test_native_builder_refreshes_proof_before_cached_admin_shortcut_and_injects_owner_limits(
+    directory_access: bool, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     owner: Final = LiteLLM_UserTable(user_id=_USER, user_role="customer", rpm_limit=17, tpm_limit=29)
     current: Final = UserAPIKeyAuth(api_key=_HASH, token=_HASH, user_id=_USER, user_role="customer")
     resolved: Final = identity.ResolvedScimIdentity(current, owner, _HASH)
-    native_read: Final = AsyncMock(return_value=resolved)
+    native_read: Final = AsyncMock(
+        return_value=resolved, side_effect=None if directory_access else HTTPException(401, "Account credential authentication failed"),
+    )
     monkeypatch.setattr(identity, "_native_identity", native_read)
     cache: Final = UserApiKeyCache()
     await cache.async_set_cache(key=_HASH, value=current.model_copy(update={"user_role": "proxy_admin"}), model_type=UserAPIKeyAuth)
@@ -38,6 +43,12 @@ async def test_native_builder_refreshes_proof_before_cached_admin_shortcut_and_i
     monkeypatch.setattr(proxy_server, "prisma_client", SimpleNamespace(db=object()))
     monkeypatch.setattr(proxy_server, "user_api_key_cache", cache)
     selected: Final = request()
+    if not directory_access:
+        with pytest.raises(ProxyException) as denied:
+            await _AUTH.user_api_key_auth_builder(selected, "Bearer " + _RAW, None, None, None, None, {})
+        assert denied.value.code == "401" and all(value not in str(denied.value.to_dict()) for value in (_USER, _RAW, _HASH))
+        native_read.assert_awaited_once_with(_HASH, _USER)
+        return
     admitted: Final = await _AUTH.user_api_key_auth_builder(selected, "Bearer " + _RAW, None, None, None, None, {})
     await asyncio.sleep(0)
     assert admitted.user_role == "customer" and admitted.user_rpm_limit == 17 and admitted.user_tpm_limit == 29

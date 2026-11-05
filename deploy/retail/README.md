@@ -28,9 +28,11 @@
 
 [API JWT 验收记录](validation/r12-2026-11-05.md) 保存协议、原生权限、双 worker 账本、热公钥故障、脱敏及回归检查的本地证据
 
-[自有 SCIM Users 同步](scim-provisioning.md) 说明限定目录字段、独立 customer 创建、停用恢复、不可复用凭据证明、首次登录与资金授权分离及默认关闭边界
+[自有 SCIM Users 与 Groups 同步](scim-provisioning.md) 说明目录字段、独立 customer 创建、组成员和可选访问条件、不可复用凭据证明及默认关闭边界
 
 [SCIM Users 验收记录](validation/r13-2026-11-05.md) 保存标准协议、原生 writer、双 worker 撤销、并发发行、流式结算与诊断脱敏证据
+
+[SCIM Groups 验收记录](validation/r14-2026-11-05.md) 保存组成员、访问限制、永久撤销、有界分页及双 worker 业务验证证据
 
 [OIDC 控制台验收记录](validation/r11-2026-11-04.md) 保存协议、原生事务、跨 worker、恢复不复活、日志脱敏及真实浏览器回调的本地证据
 

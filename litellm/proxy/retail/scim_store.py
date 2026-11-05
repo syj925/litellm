@@ -18,6 +18,7 @@ from .native_audit_store import (
     append_native_audit,
 )
 from .scim_config import ScimSetup
+from .scim_groups_protocol import GroupList, GroupProfile, GroupQuery, GroupRecord
 from .scim_protocol import (
     SCIM_USER_PREFIX,
     ScimFailure,
@@ -44,6 +45,11 @@ class _Settings(BaseModel):
     digest: str
     max_users: int
     retained_count: int
+    max_groups: int
+    retained_group_count: int
+    max_memberships: int
+    retained_membership_count: int
+    access_group_external_ids: tuple[str, ...]
 
 
 class _Count(BaseModel):
@@ -68,7 +74,8 @@ class _Abort(Exception):
 
 async def _settings(writer: NativeAuditTransaction, *, lock: bool = False) -> _Settings | None:
     rows: Final = _SETTINGS.validate_python(await writer.query_raw(
-        "SELECT namespace,generation,digest,max_users,retained_count FROM retail_scim_settings WHERE singleton"
+        "SELECT namespace,generation,digest,max_users,retained_count,max_groups,retained_group_count,"
+        "max_memberships,retained_membership_count,access_group_external_ids FROM retail_scim_settings WHERE singleton"
         + (" FOR UPDATE" if lock else ""),
     ))
     return rows[0] if rows else None
@@ -137,20 +144,33 @@ def _where(query: ScimQuery) -> tuple[str, tuple[object, ...]]:
 
 async def _configure(writer: NativeAuditTransaction, setup: ScimSetup) -> None:
     await _write_lock(writer)
-    current: Final = await _settings(writer, lock=True)
+    current: Final = await _settings(writer)
     if current is not None:
         if (current.namespace, current.generation, current.digest) == (
             setup.config.namespace, setup.config.generation, setup.digest(),
         ):
             return
         if (current.namespace != setup.config.namespace or current.generation >= setup.config.generation
-                or current.retained_count > setup.config.max_users):
+                or current.retained_count > setup.config.max_users
+                or current.retained_group_count > setup.config.max_groups
+                or current.retained_membership_count > setup.config.max_memberships):
             raise _Abort(ScimFailure(409))
+        if frozenset(current.access_group_external_ids) != frozenset(setup.config.access_group_external_ids):
+            await writer.query_raw(
+                "SELECT id FROM retail_scim_users WHERE namespace=$1 ORDER BY id FOR UPDATE", setup.config.namespace,
+            )
+            await writer.query_raw(
+                "UPDATE retail_scim_users SET credential_revision=gen_random_uuid() WHERE namespace=$1 RETURNING id",
+                setup.config.namespace,
+            )
     await writer.query_raw(
-        """INSERT INTO retail_scim_settings(singleton,namespace,generation,digest,max_users)
-        VALUES(true,$1,$2,$3,$4) ON CONFLICT(singleton) DO UPDATE SET generation=EXCLUDED.generation,
-        digest=EXCLUDED.digest,max_users=EXCLUDED.max_users RETURNING singleton""",
+        """INSERT INTO retail_scim_settings(singleton,namespace,generation,digest,max_users,max_groups,
+        max_memberships,access_group_external_ids) VALUES(true,$1,$2,$3,$4,$5,$6,$7::text[])
+        ON CONFLICT(singleton) DO UPDATE SET generation=EXCLUDED.generation,digest=EXCLUDED.digest,
+        max_users=EXCLUDED.max_users,max_groups=EXCLUDED.max_groups,max_memberships=EXCLUDED.max_memberships,
+        access_group_external_ids=EXCLUDED.access_group_external_ids RETURNING singleton""",
         setup.config.namespace, setup.config.generation, setup.digest(), setup.config.max_users,
+        setup.config.max_groups, setup.config.max_memberships, list(setup.config.access_group_external_ids),
     )
     await append_native_audit(writer, actor_id="system:scim-directory", action="native_scim.configured")
 
@@ -219,6 +239,9 @@ async def _delete(
 ) -> None:
     await _write_lock(writer)
     await _authority(writer, setup)
+    from .groups_store import detach_user
+
+    affected: Final = await detach_user(writer, setup, identifier)
     current: Final = await _record(writer, setup, identifier, lock=True)
     await _customer(writer, current)
     matched: Final = matches_etag(if_match, current)
@@ -231,6 +254,9 @@ async def _delete(
         credential_revision=$3::uuid,updated_at=clock_timestamp() WHERE namespace=$1 AND id=$2::uuid RETURNING id""",
         setup.config.namespace, str(identifier), str(uuid4()),
     )
+    if affected:
+        await append_native_audit(writer, actor_id="system:scim-directory", action="native_scim.group_updated",
+            affected_count=affected)
     await append_native_audit(writer, actor_id="system:scim-directory", action="native_scim.user_deleted")
 
 
@@ -333,3 +359,63 @@ class NativeScimStore:
 
     async def close(self) -> None:
         self._closed = True
+
+    async def list_groups(self, setup: ScimSetup, query: GroupQuery) -> GroupList | ScimFailure:
+        from .groups_store import list_groups
+
+        try:
+            async with self._transaction(2, read=True) as writer:
+                await _authority(writer, setup)
+                return await list_groups(writer, setup, query)
+        except _Abort as exc:
+            return exc.failure
+        except (PrismaError, TimeoutError, ValidationError):
+            return ScimFailure(503)
+
+    async def get_group(self, setup: ScimSetup, identifier: UUID) -> GroupRecord | ScimFailure:
+        from .groups_store import group_record
+
+        try:
+            async with self._transaction(2, read=True) as writer:
+                await _authority(writer, setup)
+                return await group_record(writer, setup, identifier)
+        except _Abort as exc:
+            return exc.failure
+        except (PrismaError, TimeoutError, ValidationError):
+            return ScimFailure(503)
+
+    async def create_group(self, setup: ScimSetup, profile: GroupProfile) -> GroupRecord | ScimFailure:
+        from .groups_store import create_group
+
+        try:
+            async with self._transaction(8) as writer:
+                return await create_group(writer, setup, profile)
+        except _Abort as exc:
+            return exc.failure
+        except (PrismaError, TimeoutError, ValidationError, NativeAuditUnavailable, NativeAuditConflict):
+            return ScimFailure(503)
+
+    async def update_group(
+        self, setup: ScimSetup, identifier: UUID, body: bytes, *, replace: bool, if_match: str | None,
+    ) -> GroupRecord | ScimFailure:
+        from .groups_store import update_group
+
+        try:
+            async with self._transaction(8) as writer:
+                return await update_group(writer, setup, identifier, body, replace=replace, if_match=if_match)
+        except _Abort as exc:
+            return exc.failure
+        except (PrismaError, TimeoutError, ValidationError, NativeAuditUnavailable, NativeAuditConflict):
+            return ScimFailure(503)
+
+    async def delete_group(self, setup: ScimSetup, identifier: UUID, if_match: str | None) -> ScimFailure | None:
+        from .groups_store import delete_group
+
+        try:
+            async with self._transaction(8) as writer:
+                await delete_group(writer, setup, identifier, if_match)
+        except _Abort as exc:
+            return exc.failure
+        except (PrismaError, TimeoutError, ValidationError, NativeAuditUnavailable, NativeAuditConflict):
+            return ScimFailure(503)
+        return None

@@ -1,8 +1,8 @@
-# 自有 SCIM Users 同步
+# 自有 SCIM Users 与 Groups 同步
 
-R13 接收企业目录的用户创建、查询、修改、停用、恢复与删除，将其同步为全新的普通 customer 账号。目录不能按邮箱接管既有客户，不能创建管理员、Key、钱包、充值、模型授权或组织成员关系。现有原生商业 SCIM 路由和许可判断保持原样
+R13 接收企业目录的用户创建、查询、修改、停用、恢复与删除，将其同步为全新的普通 customer 账号。R14 增加 Group 与成员同步，以及可选的访问组限制。目录不能按邮箱接管既有客户，不能创建管理员、Key、钱包、充值、模型授权或组织成员关系。现有原生商业 SCIM 路由和许可判断保持原样
 
-这是固定来源的 Users 协议子集，主本地站点默认关闭，尚未接入真实企业目录。Groups、企业扩展、角色授权、密码同步、多来源、多租户及目录产品互通认证仍待后续验收。协议参照 [RFC 7643](https://www.rfc-editor.org/rfc/rfc7643.html) 和 [RFC 7644](https://www.rfc-editor.org/rfc/rfc7644.html)；[RFC 9865 游标分页](https://www.rfc-editor.org/rfc/rfc9865.html) 与 [RFC 9967 异步事件](https://www.rfc-editor.org/rfc/rfc9967.html) 属于本批未启用的扩展
+这是固定来源的 Users/Groups 协议子集，主本地站点默认关闭，尚未接入真实企业目录。嵌套组、企业扩展、自动角色或组织授权、密码同步、多来源、多租户及目录产品互通认证仍待后续验收。协议参照 [RFC 7643](https://www.rfc-editor.org/rfc/rfc7643.html) 和 [RFC 7644](https://www.rfc-editor.org/rfc/rfc7644.html)；[RFC 9865 游标分页](https://www.rfc-editor.org/rfc/rfc9865.html) 与 [RFC 9967 异步事件](https://www.rfc-editor.org/rfc/rfc9967.html) 属于本批未启用的扩展
 
 ## 配置与接入
 
@@ -13,7 +13,10 @@ R13 接收企业目录的用户创建、查询、修改、停用、恢复与删�
   "namespace": "company-directory",
   "generation": 1,
   "public_origin": "https://gateway.example.invalid",
-  "max_users": 1000
+  "max_users": 1000,
+  "max_groups": 1000,
+  "max_memberships": 100000,
+  "access_group_external_ids": []
 }
 ```
 
@@ -34,14 +37,16 @@ R13 接收企业目录的用户创建、查询、修改、停用、恢复与删�
 | 接口 | 本批行为 |
 | --- | --- |
 | `GET /ServiceProviderConfig` | 声明 PATCH、限定 filter、ETag；不宣称 Bulk、排序和改密 |
-| `GET /ResourceTypes`、`GET /ResourceTypes/User` | 仅 User 资源 |
-| `GET /Schemas`、`GET /Schemas/{User schema URN}` | 本批 User 属性定义 |
+| `GET /ResourceTypes`、`GET /ResourceTypes/User`、`GET /ResourceTypes/Group` | User 和 Group 资源 |
+| `GET /Schemas`、`GET /Schemas/{schema URN}` | core User 与 Group 属性定义 |
 | `POST /Users` | 创建新的目录资源与原生 customer，同事务审计 |
 | `GET /Users`、`POST /Users/.search` | 有界索引分页与单个等值条件 |
 | `GET /Users/{id}` | 当前命名空间中的非删除资源 |
 | `PATCH /Users/{id}` | 至多 16 项、按序计算、整体原子提交 |
 | `PUT /Users/{id}` | 替换可写 profile；要求明确 active，省略 displayName 则清除 |
 | `DELETE /Users/{id}` | 软删除并永久废弃旧身份凭据，原生账号和财务历史保留 |
+| `POST /Groups`、`GET /Groups`、`POST /Groups/.search` | 创建及有界查询当前命名空间的组 |
+| `GET /Groups/{id}`、`PATCH /Groups/{id}`、`PUT /Groups/{id}`、`DELETE /Groups/{id}` | 组与成员原子修改、ETag 和软删除 |
 
 表内路径均相对于 Base URL。仅接收 `application/scim+json` 或 `application/json`，单次请求至多 64 KiB。支持 `schemas` 为 core User、必需 externalId/userName、可选 displayName 和 active；POST 的 active 默认 true。externalId 为本来源中的精确标识，userName 首版只接收无空白 ASCII，并按大小写不敏感比较；displayName 支持有界 Unicode。目录名称和显示字段不会成为本站密码登录标识
 
@@ -65,6 +70,22 @@ PATCH 使用标准 PatchOp schema，支持单值 add/replace，以及移除 disp
 
 响应提供 `meta.version` 和 ETag。If-Match 可选；提供时必须匹配当前版本或 `*`，过期版本返回 412，不覆盖别人的更新。无 If-Match 采用串行原子更新，不能宣称具有客户端乐观锁保护
 
+## 组与访问限制
+
+组 schema 为 `urn:ietf:params:scim:schemas:core:2.0:Group`，externalId 和 displayName 必需，members 可省略为空。每个成员的 value 必须是当前命名空间内未删除 User 的 SCIM UUID，不能填原生 user_id、任意已有客户或另一个 Group。返回的成员只包含 SCIM ID 和本站 User 引用，不附带原生身份、目录姓名或凭据。成员 display/$ref/type 在 POST/PUT 中按只读属性忽略，不用客户端的 type 判定是否为 User
+
+这是本站限定 profile 的差异：[RFC 7643 Group 定义](https://www.rfc-editor.org/rfc/rfc7643.html#section-4.2) 将成员 value/$ref/type 定义为 immutable；本站将 $ref/type 声明为服务器派生的只读字段，并只依据 value 解析成员。User.groups 的只读反查尚未实现，不能把本批当成所有目录产品的完整兼容认证
+
+Group 的 externalId 不可改绑；displayName 不要求唯一，查询 displayName 采用精确 Unicode 比较。支持 id/externalId/displayName 的单个 eq 条件、count=0 和与 User 相同的 ETag 约束。列表最多请求 100 个组，但每页成员总数最多 1000，因此 itemsPerPage 可能小于请求的 count。客户端按实际 itemsPerPage 推进 startIndex，直到没有结果；服务端在展开成员数组前裁剪页面，避免一次装载所有组的成员
+
+PATCH 支持成员 add/replace、移除全部 members 或 `members[value eq "<SCIM UUID>"]`，支持受限 pathless add/replace。整次至多 16 项且原子提交；PUT 省略 members 会清空。重复添加已有成员是无变化操作，只有成员顺序变化也不改版本。删除 User 会移除其当前组关系并推进受影响 Group 的 ETag，不能留下可访问的悬空成员
+
+默认空 access_group_external_ids 仅同步目录，不额外要求组资格。若设置为一组外部 Group ID，受管账号发行和使用凭据时，必须属于其中至少一个当前有效组。这个条件与原生 Key、模型、预算、资源池及钱包权限取交集，不能通过加入组自动获得原先没有的权限。配置保存到 writer，两个 worker 从持久现态检查，不每次访问外部目录，也不给普通非受管账号增加本批数据库调用
+
+任何组移除成员都会更新该成员的凭据 revision，删除组会处理其全部成员。即使这个组不在访问名单、成员仍属于另一个允许组，或同一次 PATCH 先移除再添加，也永久撤销此前 Key/session/JWT。重新加入后需要新发行 Key 或重新登录。访问组名单集合变化也会撤销所有受管用户的旧凭据；放宽条件不会复活旧凭据，单纯调整名单顺序不会触发这项撤销
+
+同一个 externalId 的组删除后可以创建新 UUID，但旧 Group 与成员边保留墓碑。跨组的新关联计入历史总量，删除不释放额度；同一 Group/User 关系移除后再加回不会重复累计边数。审计不保存组名或外部组标识
+
 ## 新账号如何使用网关
 
 新建账号只有 `customer` 角色，原生 ID 使用保留前缀 `retail-scim-user:` 和随机 UUID，密码、邮箱和 SSO 字段为空。不自动创建 Key、钱包、充值或资源权限，目录用户名也不能直接用于本站密码登录。受管账号即使后来被人工设置密码，本批仍拒绝密码登录，避免形成绕过目录生命周期的入口
@@ -81,7 +102,7 @@ WHERE id = '<SCIM-resource-UUID>'::uuid;
 
 ## 停用、恢复和凭据墓碑
 
-原生库新增 `retail_scim_settings`、`retail_scim_users`、`retail_scim_credentials`。目录 resource 的凭据 revision 在每次 active 状态改变及删除时更新；原生 Key 创建或有效轮换时，数据库触发器在同一事务记录不可变 hash、归属和 revision 证明。发行与生命周期操作在同一资源行上排序，不依赖尽力缓存广播或时间戳精度
+原生库使用 `retail_scim_settings`、`retail_scim_users`、`retail_scim_credentials`，R14 另加 `retail_scim_groups` 和 `retail_scim_group_members`。目录 resource 的凭据 revision 在每次 active 状态改变及删除时更新；原生 Key 创建或有效轮换时，数据库触发器在同一事务记录不可变 hash、归属和 revision 证明。发行与生命周期操作在同一资源行上排序，不依赖尽力缓存广播或时间戳精度
 
 受管身份的每次接纳从 writer 读取当前账号、确切呈现的 Key、目录状态及凭据证明。仅当前 customer、未重置、未封禁、未过期、资源 active 且未删除、证明 revision 匹配时通过，再执行现有模型、预算、限流、资源池和钱包校验。缓存中的管理员角色不能让受管用户免计费。普通非受管账号只增加本地前缀判断，不新增本批数据库读取或外部身份 RPC
 
@@ -95,12 +116,14 @@ DELETE 后原 SCIM ID 的所有操作返回 404，列表不再包含它；后续
 
 ## 审计、资源与回滚
 
-四类元数据事件为 `native_scim.configured`、`native_scim.user_created`、`native_scim.user_updated`、`native_scim.user_deleted`。变更与原生 outbox 同事务，失败或满队列整体回滚；事件只有服务器操作者、受影响数量和随机操作 ID，不复制目录姓名、externalId、userName、原生凭据或令牌。旧三类、五类、六类动作约束兼容升级为十类，旧事件不改写
+User 配置与生命周期的四类元数据事件为 `native_scim.configured`、`native_scim.user_created`、`native_scim.user_updated`、`native_scim.user_deleted`。变更与原生 outbox 同事务，失败或满队列整体回滚；事件只有服务器操作者、受影响数量和随机操作 ID，不复制目录姓名、externalId、userName、原生凭据或令牌。R14 另增加 `native_scim.group_created`、`native_scim.group_updated`、`native_scim.group_deleted`。删除 User 导致组成员变化时另记一个受影响组数量的 group_updated 事件。旧三、五、六、十动作约束兼容升级为十三动作，旧事件不改写
 
 专用入口不经过推理追踪、模型回调和上游处理。凭据 header 在进入目录应用前移除，访问日志把目录路径及 query 变成固定资源标记，校验错误不反射 body。目录数据库与凭据证明属于受控权威数据；不能把应用诊断脱敏等同于能防止数据库管理员自行开启参数日志或读取原表
 
 每 worker 最多八个目录 HTTP 请求，入队两秒，上传正文五秒；store 原生 IO 最多四槽，读含排队两秒、写含排队八秒，锁等待 500 ms、单语句 1.5 秒。受管认证另有四槽/两秒 fresh 预算。复用原生 PG pool，不增加 Redis/HTTP pool，不逐请求访问外部目录。可选初始化失败在后台重试，不阻塞普通账号启动和结算
 
-配置 max_users 默认 1000、上限 10000，包含删除墓碑；全局凭据证明最多 1000000、单账号最多 10000，包含历史轮换与删除。达到上限时拒绝新建/发行，旧证明不自动清理，也不以清空历史绕过撤销语义。本批不是无限生命周期或 20000 RPM 的容量认证
+配置 max_users 默认 1000、上限 10000，包含删除墓碑；max_groups 默认及上限 1000，max_memberships 默认及上限 100000，均包含删除/移除墓碑，单组最多 1000 个成员；全局凭据证明最多 1000000、单账号最多 10000，包含历史轮换与删除。达到上限时拒绝新建/发行，旧证明不自动清理，也不以清空历史绕过撤销语义。本批不是无限生命周期或 20000 RPM 的容量认证
 
-先升级全部 API、发行 Key 与审计 worker，再启用目录。关闭 SCIM 并重启停止新同步，但保留受管身份 guard、数据库触发器、权威表和墓碑。在同一受支持原生认证模式下，停用账号仍拒绝。不能删除这些结构或回滚到不认识受管前缀的旧二进制后继续接受已发行凭据。生产环境与真实目录互通需单独验收
+R13 已启用目录升级 R14 时，配置摘要因新增字段发生变化，即使使用默认值也需要提高 generation。先升级全部 API、发行 Key 与审计 worker，再启用组同步或访问限制。关闭 SCIM 并重启停止新同步，但保留受管身份 guard、数据库触发器、权威表和墓碑。在同一受支持原生认证模式下，停用账号仍拒绝。不能删除这些结构，或回滚到不认识受管前缀/组检查的旧二进制后继续接受受管凭据；启用 R14 组限制后也不能将 R13 当成支持组权限的回滚版本。生产环境与真实目录互通需单独验收
+
+如果 R13 已有受管账号但同步当前关闭，切换 R14 流量前也要完成这次结构迁移。可用原命名空间、提高后的 generation 和有效配置启动新版本，确认目录初始化成功，再关闭同步。新认证查询依赖组结构，未迁移时会拒绝受管请求，不回退到忽略组状态的旧查询；从未启用 SCIM 且没有受管账号的站点不需要为此创建权威表

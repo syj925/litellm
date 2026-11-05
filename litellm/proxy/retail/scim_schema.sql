@@ -33,6 +33,38 @@ BEGIN
     CREATE UNIQUE INDEX IF NOT EXISTS retail_scim_username_live
         ON retail_scim_users(namespace,user_name_normalized) WHERE NOT deleted;
     CREATE INDEX IF NOT EXISTS retail_scim_users_page ON retail_scim_users(namespace,created_at,id) WHERE NOT deleted;
+    ALTER TABLE retail_scim_settings ADD COLUMN IF NOT EXISTS max_groups bigint NOT NULL DEFAULT 1000
+        CHECK(max_groups BETWEEN 1 AND 1000);
+    ALTER TABLE retail_scim_settings ADD COLUMN IF NOT EXISTS retained_group_count bigint NOT NULL DEFAULT 0
+        CHECK(retained_group_count BETWEEN 0 AND 1000);
+    ALTER TABLE retail_scim_settings ADD COLUMN IF NOT EXISTS max_memberships bigint NOT NULL DEFAULT 100000
+        CHECK(max_memberships BETWEEN 1 AND 100000);
+    ALTER TABLE retail_scim_settings ADD COLUMN IF NOT EXISTS retained_membership_count bigint NOT NULL DEFAULT 0
+        CHECK(retained_membership_count BETWEEN 0 AND 100000);
+    ALTER TABLE retail_scim_settings ADD COLUMN IF NOT EXISTS access_group_external_ids text[] NOT NULL DEFAULT '{}'
+        CHECK(cardinality(access_group_external_ids)<=128);
+    CREATE TABLE IF NOT EXISTS retail_scim_groups (
+        id uuid PRIMARY KEY,
+        namespace text NOT NULL,
+        external_id text NOT NULL,
+        display_name text NOT NULL,
+        deleted boolean NOT NULL DEFAULT false,
+        version bigint NOT NULL DEFAULT 1 CHECK(version>0),
+        member_count bigint NOT NULL DEFAULT 0 CHECK(member_count BETWEEN 0 AND 1000),
+        created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+        updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS retail_scim_group_external_live
+        ON retail_scim_groups(namespace,external_id) WHERE NOT deleted;
+    CREATE INDEX IF NOT EXISTS retail_scim_groups_page ON retail_scim_groups(namespace,created_at,id) WHERE NOT deleted;
+    CREATE TABLE IF NOT EXISTS retail_scim_group_members (
+        group_id uuid NOT NULL REFERENCES retail_scim_groups(id),
+        user_resource_id uuid NOT NULL REFERENCES retail_scim_users(id),
+        removed boolean NOT NULL DEFAULT false,
+        PRIMARY KEY(group_id,user_resource_id)
+    );
+    CREATE INDEX IF NOT EXISTS retail_scim_members_user
+        ON retail_scim_group_members(user_resource_id,group_id) WHERE NOT removed;
     CREATE TABLE IF NOT EXISTS retail_scim_credentials (
         token_hash text PRIMARY KEY CHECK(token_hash ~ '^[a-f0-9]{64}$'),
         user_id text NOT NULL,
@@ -103,6 +135,13 @@ BEGIN
             SELECT 1 FROM "LiteLLM_UserTable" WHERE user_id=NEW.user_id AND user_role='customer'
             AND password_reset_required IS DISTINCT FROM true) THEN
             RAISE EXCEPTION 'Managed credential issuance is unavailable';
+        END IF;
+        IF NOT EXISTS(SELECT 1 FROM retail_scim_settings s WHERE s.singleton AND s.namespace=resource.namespace
+            AND (cardinality(s.access_group_external_ids)=0 OR EXISTS(
+                SELECT 1 FROM retail_scim_groups g JOIN retail_scim_group_members m ON m.group_id=g.id
+                WHERE m.user_resource_id=resource.id AND NOT m.removed AND g.namespace=resource.namespace
+                AND NOT g.deleted AND g.external_id=ANY(s.access_group_external_ids)))) THEN
+            RAISE EXCEPTION 'Managed directory access requirements are not satisfied';
         END IF;
         IF TG_OP='UPDATE' THEN
             SELECT * INTO proof FROM retail_scim_credentials WHERE token_hash=OLD.token;

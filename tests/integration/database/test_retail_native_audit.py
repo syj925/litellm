@@ -418,6 +418,9 @@ async def test_native_slot_waiting_is_part_of_total_deadline(runtime: Runtime) -
      "native_identity.configured", "native_identity.signed_in"),
     ("native_key.rotated", "native_password.changed", "native_session.revoked",
      "native_identity.configured", "native_identity.signed_in", "native_api_identity.configured"),
+    ("native_key.rotated", "native_password.changed", "native_session.revoked",
+     "native_identity.configured", "native_identity.signed_in", "native_api_identity.configured",
+     "native_scim.configured", "native_scim.user_created", "native_scim.user_updated", "native_scim.user_deleted"),
 ))
 async def test_native_outbox_upgrades_in_place_and_bridges_all_kinds(
     runtime: Runtime, legacy: tuple[NativeAuditAction, ...],
@@ -426,11 +429,12 @@ async def test_native_outbox_upgrades_in_place_and_bridges_all_kinds(
         "native_key.rotated", "native_password.changed", "native_session.revoked",
         "native_identity.configured", "native_identity.signed_in", "native_api_identity.configured",
         "native_scim.configured", "native_scim.user_created", "native_scim.user_updated", "native_scim.user_deleted",
+        "native_scim.group_created", "native_scim.group_updated", "native_scim.group_deleted",
     )
     added: Final = tuple(action for action in supported if action not in legacy)
     async with runtime.native.tx(timeout=timedelta(seconds=5)) as writer:
         await writer.execute_raw(
-            "ALTER TABLE retail_native_audit_outbox DROP CONSTRAINT retail_native_audit_outbox_action_v4_check",
+            "ALTER TABLE retail_native_audit_outbox DROP CONSTRAINT retail_native_audit_outbox_action_v5_check",
         )
         await writer.execute_raw(
             sql.SQL("ALTER TABLE retail_native_audit_outbox ADD CONSTRAINT retail_native_audit_outbox_action_check "

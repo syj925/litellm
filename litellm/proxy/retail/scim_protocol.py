@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, Literal, NoReturn
 from uuid import UUID
@@ -419,11 +419,13 @@ def service_provider_config(config: ScimConfig) -> JsonValue:
 
 
 def resource_types(config: ScimConfig) -> JsonValue:
+    from .scim_groups_protocol import group_resource_type
+
     return {
         "schemas": [LIST_SCHEMA],
-        "totalResults": 1,
+        "totalResults": 2,
         "startIndex": 1,
-        "itemsPerPage": 1,
+        "itemsPerPage": 2,
         "Resources": [
             {
                 "schemas": ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"],
@@ -435,17 +437,20 @@ def resource_types(config: ScimConfig) -> JsonValue:
                     "resourceType": "ResourceType",
                     "location": f"{config.public_origin}{SCIM_BASE}/ResourceTypes/User",
                 },
-            }
+            },
+            group_resource_type(config),
         ],
     }
 
 
 def schema_documents(config: ScimConfig) -> JsonValue:
+    from .scim_groups_protocol import group_schema_document
+
     return {
         "schemas": [LIST_SCHEMA],
-        "totalResults": 1,
+        "totalResults": 2,
         "startIndex": 1,
-        "itemsPerPage": 1,
+        "itemsPerPage": 2,
         "Resources": [
             {
                 "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Schema"],
@@ -460,7 +465,8 @@ def schema_documents(config: ScimConfig) -> JsonValue:
                     "resourceType": "Schema",
                     "location": f"{config.public_origin}{SCIM_BASE}/Schemas/{USER_SCHEMA}",
                 },
-            }
+            },
+            group_schema_document(config),
         ],
     }
 
@@ -476,3 +482,9 @@ def _attribute(name: str, kind: str, required: bool, case_exact: bool, mutabilit
         "returned": "default",
         "uniqueness": uniqueness,
     }
+
+
+decode_scim_json: Final[Callable[[bytes], object]] = _json
+scim_object_fields: Final[Callable[[object], Mapping[str, object] | ScimFailure]] = _object
+scim_schema_matches: Final[Callable[[object, str], bool]] = _schema
+SCIM_WEAK_ETAG: Final[re.Pattern[str]] = _ETAG
