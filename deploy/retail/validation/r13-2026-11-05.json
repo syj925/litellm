@@ -1,0 +1,513 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-05",
+  "scope": "ID-SCIM fixed-namespace Users provisioning and durable native credential lifecycle",
+  "baseline_commit": "99be60d72ddbd04bcd28132579d355b71484311f",
+  "implementation_commit": "94294b2eff8db7418cb63b55f4f3aefca12197e5",
+  "status": "validated_scoped_locally",
+  "production_changed": false,
+  "real_idp_configured": false,
+  "real_account_bindings_created": 0,
+  "paid_model_calls": 0,
+  "test_counts": {
+    "backend_unit": 2477,
+    "postgres": 144,
+    "frontend": 62,
+    "total_unique": 2683
+  },
+  "counting": {
+    "combined_unit_baseline": 2455,
+    "final_protocol_additional_unique": 3,
+    "final_middleware_additional_unique": 1,
+    "key_rotation_additional_unique": 18,
+    "note": "Final 146 protocol and 9 HTTP/ingress checks overlap the 2455 baseline; only 3+1 new cases counted. Rotation PostgreSQL 13 are included in PostgreSQL 144. Native HTTP groups and mutations are recorded separately."
+  },
+  "test_groups": [
+    {
+      "suite": "combined_unit",
+      "passed": 2455,
+      "files": [
+        "tests/unit/proxy/auth/test_login_utils.py",
+        "tests/unit/proxy/auth/test_user_api_key_auth_request_flow.py",
+        "tests/unit/proxy/auth/test_auth_exception_handler.py",
+        "tests/unit/proxy/management_endpoints/test_key_management_endpoints.py",
+        "tests/unit/proxy/management_endpoints/test_mcp_management_endpoints.py",
+        "tests/unit/proxy/_experimental/mcp_server/test_byok_oauth_endpoints.py",
+        "tests/unit/proxy/retail/test_oidc_sessions.py",
+        "tests/unit/proxy/retail/test_oidc_config.py",
+        "tests/unit/proxy/retail/test_oidc_provider.py",
+        "tests/unit/proxy/retail/test_oidc_service.py",
+        "tests/unit/proxy/retail/test_control_plane_flags.py",
+        "tests/unit/proxy/retail/test_oidc.py",
+        "tests/unit/proxy/retail/test_oidc_http.py",
+        "tests/unit/proxy/retail/test_api_jwt_admission_edges.py",
+        "tests/unit/proxy/retail/test_api_jwt_auth.py",
+        "tests/unit/proxy/retail/test_api_jwt_config.py",
+        "tests/unit/proxy/retail/test_api_jwt_middleware.py",
+        "tests/unit/proxy/retail/test_api_jwt_native_auth.py",
+        "tests/unit/proxy/retail/test_api_jwt_provider.py",
+        "tests/unit/proxy/retail/test_api_jwt_service.py",
+        "tests/unit/proxy/retail/test_api_jwt_store.py",
+        "tests/unit/proxy/retail/test_native_audit_store.py",
+        "tests/unit/proxy/retail/test_operation_events.py",
+        "tests/unit/proxy/retail/test_scim_config.py",
+        "tests/unit/proxy/retail/test_scim_http.py",
+        "tests/unit/proxy/retail/test_scim_identity.py",
+        "tests/unit/proxy/retail/test_scim_identity_native.py",
+        "tests/unit/proxy/retail/test_scim_middleware.py",
+        "tests/unit/proxy/retail/test_scim_protocol.py",
+        "tests/unit/proxy/retail/test_scim_service.py",
+        "tests/unit/proxy/retail/test_scim_store.py"
+      ],
+      "exit_code": 0
+    },
+    {
+      "suite": "final_protocol",
+      "passed": 146,
+      "additional_unique": 3
+    },
+    {
+      "suite": "final_http_and_ingress",
+      "passed": 9,
+      "additional_unique": 1
+    },
+    {
+      "suite": "rotation-unit",
+      "exit_code": 0,
+      "passed": 18,
+      "files": [
+        "tests/unit/proxy/retail/test_key_rotation.py"
+      ]
+    },
+    {
+      "suite": "postgres",
+      "passed": 144,
+      "files": [
+        "tests/integration/database/test_retail_api_jwt_store.py",
+        "tests/integration/database/test_retail_native_audit.py",
+        "tests/integration/database/test_retail_oidc_sessions.py",
+        "tests/integration/database/test_retail_native_session_transactions.py",
+        "tests/integration/database/test_retail_scim_store.py",
+        "tests/integration/database/test_retail_scim_identity.py"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "frontend_files": [
+    "src\\components\\retail\\management\\time.test.ts",
+    "src\\components\\retail\\audit\\AuditOrganizationSearch.integration.test.tsx",
+    "src\\components\\retail\\management\\RetailManagement.integration.test.tsx"
+  ],
+  "native_http_observations": [
+    {
+      "case": "SCIM creates only a fresh customer, no Key/wallet/credit; duplicates and privilege inputs cannot adopt or grant existing identities",
+      "passed": true
+    },
+    {
+      "case": "standard discovery, case-insensitive equality filter, count zero, atomic PATCH rejection and stale ETag are enforced",
+      "passed": true
+    },
+    {
+      "case": "ordinary managed Key, SSE, real native OIDC proof and mapped API JWT work; stale admin owner caches on both workers cannot skip wallet charges",
+      "passed": true
+    },
+    {
+      "case": "deactivation rejects exact Key/OIDC/APIJWT on both workers and blocks concurrent issuance; restore never revives old credentials and fresh issuance resumes",
+      "passed": true
+    },
+    {
+      "case": "valid Key rotation preserves current proof, exact old bearer has no grace, and deleted native Key retains its immutable hash tombstone",
+      "passed": true
+    },
+    {
+      "case": "Key creation raced with deactivation leaves no usable pre-restore credential; an already-admitted delayed SSE completes and settles after deactivation without stranded hold",
+      "passed": true,
+      "raced_key_requests": 4,
+      "issued_before_deactivation": 1
+    },
+    {
+      "case": "sequential false/true PATCH rotates credentials, DELETE tombstones identity, and recreation uses a different native customer while retaining old wallet history",
+      "passed": true
+    },
+    {
+      "case": "managed identity protection remains active after SCIM flag and config path are removed on both workers",
+      "passed": true
+    },
+    {
+      "case": "directory bearer, external identifiers/names, raw model/UI/API credentials and JWT claims absent from upstream, stdout/stderr and four diagnostic tables",
+      "passed": true
+    }
+  ],
+  "native_workers": 2,
+  "source_rows_copied": 0,
+  "rotation_lock_proof": {
+    "new_order_passed": true,
+    "old_order_mutant_killed": true,
+    "cases": [
+      {
+        "mode": "new",
+        "passed": true,
+        "phase": "complete",
+        "audit_wait_observed": true,
+        "second_wait_observed": true,
+        "cycle_observed": false,
+        "model_requests": 0,
+        "create_status": 201,
+        "key_status": 200,
+        "audit_gate_wait_ms": 10.094,
+        "second_wait_kind": "resource",
+        "rotation_status": 200,
+        "deactivate_status": 200,
+        "finance_counts_unchanged": true,
+        "wallet_count": 1,
+        "ledger_count": 11,
+        "ready_worker_count": 2
+      },
+      {
+        "mode": "old",
+        "passed": true,
+        "phase": "complete",
+        "audit_wait_observed": true,
+        "second_wait_observed": true,
+        "cycle_observed": true,
+        "model_requests": 0,
+        "create_status": 201,
+        "key_status": 200,
+        "audit_gate_wait_ms": 18.422,
+        "second_wait_kind": "audit",
+        "rotation_status": 200,
+        "deactivate_status": 503,
+        "finance_counts_unchanged": true,
+        "wallet_count": 1,
+        "ledger_count": 11,
+        "ready_worker_count": 2
+      }
+    ],
+    "shared_source_unchanged": true,
+    "paid_model_calls": 0,
+    "note": "Actual native rotation and SCIM deactivation run with a controlled audit-row gate. Restoring the old order produces a direct two-way pg_blocking_pids cycle and deactivation 503; fixed order completes both with 200."
+  },
+  "sampled_mutations": {
+    "protocol": 24,
+    "store": 13,
+    "identity_and_native_auth": 23,
+    "http_ingress": 5,
+    "service_readiness": 1,
+    "real_lock_order": 1,
+    "total": 67,
+    "killed": 67,
+    "not_full_mutation_space": true,
+    "protocol_note": "22 full original sample + noTarget targeted mutant + readonly create/PUT targeted mutant; complete final146 mapped suite green before and after final mutation"
+  },
+  "python_gates": {
+    "baseline": "99be60d72ddbd04bcd28132579d355b71484311f",
+    "file_count": 29,
+    "checks": 87,
+    "passed": true,
+    "semantic_pyright_run": false,
+    "full_repository_check": false
+  },
+  "frontend_validation": {
+    "official_openapi_generation": true,
+    "generated_schema_byte_equal": true,
+    "webpack_production_build": true,
+    "static_pages": 75,
+    "production_typescript": true,
+    "scoped_eslint_and_checkout_format": true,
+    "full_ui_suite": false,
+    "new_browser_visual_acceptance": false
+  },
+  "actual_prisma": {
+    "native_schema_full_clone": true,
+    "real_prisma_initialize_idempotent": true,
+    "real_prisma_crud_and_native_trigger": true,
+    "native_customer_without_pii_or_wallet": true,
+    "rotation_retains_tombstone": true,
+    "restore_cannot_rotate_revoked_key": true,
+    "credentials_recorded": false
+  },
+  "qa_cleanup": {
+    "removed_owned_containers": 3,
+    "removed_owned_network": true,
+    "main_runtime_untouched": true,
+    "evidence_retained": true
+  },
+  "local_activation": {
+    "local_active": true,
+    "production_changed": false,
+    "real_idp_configured": false,
+    "real_account_bindings_created": 0,
+    "paid_model_calls": 0,
+    "capacity_certification": false,
+    "existing_fingerprint_table_count": 26,
+    "existing_fingerprints_unchanged": true,
+    "scim_enabled": false,
+    "api_jwt_enabled": false,
+    "identity_authority_tables_created": false,
+    "oidc_status": {
+      "enabled": false,
+      "available": false,
+      "label": "Organization sign in"
+    },
+    "two_workers": true,
+    "native_audit_enabled": true,
+    "monthly_budgets_enabled": true,
+    "managed_secrets_enabled": false,
+    "audit_paused": true,
+    "source_overlays_match": true,
+    "overlay_mount_count": 50,
+    "overlay_file_count": 1092,
+    "ui_overlay_files": 911
+  },
+  "local_native_audit_schema": {
+    "passed": true,
+    "action_constraints": [
+      "retail_native_audit_outbox_action_v4_check"
+    ]
+  },
+  "local_http_smoke": {
+    "passed": true,
+    "checks": [
+      {
+        "method": "GET",
+        "path": "/health/readiness",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/ui/welcome/",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/ui/login/",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/auth/oidc/status",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/runtime",
+        "status": 401,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/runtime",
+        "status": 200,
+        "authorization": "admin"
+      },
+      {
+        "method": "GET",
+        "path": "/qa/runtime",
+        "status": 404,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/wallets",
+        "status": 401,
+        "authorization": "synthetic-reserved"
+      },
+      {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "status": 503,
+        "authorization": "synthetic-reserved"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/Users",
+        "status": 401,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/ServiceProviderConfig",
+        "status": 401,
+        "authorization": "admin"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/Users",
+        "status": 503,
+        "authorization": "synthetic-reserved"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/wallets",
+        "status": 401,
+        "authorization": "synthetic-reserved"
+      }
+    ],
+    "real_account_changes": false,
+    "paid_model_calls": 0,
+    "secret_values_recorded": false
+  },
+  "secret_review": {
+    "source_files": 43,
+    "actual_runtime_secret_matches": 0,
+    "passed": true,
+    "values_recorded": false
+  },
+  "source_verification": {
+    "qa_final_snapshot_files_verified": 50,
+    "main_matches_qa_source_files_normalized_lf": 34,
+    "runtime_overlay_files": 1092,
+    "runtime_ui_files": 911,
+    "key_rotation_sha256": "d7cf4cc36c02dd07392bb5f037d887d6c97150b932ac78259848ef91194ac37b",
+    "final_qa_sha256": {
+      "litellm/proxy/auth/auth_exception_handler.py": "7e7a93ac433e6ec5732fc6e44eee3daf6ac3f86f5b95b4683773a20b9865daf2",
+      "litellm/proxy/auth/login_utils.py": "364fb4964cc962f6d35f10328b103cc23ac3f28aa0764a74fd12a9193deaf23b",
+      "litellm/proxy/auth/user_api_key_auth.py": "90c2fcbdb78136aa0e88ca9f090a38fb9237d85f735a69062db0e8a7e0b5d21f",
+      "litellm/proxy/proxy_server.py": "fea79168d7cbcf5726c5aa93d08ab33a87e6588b1d3aa3ed724cdbf718f83bf0",
+      "litellm/proxy/retail/audit_delivery_schema.sql": "b46948c7016b0083b2217f872836b02d782283b99817e1dcee6985ed8c47ce52",
+      "litellm/proxy/retail/control_plane.py": "ca7471ce4e745719d1fa0779364f3ea2326f5e15be6008a5272c5e151a836c73",
+      "litellm/proxy/retail/control_plane_flags.py": "e5ccb3ba23925a0ead08d423a2f2239e6b9af5d44fcd671375747935d86290b0",
+      "litellm/proxy/retail/native_audit_schema.sql": "71a9b7a65a6951b70adcd8acb3d74a2f942669c9041343b8f6e3f9f176237e0e",
+      "litellm/proxy/retail/native_audit_store.py": "bbfc410e2b1e95b3c52acef999eca39cc02a69ef39c6616921dac9304676714e",
+      "litellm/proxy/retail/oidc_sessions.py": "140c9288a05bab1ebc2d4c2b0b600f84ae5a689315367265d2b20656cb7bbf85",
+      "litellm/proxy/retail/operation_events.py": "e46a3ccc5660f1a86cfce817ea11fa60db1d0efdf9ece43a842f80bf830f0425",
+      "litellm/proxy/retail/scim_config.py": "9a341bb7d8bb6b0cc13ca55b666abce7cd6645cc6bb249a0b7c29a98e7176728",
+      "litellm/proxy/retail/scim_http.py": "6a3ec1cdef954c6779e1b9c01c126ded433e51e65ef193580e001618c2f4f2b6",
+      "litellm/proxy/retail/scim_identity.py": "8fd07da8a2ca445cabf24472c44629375d5eb85dd803947ee06525a3dfdbf36a",
+      "litellm/proxy/retail/scim_middleware.py": "22baee781add135f56b896bf6b99a5a20d35f0f04882ba4a82efe72d0824a2f1",
+      "litellm/proxy/retail/scim_protocol.py": "bb709167893d97b8fc42bdbc555ec5a76baa3e7d0d841e695ef939b006b78470",
+      "litellm/proxy/retail/scim_schema.sql": "d52016c055adb03e6515e0dee660774aa9fdca7b7cd2d9bc824b8044dde0f02c",
+      "litellm/proxy/retail/scim_service.py": "75622cdedbfe314cbde4c0a769ec1ffcbe59eb8e17c12c1fc7a2f74603ab5dee",
+      "litellm/proxy/retail/scim_store.py": "23315ad49ea941ae648bddbe74cba3bfef920e4340873b3d715e181226d44ca6",
+      "tests/unit/proxy/auth/test_login_utils.py": "456bf0f4cb5ba0ba7fb823a49c3cff1c7fd6e7990949a11439ed8a4246237787",
+      "tests/unit/proxy/auth/test_user_api_key_auth_request_flow.py": "3adec42893ff0f281e91696f1b3a7a23e6d82841cbd11c15d80b370773091bdf",
+      "tests/unit/proxy/auth/test_auth_exception_handler.py": "8ac210fb6f3d5795996727e1c6129a082e9f590f7863a9317693c38f2b664f05",
+      "tests/unit/proxy/management_endpoints/test_key_management_endpoints.py": "ac08faf1d0aa2da5869ebe365cd2ae9b09614b72cfef5207d640f35e02cce520",
+      "tests/unit/proxy/management_endpoints/test_mcp_management_endpoints.py": "55f055a822f82073cb1cf5b6956ed640405cc11468f635a6840fb1d63c429bce",
+      "tests/unit/proxy/_experimental/mcp_server/test_byok_oauth_endpoints.py": "053007b3eb148da7340d55b039d77e877d3c4978270886a8d18251dc287fa13c",
+      "tests/unit/proxy/retail/test_oidc_sessions.py": "11ac176700e3aef2396373f7b80e5efcf8ae2623828e186114c469b01b6b7c5c",
+      "tests/unit/proxy/retail/test_oidc_config.py": "9d785f50438ae11c2d34bd168cbfb920356c2bb6d870fe03bd90cb53206f17ac",
+      "tests/unit/proxy/retail/test_oidc_provider.py": "e1b604090a6e332266fd94dd16c0eaf30d8285e04c99dcbd18cf49d1494f72cb",
+      "tests/unit/proxy/retail/test_oidc_service.py": "35c2553580f5b9b9c4737da9792bc059d9a4208f442da542da87d0a06a8739e7",
+      "tests/unit/proxy/retail/test_control_plane_flags.py": "ac2ad75ab3a6cbe054f6f6f681578dc7be34eff515be5f5cde9bdf02bf32db64",
+      "tests/unit/proxy/retail/test_oidc.py": "d3f40a4627c05c254d5dc9716613733d93f8f92c5381f47cc03692639c7ad094",
+      "tests/unit/proxy/retail/test_oidc_http.py": "79e1f09c60dc54d9c14f335898bed62a5e5df161d1ee07e7005d5684a922125a",
+      "tests/unit/proxy/retail/test_api_jwt_admission_edges.py": "be863ad0c61328d3fc0d395350cdc90f596b07f8f03cef59a4b218577cbd5d0b",
+      "tests/unit/proxy/retail/test_api_jwt_auth.py": "42cc21179876beeba1800d7edc6669b37a466937694d9b35f78c110cf10e2e41",
+      "tests/unit/proxy/retail/test_api_jwt_config.py": "a18744faf2883f00e703f30d7b8998cfb6fecf9468341e8ccacc0e8262a86ea5",
+      "tests/unit/proxy/retail/test_api_jwt_middleware.py": "b8ed2bdf3e88b1bbde5c5132bd760e9a3c30aabca6c08f1208fc90a1d801b298",
+      "tests/unit/proxy/retail/test_api_jwt_native_auth.py": "5db5daade6ff608693a84a07890a106d31396d6bed8093d4fb5b1c92c81c4646",
+      "tests/unit/proxy/retail/test_api_jwt_provider.py": "bbeb8a702464aea4606d38e171e300c4d98c9186675cbe73c51cfc7654b9a1a2",
+      "tests/unit/proxy/retail/test_api_jwt_service.py": "9c361d015ffc044e1ecd209fdf82c6cc49ffe85349bb19529c4351a3aede5768",
+      "tests/unit/proxy/retail/test_api_jwt_store.py": "f0c091178b05a4353c2d6a20d9635acb474ff1c44dc5998dd4cc870a13e88d75",
+      "tests/unit/proxy/retail/test_native_audit_store.py": "a92431f4f90cfad356ec12df7abb568d924e9b099fe004578db76e27901b87c3",
+      "tests/unit/proxy/retail/test_operation_events.py": "828e14216a5a8d5a90d0ca14d75f0d1e03dc5c144b0e8cd200c1cfeb5b45fd30",
+      "tests/unit/proxy/retail/test_scim_config.py": "b0a025fa62203ee3662b169a8ea9775688ba99fdb138f9b7e509c74c8c72a810",
+      "tests/unit/proxy/retail/test_scim_http.py": "8a2bd209fa000e55783c8db0fbd38f755c9ec7b209248675455282349040bbff",
+      "tests/unit/proxy/retail/test_scim_identity.py": "10466c2039613cd990e6b0b8cb06747396c48c7ea01e3d9c5c0fdcdd12f510d5",
+      "tests/unit/proxy/retail/test_scim_identity_native.py": "c0e762725bc9fe70e7a19e4623e40beb41e72586648375b0ff92d9daf2d01436",
+      "tests/unit/proxy/retail/test_scim_middleware.py": "6dac7c564a05b90adc3a165916fefb5ac39e21e51b3d956c2709f256167a7b7f",
+      "tests/unit/proxy/retail/test_scim_protocol.py": "1141db5446922769fc9177c78aa23810a73170a4c7cd6bad1dbd95559083166d",
+      "tests/unit/proxy/retail/test_scim_service.py": "f9a45f972e0b70ffaeb63cdf97d9322a16d2c7584a8be26aac8633b919b5202d",
+      "tests/unit/proxy/retail/test_scim_store.py": "9fafe0db05d39bad55401278bfb82e2ccf0de04fddfb79ffbdbfcec981d9c9e6"
+    }
+  },
+  "evidence": [
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-final-unit.json",
+      "sha256": "83ef877d37e9920c71f664175318bc376ffaf2376aa12473c1b6cadbf6583c7a"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-final-postgres.json",
+      "sha256": "641f0be600a902ddf93d7b3609863065b2860b42bd584f53df34ab22b0645fe2"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-protocol-results.json",
+      "sha256": "8fa34a21261a17e15238f9f3fffb15ead629135addfa7d4c1fe98b73f50e6a18"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-http-unit.json",
+      "sha256": "898ed8e4f798cfc1ac7b6c753ca64e0d05c49af2c233bf0aa30b8b9af96b6322"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-root-rotation-unit.json",
+      "sha256": "3481f87aa2c3b64b5a6bc2122d51ae8dc9e76e9499b1c0275e16afb3e7f57192"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-root-rotation-pg.json",
+      "sha256": "4963287b630d959378469d0b6a91cb7833adee393f210f79a2b7fd5a016607e2"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-ui-validation.json",
+      "sha256": "efb57cdea3bd188f6c870402952ef5260fd744173baacdceef7401677a501f0e"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-all-python-gates.json",
+      "sha256": "7691cc3d9a6d252bdc933e93fd54cbb2540c1be19e84d2576d694f6b4c077702"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-scim-store-mutations.json",
+      "sha256": "cbb0ae1badcc953d0a3949fbf5a8569b3ab7531aae2afada0368854b230e9504"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-identity-mutations.json",
+      "sha256": "363508b45ab15ca72687c7a8101035bb50d6375be38d4af3134a22e6d802980f"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-http-mutations.json",
+      "sha256": "a585981658eaad9eb9f2b5612301c91a8ac79cc9da02ab2957733b1a43c5607d"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-scim-service-mutation.json",
+      "sha256": "21f3e27aebfdc5dd3030a0bcae87512ae58776ac7fd3e6c9c173f31beb441fee"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-rotation-lock-proof.json",
+      "sha256": "015c961d6e681148727aed3b40a60ae4255f2b5c085bcd9d12dc5b1b451656d2"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-scim-store-prisma.json",
+      "sha256": "97c85681ac8ea8be2a628ae30373f65d36f2b94e9e88b7561907d76d17590e39"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-native/results.json",
+      "sha256": "41b1a5a85b32f307ea1ffdeac460bb72b89dbe7e67cc0c4fd22d327674db6e90"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-local-activation.json",
+      "sha256": "03926c7403f85e13b1704b3c772091fc470b9c01bcee7ba126cbf4711f78c2de"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-local-http.json",
+      "sha256": "56360a2cd0af763c79b3728ca03bcd3260cb94e9ba15c21f772c6c9b57e378ee"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-local-audit-schema.json",
+      "sha256": "eb1fd46c93ddec949c5186230318fb7f7acf1ece14111edafc02ae1efba9ce9e"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-cleanup.json",
+      "sha256": "cbd525ef9febe41f9864c04a7ec3cc99b840f4207f8fc54fcaf51d51702159fd"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r13-source-secret-review.json",
+      "sha256": "fb8100cf8c99d140d24545889d68aea0d01e5528497c1ea65db95421b0fc55c1"
+    }
+  ],
+  "remaining_scope": [
+    "SCIM Groups and explicit native entitlement/organization mappings",
+    "Real directory/IdP interoperability and production configuration",
+    "Existing-account migration, multi-source and multi-tenant provisioning",
+    "Bulk, enterprise extensions, cursor pagination RFC9865 and asynchronous SET RFC9967",
+    "Capacity certification including 20000 RPM; this scoped validation is not an SLA"
+  ],
+  "supported_mode_limits": [
+    "Master key, standard native key authentication, actual RetailBilling and required healthy coordination writer mode only",
+    "No native custom auth/JWT/OAuth, replica, custom key header, anonymous dev mode or non-root SERVER_ROOT_PATH(S)",
+    "Turning off directory sync retains identity guard, triggers, authority rows and immutable credential tombstones"
+  ]
+}

@@ -19,6 +19,8 @@ R13 接收企业目录的用户创建、查询、修改、停用、恢复与删�
 
 环境项为 `RETAIL_SCIM_ENABLED=true`、`RETAIL_SCIM_CONFIG=/server/private/scim.json` 和 `RETAIL_SCIM_TOKEN`。完整令牌由 `rt-scim.` 前缀和 32–256 个 URL-safe 随机字符组成，只放在受控服务端环境和目录客户端的凭据配置，不写进 JSON、网页、日志、知识库或 URL
 
+`RETAIL_SCIM_CONFIG` 是网关进程可读的路径。Docker 部署需另行将 JSON 文件只读挂载到容器内，再填写容器路径；本仓 compose override 只转发环境值，不自动挂载宿主机上的配置文件
+
 客户端 Base URL 为 `public_origin + /retail/scim/v2`，使用 `Authorization: Bearer <完整目录令牌>`。它是独立的 opaque bearer，不能拿本站管理员 Key、控制台会话、API JWT 或其他原生凭据代替。这个令牌也不能访问钱包、模型或其他管理接口
 
 生产要求固定 HTTPS origin，以及 operation audit、native audit、零售计费开关、实际 RetailBilling 回调、非空主密钥、标准原生 Key 认证、writer 和健康的必需协调 Redis。首版不支持 native custom auth/JWT/OAuth、read replica、自定义凭据 header、非根 `SERVER_ROOT_PATH(S)` 部署。反向代理应正确传递受信的 Host/scheme，不能通过接受任意转发头解决 origin 错误
@@ -88,6 +90,8 @@ WHERE id = '<SCIM-resource-UUID>'::uuid;
 有效 Key 可以按既有入口轮换，生成新 hash 证明并保留旧 hash 墓碑。呈现旧明文时不跟随 deprecated/grace 映射；旧 hash 也不能被重新发行给其他用户。涉及受管账号的 Key owner 迁移和原生 user_id 改名被阻止。原生删除 Key 后墓碑仍保留，不以删除再创建恢复旧凭据
 
 DELETE 后原 SCIM ID 的所有操作返回 404，列表不再包含它；后续相同目录 externalId/userName 可以创建全新 UUID 与原生账号。旧账号、钱包、余额、Key 行和历史账本保留，不能借重新建档接管旧资金。受管原生账号不通过原生 user-delete 清除，生命周期应走目录入口
+
+重新建档也不会自动把旧 OIDC subject 或 API JWT 绑定迁到新账号；这些绑定继续服从各自的不可变身份及 revision 规则，需要另行制定显式迁移，不能直接沿用旧目录名称接管
 
 ## 审计、资源与回滚
 
