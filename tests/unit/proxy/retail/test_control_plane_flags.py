@@ -14,6 +14,7 @@ from litellm.proxy.retail.control_plane_flags import (
     organization_finance_enabled,
     organizations_enabled,
     report_export_enabled,
+    scim_enabled,
 )
 
 
@@ -168,3 +169,30 @@ def test_api_jwt_remains_off_without_explicit_feature_flag(monkeypatch: pytest.M
         monkeypatch.setenv(name, "true")
     monkeypatch.delenv("RETAIL_API_JWT_ENABLED", raising=False)
     assert not api_jwt_enabled()
+
+
+@pytest.mark.parametrize("disabled", (
+    "RETAIL_OPERATION_AUDIT_ENABLED", "RETAIL_NATIVE_AUDIT_ENABLED", "RETAIL_REQUIRE_COORDINATION_REDIS",
+    "RETAIL_BILLING_ENABLED", "RETAIL_SCIM_ENABLED",
+))
+def test_scim_requires_audit_coordination_billing_and_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch, disabled: str,
+) -> None:
+    for name in (
+        "RETAIL_OPERATION_AUDIT_ENABLED", "RETAIL_NATIVE_AUDIT_ENABLED", "RETAIL_REQUIRE_COORDINATION_REDIS",
+        "RETAIL_BILLING_ENABLED", "RETAIL_SCIM_ENABLED",
+    ):
+        monkeypatch.setenv(name, "true")
+    assert scim_enabled()
+    monkeypatch.setenv(disabled, "false")
+    assert not scim_enabled()
+
+
+def test_scim_remains_off_without_explicit_feature_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "RETAIL_OPERATION_AUDIT_ENABLED", "RETAIL_NATIVE_AUDIT_ENABLED", "RETAIL_REQUIRE_COORDINATION_REDIS",
+        "RETAIL_BILLING_ENABLED",
+    ):
+        monkeypatch.setenv(name, "true")
+    monkeypatch.delenv("RETAIL_SCIM_ENABLED", raising=False)
+    assert not scim_enabled()

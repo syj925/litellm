@@ -20828,6 +20828,9 @@ from litellm.proxy.retail.api_jwt_middleware import ApiJwtCredentialMiddleware
 
 # The credential namespace remains reserved even when the optional portal is off.
 app.add_middleware(ApiJwtCredentialMiddleware)
+from litellm.proxy.retail.scim_middleware import ScimIngressMiddleware
+
+app.add_middleware(ScimIngressMiddleware)
 # Added last on purpose - last-added is outermost, and the client-visible URL
 # prefix must be resolved into scope["root_path"] before any inner middleware
 # or the router inspects the path. Only added when SERVER_ROOT_PATHS is

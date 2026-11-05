@@ -26,6 +26,15 @@ def api_jwt_enabled() -> bool:
     )
 
 
+def scim_enabled() -> bool:
+    return (
+        native_audit_enabled()
+        and os.environ.get("RETAIL_REQUIRE_COORDINATION_REDIS", "false").lower() == "true"
+        and os.environ.get("RETAIL_BILLING_ENABLED", "false").lower() == "true"
+        and os.environ.get("RETAIL_SCIM_ENABLED", "false").lower() == "true"
+    )
+
+
 def organizations_enabled() -> bool:
     return operation_audit_enabled() and os.environ.get("RETAIL_ORGANIZATIONS_ENABLED", "false").lower() == "true"
 

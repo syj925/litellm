@@ -255,6 +255,10 @@ const addedAuditActions = [
   ["native_identity.configured", "Organization sign-in bindings configured"],
   ["native_identity.signed_in", "Organization sign-in completed"],
   ["native_api_identity.configured", "API access-token bindings configured"],
+  ["native_scim.configured", "Directory provisioning configured"],
+  ["native_scim.user_created", "Directory user created"],
+  ["native_scim.user_updated", "Directory user updated"],
+  ["native_scim.user_deleted", "Directory user removed"],
 ] as const;
 
 it.each(addedAuditActions)("filters and labels the controlled admin audit action %s", async (action, label) => {
@@ -322,6 +326,14 @@ it.each([
   { role: "Admin", viewer: true, action: "native_identity.signed_in" },
   { role: "Internal User", viewer: false, action: "native_api_identity.configured" },
   { role: "Admin", viewer: true, action: "native_api_identity.configured" },
+  { role: "Internal User", viewer: false, action: "native_scim.configured" },
+  { role: "Admin", viewer: true, action: "native_scim.configured" },
+  { role: "Internal User", viewer: false, action: "native_scim.user_created" },
+  { role: "Admin", viewer: true, action: "native_scim.user_created" },
+  { role: "Internal User", viewer: false, action: "native_scim.user_updated" },
+  { role: "Admin", viewer: true, action: "native_scim.user_updated" },
+  { role: "Internal User", viewer: false, action: "native_scim.user_deleted" },
+  { role: "Admin", viewer: true, action: "native_scim.user_deleted" },
 ])(
   "strips $action and limits audit actions to organizations for $role (viewer=$viewer)",
   async ({ role, viewer, action }) => {

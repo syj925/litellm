@@ -18,12 +18,14 @@ R11 新增 [固定 issuer 的自有 OIDC 控制台登录](oidc-sign-in.md)，`ID
 
 R12 新增 [外部 API access JWT 映射](api-access-jwt.md)，`ID-API` 先覆盖固定签发方、短期 JWT、显式普通模型 Key 绑定、代际撤销和原计费权限。已完成隔离双 worker 验收，本地默认关闭；通用 OAuth2、裸 Bearer 互通、真实 IdP、多 issuer、SCIM 和大规模容量仍不在该批验收内。下表原生许可行为保持原样。
 
+R13 新增 [SCIM Users 同步](scim-provisioning.md)，`ID-SCIM` 先覆盖固定来源的 User 子集、全新 customer 创建、版本化原子修改及停用/恢复/删除。凭据证明、并发发行、原生 OIDC/API JWT 接线及脱敏已限定本地验收，默认关闭；Groups、目录角色与既有账号迁移仍保留后续范围，不把 Users 子集写成全套 SCIM 完成
+
 ## 后端限制和边界
 
 | ID | 功能 | 当前行为与范围 | 处理方式和任务 | 源码 |
 | --- | --- | --- | --- | --- |
 | B01 | 组织管理 Organizations | hard_gate：原生 organization Router 全部接口，包括组织CRUD、成员及每日统计。 | 独立替代；`ORG-01`、`ORG-02`、`ORG-03`；首批自有组织，不实现原生协议等价或共享钱包 | [organization_endpoints.py:98](../../litellm/proxy/management_endpoints/organization_endpoints.py#L98)、[organization_endpoints.py:113](../../litellm/proxy/management_endpoints/organization_endpoints.py#L113) |
-| B02 | SCIM v2 用户和组同步 | hard_gate：/scim/v2 整个Router依赖premium_user_check。 | 后续按需；`ID-SCIM`；企业需求触发目录同步 | [scim_v2.py:271](../../litellm/proxy/management_endpoints/scim/scim_v2.py#L271) |
+| B02 | SCIM v2 用户和组同步 | hard_gate：/scim/v2 整个Router依赖premium_user_check。 | R13 独立 Users 子集；`ID-SCIM`；创建与生命周期已限定本地验收，Groups/复杂映射仍待后续 | [scim_v2.py:271](../../litellm/proxy/management_endpoints/scim/scim_v2.py#L271) |
 | B03 | 控制台SSO免费人数额度 | free_quota：普通SSO在非premium且billable_users>5时拒绝；无DB也拒绝。不是所有SSO一概付费。 | 后续按需；`ID-SSO`；保留现有免费额度边界，自研企业身份流程另行设计 | [ui_sso.py:986](../../litellm/proxy/management_endpoints/ui_sso.py#L986)、[ui_sso.py:1047](../../litellm/proxy/management_endpoints/ui_sso.py#L1047)、[ui_sso.py:2212](../../litellm/proxy/management_endpoints/ui_sso.py#L2212) |
 | B04 | 自定义UI SSO登录处理器 | package_dependency：user_custom_ui_sso_sign_in_handler需EnterpriseCustomSSOHandler；包缺失时报错。 | 后续按需；`ID-SSO`；保留现有免费额度边界，自研企业身份流程另行设计 | [ui_sso.py:1071](../../litellm/proxy/management_endpoints/ui_sso.py#L1071) |
 | B05 | SSO调试入口 | hard_gate：/sso/debug相关处理器配置微软/谷歌/Generic IdP时要求premium；与普通SSO≤5人免费路径不同。 | 后续按需；`ID-SSO`；保留现有免费额度边界，自研企业身份流程另行设计 | [ui_sso.py:4731](../../litellm/proxy/management_endpoints/ui_sso.py#L4731) |

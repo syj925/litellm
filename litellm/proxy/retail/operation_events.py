@@ -47,6 +47,10 @@ _ALLOWED_ACTIONS: Final = frozenset(
         "native_identity.configured",
         "native_identity.signed_in",
         "native_api_identity.configured",
+        "native_scim.configured",
+        "native_scim.user_created",
+        "native_scim.user_updated",
+        "native_scim.user_deleted",
     )
 )
 _ALLOWED_FIELDS: Final = frozenset(

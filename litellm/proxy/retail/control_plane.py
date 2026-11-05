@@ -27,6 +27,7 @@ from .organization_reports import router as organization_reports_router
 from .organizations import router as organizations_router
 from .report_worker import close_report_worker, start_report_worker
 from .reports import router as reports_router
+from .scim_service import close_scim_service, start_scim_service
 from .store import get_store
 
 
@@ -64,6 +65,8 @@ async def control_plane_lifespan(app: FastAPI) -> AsyncIterator[None]:
         cleanup.push_async_callback(close_oidc_service)
         await start_api_jwt_service()
         cleanup.push_async_callback(close_api_jwt_service)
+        await start_scim_service()
+        cleanup.push_async_callback(close_scim_service)
         cleanup.push_async_callback(close_audit_delivery_worker)
         cleanup.push_async_callback(close_report_worker)
         cleanup.push_async_callback(close_native_audit_worker)

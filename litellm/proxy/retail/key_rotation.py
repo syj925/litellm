@@ -139,7 +139,6 @@ async def rotate_key(data: RotateKeyRequest, user: User, store: Store) -> Rotate
                 ):
                     raise HTTPException(403, "You are not authorized to rotate this API key")
                 mappings: Final = await get_jwt_key_mapping_cache_keys_for_token(hashed, bound)
-                await append_native_audit(writer,actor_id=verified.user_id or "system:native-master",action="native_key.rotated")
                 rotated: Final = await _execute_virtual_key_regeneration(
                     prisma_client=bound,
                     llm_router=proxy_server.llm_router,
@@ -152,6 +151,7 @@ async def rotate_key(data: RotateKeyRequest, user: User, store: Store) -> Rotate
                     user_api_key_cache=proxy_server.user_api_key_cache,
                     proxy_logging_obj=proxy_server.proxy_logging_obj,
                 )
+                await append_native_audit(writer,actor_id=verified.user_id or "system:native-master",action="native_key.rotated")
             await delete_cache_key_object(
                 hashed_token=hashed,
                 user_api_key_cache=proxy_server.user_api_key_cache,

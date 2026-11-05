@@ -73,3 +73,5 @@ outbox 只保存服务端验证的操作者、受控动作、受影响数量、�
 R11 的 [自有 OIDC](oidc-sign-in.md) 在同一 outbox 另外接入 `native_identity.configured`、`native_identity.signed_in`。原有三类动作和恢复语义保留；兼容迁移只扩展动作 CHECK，不改写旧事件。全部 API 与桥接 worker 升级后才能启用 OIDC，不能让只认识三类动作的旧 worker 接到新事件。
 
 R12 的 [API access JWT](api-access-jwt.md) 再接入 `native_api_identity.configured`，仅记录配置变更的元数据；token 验签或每次推理不是本动作。旧三动作、五动作 schema 兼容扩展为六动作，旧行及设置保持原样；只有全部 API 与桥接 worker 已支持新动作后才启用该功能。普通组织成员不能查询这类全站事件。
+
+R13 的 [SCIM Users](scim-provisioning.md) 接入 `native_scim.configured`、`native_scim.user_created`、`native_scim.user_updated`、`native_scim.user_deleted`。目录数据和原生账号同步变更与意图同事务，事件仍只保存服务器操作者、受影响数量和随机操作 ID。旧三、五、六动作约束升级为十动作，不改写旧行。受管 Key 轮换先完成同事务凭据变更再写审计，以保持目录资源与审计的锁顺序；任何失败仍整体回滚
