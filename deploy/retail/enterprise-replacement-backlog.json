@@ -342,13 +342,14 @@
         "撤销、缓存、未知字段和执行阶段拒绝测试",
         "AC12"
       ],
-      "implementation_commit": "7e54aed7b68c755d5977c32f1abe874a6ae73e86",
+      "implementation_commit": "2912f33e572f7bbe57084cd1aa42fdd3a720932f",
       "validation_evidence": [
         "request-policies.md",
-        "validation/r15-2026-11-05.json"
+        "validation/r15-2026-11-05.json",
+        "validation/r16-2026-11-05.json"
       ],
       "deployment_status": "local_active_feature_disabled",
-      "implementation_notes": "R15独立账号/Key/公开模型请求策略、保存提示词、版本化绑定、管理员页面及原生执行已限定本地验收。三接口实际参数/提示词/结算、双worker即时变更与模型撤权、错误回显与回调隐私均通过；Responses低于16上限提前拒绝。主本地接入但默认关闭，未改生产或原生商业门禁；组织继承、通用护栏与任意路由配置仍未完成。",
+      "implementation_notes": "R15/R16：模型、当前原生Team、账号、Key四层策略与提示词交集；fresh Team/member/default budget与原生权限复用一次writer查询，管理员页面和绑定版本化管理已接入。Team停用/模型撤权、全站admin移组、自有轮换、删除重建、三接口JSON/SSE及无悬挂结算已实际验证。修复Prisma混合NULL/日期wire绑定，原生商业门禁及API JWT个人Key范围保持不变。31表指纹不变，主本地默认关闭、未改生产；自有Org/Project及通用护栏仍待后续。",
       "implemented_scope": [
         "Independent versioned admin CRUD, metadata-only prompt lists and explicit admin prompt editing",
         "One opaque binding per native Team, user, exact Virtual Key or exact public model; no added model permission, membership or wallet entitlement",
@@ -2191,5 +2192,5 @@
   },
   "runtime_scope": "local_only",
   "production_changed": false,
-  "validation_record": "validation/r15-2026-11-05.json"
+  "validation_record": "validation/r16-2026-11-05.json"
 }
