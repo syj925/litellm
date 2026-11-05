@@ -1,0 +1,487 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-05",
+  "scope": "CTRL-03 native user/key/public-model policy and managed prompt subset",
+  "baseline_commit": "9abce87d771205ea83d84e186093cf26d54a4438",
+  "implementation_commit": "7e54aed7b68c755d5977c32f1abe874a6ae73e86",
+  "status": "validated_scoped_locally",
+  "production_changed": false,
+  "paid_model_calls": 0,
+  "real_idp_configured": false,
+  "source_rows_copied": 0,
+  "test_counts": {
+    "backend_unit": 488,
+    "postgres": 141,
+    "frontend": 269,
+    "total_unique": 898
+  },
+  "counting_note": "Final deduplicated mapped selections only; development repeats, mutation runs, 19 copy-only UI repeats and actual HTTP/browser groups are separate.",
+  "test_groups": [
+    {
+      "suite": "unit",
+      "files": [
+        "tests/unit/litellm_core_utils/test_litellm_logging.py::test_async_failure_handler_dispatches_once_on_repeated_notifications",
+        "tests/unit/litellm_core_utils/test_litellm_logging.py::test_private_policy_diagnostic_dispatch_uses_independent_copies_and_retains_financial_facts",
+        "tests/unit/litellm_core_utils/test_litellm_logging.py::test_private_policy_finance_keeps_raw_facts_without_logging_in_an_empty_worker_context",
+        "tests/unit/litellm_core_utils/test_litellm_logging.py::test_private_policy_input_diagnostics_do_not_receive_prompt_or_raw_body",
+        "tests/unit/litellm_core_utils/test_litellm_logging.py::test_private_policy_standard_payload_stdout_redacts_text_preserves_usage",
+        "tests/unit/litellm_core_utils/test_litellm_logging.py::test_success_handler_runs_sync_callbacks_for_sync_requests",
+        "tests/unit/litellm_core_utils/test_litellm_logging.py::test_success_handler_skips_sync_callbacks_for_async_requests",
+        "tests/unit/litellm_core_utils/test_redact_messages.py::TestPerformRedaction",
+        "tests/unit/litellm_core_utils/test_redact_messages.py::TestRedactStreamingResponsesForCustomLogger",
+        "tests/unit/litellm_core_utils/test_redact_messages.py::TestShouldRedactMessageLogging",
+        "tests/unit/litellm_core_utils/test_redact_messages.py::test_private_callback_projection_copies_prompt_and_error_fields_without_changing_accounting_facts",
+        "tests/unit/litellm_core_utils/test_redact_messages.py::test_private_callback_projection_is_identity_for_ordinary_sdk_requests",
+        "tests/unit/proxy/retail/test_api_jwt_native_auth.py",
+        "tests/unit/proxy/retail/test_billing.py",
+        "tests/unit/proxy/retail/test_control_plane_flags.py",
+        "tests/unit/proxy/retail/test_customer_response_middleware.py",
+        "tests/unit/proxy/retail/test_customer_response_privacy.py",
+        "tests/unit/proxy/retail/test_key_rotation.py",
+        "tests/unit/proxy/retail/test_native_audit_store.py",
+        "tests/unit/proxy/retail/test_operation_events.py",
+        "tests/unit/proxy/retail/test_request_policies.py",
+        "tests/unit/proxy/retail/test_request_policy_management.py",
+        "tests/unit/proxy/retail/test_request_policy_privacy.py",
+        "tests/unit/proxy/retail/test_request_policy_runtime.py",
+        "tests/unit/proxy/retail/test_request_policy_service.py",
+        "tests/unit/proxy/retail/test_request_policy_store.py",
+        "tests/unit/proxy/retail/test_request_policy_types.py",
+        "tests/unit/proxy/retail/test_scim_identity_native.py"
+      ],
+      "passed": 488,
+      "exit_code": 0
+    },
+    {
+      "suite": "postgres",
+      "files": [
+        "tests/integration/database/test_retail_api_jwt_store.py",
+        "tests/integration/database/test_retail_native_audit.py",
+        "tests/integration/database/test_retail_native_session_transactions.py",
+        "tests/integration/database/test_retail_request_policy_runtime.py",
+        "tests/integration/database/test_retail_request_policy_store.py",
+        "tests/integration/database/test_retail_scim_identity.py"
+      ],
+      "passed": 141,
+      "exit_code": 0
+    }
+  ],
+  "source_and_tests_unchanged_during_final_backend_runs": true,
+  "sampled_mutations": {
+    "store": 14,
+    "runtime": 15,
+    "callback_privacy": 13,
+    "ingress_and_diagnostics": 8,
+    "websocket_guard": 1,
+    "responses_minimum_guard": 1,
+    "total": 52,
+    "killed": 52,
+    "not_full_mutation_space": true,
+    "snapshot_note": "The 14 store samples precede timestamp casts, 15 runtime samples precede the Responses minimum guard, and 8 ingress samples precede WebSocket closure. Later dedicated regressions, guard mutants and final mapped suites cover these additions. Callback13 samples use final source hashes."
+  },
+  "python_gates": {
+    "passed": true,
+    "files": 35,
+    "checks": 105,
+    "baseline": "9abce87d771205ea83d84e186093cf26d54a4438",
+    "semantic_pyright_run": false,
+    "full_repository_check": false
+  },
+  "frontend": {
+    "deduplicated_tests": 269,
+    "copy_only_overlap_repeated": 19,
+    "typescript_and_scoped_lint_passed": true,
+    "openapi_generation_passed": true,
+    "generated_schema_changed": true,
+    "production_build": {
+      "kind": "build",
+      "exit_code": 0,
+      "elapsed_seconds": 77.1,
+      "command": [
+        "npm.cmd",
+        "run",
+        "build",
+        "--",
+        "--webpack"
+      ]
+    },
+    "browser_checks": 27,
+    "browser_screenshots": 10,
+    "browser_js_errors": 0,
+    "mobile_document_width": 390,
+    "browser_limitations": [
+      "The incumbent account-menu logout transition was not verified; fresh admin and customer browser contexts were destroyed. Native fixture reset will remove ephemeral sessions."
+    ],
+    "snapshot_note": "Actual browser flow used initial R15 UI/source snapshot. Final UI differs only by visible protocol-limit guidance;19 existing component tests were repeated and production assets rebuilt. No new browser cycle for this literal-copy delta."
+  },
+  "native_http_observations": [
+    {
+      "case": "Admin CRUD is connected; prompt content appears only in explicit admin edit, ordinary keys cannot read management data",
+      "passed": true
+    },
+    {
+      "case": "Chat, Responses and Messages send private instructions and bounded fixed parameters upstream while preserving customer output and exact settlement",
+      "passed": true,
+      "settled_requests": 3
+    },
+    {
+      "case": "Streaming retains terminal frames and settles without exposing managed instructions",
+      "passed": true
+    },
+    {
+      "case": "System prompt conflicts and routing overrides fail before upstream dispatch or wallet holds",
+      "passed": true
+    },
+    {
+      "case": "Route restriction changes apply immediately across both workers; stale edits return conflict",
+      "passed": true
+    },
+    {
+      "case": "Responses subminimum output limits are refused before upstream or hold instead of being silently raised by the provider adapter",
+      "passed": true
+    },
+    {
+      "case": "Pausing a bound prompt denies new requests instead of silently dropping its rule",
+      "passed": true
+    },
+    {
+      "case": "An upstream error echoing the full private request becomes a generic customer error and releases the reservation",
+      "passed": true
+    },
+    {
+      "case": "API access JWT inherits the same resolved native key policy and settles normally",
+      "passed": true
+    },
+    {
+      "case": "Fresh native model revocation defeats warmed authentication caches on both workers without new holds",
+      "passed": true
+    },
+    {
+      "case": "User and key limits intersect; exact public-model policy also limits the native master without creating wallet charges",
+      "passed": true
+    },
+    {
+      "case": "No usable credentials or private managed prompt in stdout, stderr or four diagnostic tables; all accepted requests settle and no hold remains",
+      "passed": true
+    }
+  ],
+  "native_workers": 2,
+  "native_source_unchanged": true,
+  "local_activation": {
+    "local_active": true,
+    "production_changed": false,
+    "real_idp_configured": false,
+    "real_account_bindings_created": 0,
+    "paid_model_calls": 0,
+    "capacity_certification": false,
+    "existing_fingerprint_table_count": 26,
+    "existing_fingerprints_unchanged": true,
+    "request_policies_enabled": false,
+    "scim_enabled": false,
+    "api_jwt_enabled": false,
+    "optional_authority_tables_created": false,
+    "oidc_status": {
+      "enabled": false,
+      "available": false,
+      "label": "Organization sign in"
+    },
+    "two_workers": true,
+    "native_audit_enabled": true,
+    "monthly_budgets_enabled": true,
+    "managed_secrets_enabled": false,
+    "audit_paused": true,
+    "source_overlays_match": true,
+    "process_recreated": true,
+    "overlay_mount_count": 52,
+    "overlay_file_count": 1110,
+    "ui_overlay_files": 917
+  },
+  "local_http_smoke": {
+    "passed": true,
+    "checks": [
+      {
+        "method": "GET",
+        "path": "/ui/request-policies/",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/request-policies/prompts",
+        "status": 404,
+        "authorization": "admin"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/request-policies/prompts",
+        "status": 404,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/request-policies/targets?kind=key",
+        "status": 404,
+        "authorization": "admin"
+      },
+      {
+        "method": "GET",
+        "path": "/health/readiness",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/ui/welcome/",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/ui/login/",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/auth/oidc/status",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/runtime",
+        "status": 401,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/runtime",
+        "status": 200,
+        "authorization": "admin"
+      },
+      {
+        "method": "GET",
+        "path": "/qa/runtime",
+        "status": 404,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/wallets",
+        "status": 401,
+        "authorization": "synthetic-reserved"
+      },
+      {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "status": 503,
+        "authorization": "synthetic-reserved"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/Users",
+        "status": 401,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/Groups",
+        "status": 401,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/Groups",
+        "status": 401,
+        "authorization": "admin"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/Groups",
+        "status": 503,
+        "authorization": "synthetic-reserved"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/ServiceProviderConfig",
+        "status": 401,
+        "authorization": "admin"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/scim/v2/Users",
+        "status": 503,
+        "authorization": "synthetic-reserved"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/wallets",
+        "status": 401,
+        "authorization": "synthetic-reserved"
+      }
+    ],
+    "real_account_changes": false,
+    "paid_model_calls": 0,
+    "secret_values_recorded": false
+  },
+  "secret_review": {
+    "passed": true,
+    "containers_inspected": 2,
+    "candidate_secret_values": 11,
+    "dsn_password_values": 2,
+    "files_scanned": 63,
+    "matched_files": [],
+    "unreadable_files": [],
+    "files_changed_during_scan": [],
+    "tracked_sensitive_config_files": []
+  },
+  "qa_cleanup": {
+    "removed_owned_containers": 3,
+    "removed_owned_network": true,
+    "ephemeral_binding_configs_removed": true,
+    "production_changed": false,
+    "main_runtime_removed": false
+  },
+  "source_verification": {
+    "qa_snapshot_files_verified": 48,
+    "main_matches_qa_normalized_source_files": 59,
+    "qa_file_sha256": {
+      "litellm/_logging.py": "41395b8403d7defd98dda8a26e3ba25fa387c40d5615247a0b5612e73ae15f47",
+      "litellm/litellm_core_utils/litellm_logging.py": "7660af081c5e9063113c0af9d5429f3e011b7563d89e9202f3a580d751e56680",
+      "litellm/litellm_core_utils/redact_messages.py": "774a91b35c571e1b9b683458c8ddb1729b0fd1b60e03df0b783517865e8e28fd",
+      "litellm/proxy/auth/user_api_key_auth.py": "bd2f97b5232c87398e9016a5e89eac0412513fdfc0df2ccbf3dec12458080b39",
+      "litellm/proxy/proxy_server.py": "1f42e736ea4603e680140083faad92c3aaaa1ccb2a15cb3bb801efd3f2ac7388",
+      "litellm/proxy/retail/api.py": "75c85343a4f93ab2fdc2eeeebcd33453929c01c9e3916e055f718cd31ad2490e",
+      "litellm/proxy/retail/billing.py": "6a73e7eed94682ccedba087593fd2cf461fe4fe0a068f55784d3db0f448551f7",
+      "litellm/proxy/retail/control_plane.py": "f5989c058e8b994a812758deb24ad64a99bdb172ed181205c735d9b5cbabf086",
+      "litellm/proxy/retail/control_plane_flags.py": "3ff590f0746e7196383e2e6c3c8468bd4ae215b34af2f0dad27fcb26847d83fc",
+      "litellm/proxy/retail/customer_response_middleware.py": "0b406b415157226c8c7a07705de3375eb2b6966a0a4142363307f7ecc0b909f0",
+      "litellm/proxy/retail/customer_response_privacy.py": "7f6fd194e545530509d46fd0d749316b68e548eb0d34291b218d56d9ac580136",
+      "litellm/proxy/retail/native_audit_schema.sql": "57ba7e8613c6c00f22f618a3244180938ce2c3b33bac3e08cd3cde2c5f325562",
+      "litellm/proxy/retail/native_audit_store.py": "2891527f6600d899ebc525a094e394c34ccd666c54f1caa43adfc96abad55c6c",
+      "litellm/proxy/retail/operation_events.py": "9d72ac3c3d8c4568954a5d43c44bbb917371c0d1e47fd3cf23312d396273e572",
+      "litellm/proxy/retail/request_policies.py": "a0d2db323d62063b90a49903fe4e2b8decae17df5f56fd94bd751af38dd25c5a",
+      "litellm/proxy/retail/request_policy_management.py": "7105541ed836908a540533b67bb88dbffb63d5f24ea415274c126d048a6c1428",
+      "litellm/proxy/retail/request_policy_privacy.py": "6b354c32f4b1675ef4ef62373f86eb7a2e38c056911a6d1c44f527db978c85bc",
+      "litellm/proxy/retail/request_policy_runtime.py": "c901fbf2692b450460252371643cac7eeb5e4165ab9b8423ca9de8f3423fb3af",
+      "litellm/proxy/retail/request_policy_schema.sql": "e7aaf8d433929dae110225a3a79867d9599c0d53324afb17521360a123280cf8",
+      "litellm/proxy/retail/request_policy_service.py": "9855d2737be55b549651bdf8f09f28e6ee9835d6f6b9475b5416958f98c67526",
+      "litellm/proxy/retail/request_policy_store.py": "64a420fa002e73a8b7516b6a8da1757711b6b39e1fb8c1427ecdcfdd9851f3b0",
+      "litellm/proxy/retail/request_policy_types.py": "e22e2cf70960ee962bfbc81c83b113fbfb0e4a9b5d2e4d39ec75425392801170",
+      "litellm/proxy/spend_tracking/spend_tracking_utils.py": "8069547cf64278720c499bd5bc7b5a083f43771024a38eb5edea959bc35ef01e",
+      "litellm/utils.py": "2b9f709ea59ea8ef9987af9b366985bd7951fdb83647bac708826a50d07ada2e",
+      "tests/unit/litellm_core_utils/test_litellm_logging.py": "c8454547e8e6448cd33a902d4c3d5c392941c1e54659be45894c9b05fe6bc74a",
+      "tests/unit/litellm_core_utils/test_redact_messages.py": "2bdb474945e878c70ffe3112daaad947366e8233e5469f00eb86101a3e286819",
+      "tests/unit/proxy/retail/test_api_jwt_native_auth.py": "5db5daade6ff608693a84a07890a106d31396d6bed8093d4fb5b1c92c81c4646",
+      "tests/unit/proxy/retail/test_billing.py": "1ea3ff8d8a5a7637768672476c4418f3cda7e98913b83181f1ce5b03500afdd4",
+      "tests/unit/proxy/retail/test_control_plane_flags.py": "24ce4567fe94e0e1283f55ce0953d44ffdb68d82faca281665133d50997adffa",
+      "tests/unit/proxy/retail/test_customer_response_middleware.py": "283f9f2ec2c67746b3552db12310ab4be528beb05584a3305b9fc9927cce2903",
+      "tests/unit/proxy/retail/test_customer_response_privacy.py": "231211805bfe7eeed562718006052898e0bad89700e3227de1669ae9d440ad45",
+      "tests/unit/proxy/retail/test_key_rotation.py": "dcb394cfcc3fe60278efc978b1d5475dd8ad3298489961115f2132f5f4e421f3",
+      "tests/unit/proxy/retail/test_native_audit_store.py": "a92431f4f90cfad356ec12df7abb568d924e9b099fe004578db76e27901b87c3",
+      "tests/unit/proxy/retail/test_operation_events.py": "828e14216a5a8d5a90d0ca14d75f0d1e03dc5c144b0e8cd200c1cfeb5b45fd30",
+      "tests/unit/proxy/retail/test_request_policies.py": "1a9bd989daf7d065a55c5b84189759ace1fef8f88e4f0f8dc1ed37ed2dfd6cdb",
+      "tests/unit/proxy/retail/test_request_policy_management.py": "0c832e93eb9af22a356b98e5faa394ba902945bcef4fc2532cda431732ff1066",
+      "tests/unit/proxy/retail/test_request_policy_privacy.py": "be619386273fac561ce6c6053861fd55e49363bb774f4ad581556e324968eb8a",
+      "tests/unit/proxy/retail/test_request_policy_runtime.py": "61851fe53ff2d923324b883dee154c0f3659e0e478348645b52fab032f8e2ea4",
+      "tests/unit/proxy/retail/test_request_policy_service.py": "712cd5cb868b82098e7b099a45b5774e4960ab11d3b1b72d806ad4b2343cee3a",
+      "tests/unit/proxy/retail/test_request_policy_store.py": "34de928d95e9ee06ed94cec7b57265d2e5d89526a76e1eb6095b2149a157ef56",
+      "tests/unit/proxy/retail/test_request_policy_types.py": "434d3f5b9ec1afb16e392c4ea1dd78d9905e7c443facef5e33358121ece979e5",
+      "tests/unit/proxy/retail/test_scim_identity_native.py": "5c2e2fa5f8527dbbf938964f958d216e150cf4dac88ec3fd9e17a928e1a87b8e",
+      "tests/integration/database/test_retail_api_jwt_store.py": "9945b4e125759e1468506db91d87e1742e3f8ec5ef780f9f0eb7de0a557d21d2",
+      "tests/integration/database/test_retail_native_audit.py": "e666a51f2f08b2d96ca659669430cf12ad0aa2c930e7ca19d907b4a5b099bb67",
+      "tests/integration/database/test_retail_native_session_transactions.py": "cf639ae06478f1d201c64d0e2c7cdb3c38d511a5e3f47bcde9487d2a687d98eb",
+      "tests/integration/database/test_retail_request_policy_runtime.py": "59951336bfc3ed4760a669b8b276439b6804f45f361b91546aec18c1e48759be",
+      "tests/integration/database/test_retail_request_policy_store.py": "91f24c6012960bd21924cbeef0745edd322f789c763ecc4d365de4cd7332f172",
+      "tests/integration/database/test_retail_scim_identity.py": "b0c2cd7e359f14cc6e88ae1bcaad3588e5f1f8320808b795b3b5777bf2e4292a"
+    }
+  },
+  "expanded_suite_limit": "An exploratory whole-core-file run had65 setup errors for absent pytest-vcr/vcr and3 failures for absent requests_mock. It was not accepted as passing. Final mapped selection includes69 callback/ordinary-SDK cases and all affected retail cases; full core/provider suites were not certified.",
+  "remaining_scope": [
+    "Team/organization/project policy inheritance and native advanced metadata compatibility",
+    "General commercial guardrail/content-moderation plugin replacements and arbitrary public/admin route configuration",
+    "Additional provider/model parameter compatibility and production interoperability",
+    "Actual end-to-end streaming was added for Chat only; Responses/Messages JSON and stream privacy units were verified",
+    "Large-scale capacity including20000 RPM; this batch is functional validation only"
+  ],
+  "feature_off_contract": "Default off; disabling this feature explicitly stops its policy enforcement. Enabled mode rejects opaque raw/passthrough HTTP and WebSocket1008; only the three native HTTP inference families are supported.",
+  "prompt_privacy_limit": "Diagnostic copies and response request-field cleanup protect gateway surfaces; upstream model and database operators receive/hold prompt text, and model-generated text may repeat instructions. This is not a secret vault.",
+  "evidence": [
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-final-unit.json",
+      "sha256": "f56af3174d83423350608c253b57ccdc14394d19b76154daeaba1102f04f219a"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-final-postgres.json",
+      "sha256": "b71ce29864391aca268c813c9145d86381fa629778e6383f5a6a85240ceb33f7"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-ui-validation.json",
+      "sha256": "c2c3836ee138c7dc0aca358f7f9c70fa1ac9311f9d506e1b68beef64d9bee5ab"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-ui-openapi.json",
+      "sha256": "09aafac12b2506abfd7c3985293a41f79b9751eaba8734673031b2ee52308544"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-ui-build.json",
+      "sha256": "499a697c29e90c0079afb4cd71c883a509dd9c1a56ccfb425c8aa152d3ae2364"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-all-python-gates.json",
+      "sha256": "78527cd31ed9ffc058dab49fb18331b6d95e424b8265324cb320f4525b8d45de"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-store-mutations.json",
+      "sha256": "6964e28b626b080e7769dfca45fa09996a6860160d36c65c19feaa91206d30ea"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-policy-runtime-mutations.json",
+      "sha256": "175acb26b58fbeec761451c1c90bf46f4d2f3506a1ff27d4e8e9ff7d39d54e5c"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-callback-mutations.json",
+      "sha256": "4ea305b4f2d325d46f77826811431be2f70c9a3d3d4c12f9dec83785ac49d61e"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-root-privacy-mutations.json",
+      "sha256": "f2cf423dc2badea0c4483a05cb362090033532463143c0b290d8e1a463ad4657"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-ws-mutation.json",
+      "sha256": "fe06b6d497b663210ca9b1c43d88989e05813750211e53ec72de1157472fafff"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-response-minimum-mutation.json",
+      "sha256": "19bef1070924701f477b9477f7da1b59472b1f3fa84fc3a340858c119f0eb77e"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-browser-evidence.json",
+      "sha256": "ae78e9e64636d805d8f5bf841a818a4e85ee8957a8b40a960feb58514bcaeadc"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-native/results.json",
+      "sha256": "c621719d5ddf40c5b31904f8bcc8dc87f38a9686d7c6f2b950ee4ee5cdb7c3bc"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-local-activation.json",
+      "sha256": "fed663842515f5f079c3dbd8de28b81b414ffdb9b28114bc85f753df6275f7d8"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-local-http.json",
+      "sha256": "87fd31e6dc1f855f48d74161fecba5bd90cf4c2a8d10b590f66f477fcb5048df"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-source-secret-review.json",
+      "sha256": "d308a6ce982b59a2f718a160bccf21406bbefeb3c98cec3dc12c91575e6a975e"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-cleanup.json",
+      "sha256": "d70467f4f9758ef7989735bbb03525e4fde38ca3de21f57dd21a6f61c178eb2a"
+    },
+    {
+      "path": "../../../../../../../2026-11-02/sub2api-4-thread-01a19a80-3f14-77f0-2/work/r15-expanded-core-unit.json",
+      "sha256": "8e8b7b2eb3a2fd3ad020ea5f0bbec7873b8502a62b0070127690b771df48efaf"
+    }
+  ]
+}
