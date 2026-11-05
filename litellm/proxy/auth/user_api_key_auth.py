@@ -1588,23 +1588,39 @@ async def user_api_key_auth_builder(
             )
         pass_through_endpoints: Final[list[dict] | None] = general_settings.get("pass_through_endpoints", None)
         ## CHECK IF X-LITELM-API-KEY IS PASSED IN - supercedes Authorization header
-        api_key, passed_in_key = get_api_key(
-            custom_litellm_key_header=custom_litellm_key_header,
-            api_key=api_key,
-            azure_api_key_header=azure_api_key_header,
-            anthropic_api_key_header=anthropic_api_key_header,
-            google_ai_studio_api_key_header=google_ai_studio_api_key_header,
-            azure_apim_header=azure_apim_header,
-            pass_through_endpoints=pass_through_endpoints,
-            route=route,
-            request=request,
+        from litellm.proxy.retail.api_jwt_auth import resolve_api_jwt_request
+
+        configured_header: Final = general_settings.get("litellm_key_header_name")
+        resolved_api_jwt: Final = await resolve_api_jwt_request(
+            request, api_key,
+            credential_sources=(
+                azure_api_key_header, anthropic_api_key_header, google_ai_studio_api_key_header,
+                azure_apim_header, custom_litellm_key_header,
+                request.headers.get(configured_header) if isinstance(configured_header, str) else None,
+            ),
         )
-        custom_litellm_key_header_name: Final = general_settings.get("litellm_key_header_name")
-        if custom_litellm_key_header_name is not None:
-            api_key = get_api_key_from_custom_header(
+        if resolved_api_jwt is not None:
+            valid_token = resolved_api_jwt.auth  # rebind-ok: use authoritative existing key in the shared native key checks
+            api_key = resolved_api_jwt.target_hash  # rebind-ok: native auth and budget errors must use the mapped key identity
+            passed_in_key = "rt-jwt.redacted"  # rebind-ok: legacy error projector receives a fixed non-secret credential marker
+        else:
+            api_key, passed_in_key = get_api_key(  # noqa: RUF059  # retain native credential selection and failure logging contract  # rebind-ok: native supported-header precedence for ordinary keys
+                custom_litellm_key_header=custom_litellm_key_header,
+                api_key=api_key,
+                azure_api_key_header=azure_api_key_header,
+                anthropic_api_key_header=anthropic_api_key_header,
+                google_ai_studio_api_key_header=google_ai_studio_api_key_header,
+                azure_apim_header=azure_apim_header,
+                pass_through_endpoints=pass_through_endpoints,
+                route=route,
                 request=request,
-                custom_litellm_key_header_name=custom_litellm_key_header_name,
             )
+            custom_litellm_key_header_name: Final = general_settings.get("litellm_key_header_name")
+            if custom_litellm_key_header_name is not None:
+                api_key = get_api_key_from_custom_header(  # rebind-ok: native configurable header remains an ordinary-key path
+                    request=request,
+                    custom_litellm_key_header_name=custom_litellm_key_header_name,
+                )
 
         from litellm.proxy.retail.oidc_sessions import remember_oidc_credential
 
@@ -1618,7 +1634,7 @@ async def user_api_key_auth_builder(
             parent_otel_span = getattr(request.state, "parent_otel_span", None)
 
         ### USER-DEFINED AUTH FUNCTION ###
-        if enterprise_custom_auth is not None:
+        if resolved_api_jwt is None and enterprise_custom_auth is not None:
             with tracer.trace("litellm.proxy.auth.enterprise_custom_auth"):
                 response = await enterprise_custom_auth(
                     request=request, api_key=api_key, user_custom_auth=user_custom_auth
@@ -1638,7 +1654,7 @@ async def user_api_key_auth_builder(
             elif response is not None and isinstance(response, str):
                 api_key = response
                 custom_auth_api_key = True
-        elif user_custom_auth is not None:
+        elif resolved_api_jwt is None and user_custom_auth is not None:
             response = await user_custom_auth(request=request, api_key=api_key)
             validated = UserAPIKeyAuth.model_validate(response)
             if getattr(litellm, "enable_post_custom_auth_checks", False):
@@ -2298,6 +2314,7 @@ async def user_api_key_auth_builder(
                 dict[str, object], end_user_params
             ),
             _end_user_object=_end_user_object,
+            fresh_user=resolved_api_jwt.user if resolved_api_jwt is not None else None,
         )
     except Exception as e:
         return await UserAPIKeyAuthExceptionHandler.handle_authentication_error(
@@ -2325,6 +2342,7 @@ async def validate_resolved_virtual_key(  # noqa: C901  # Preserve ordering of e
     end_user_id: str | None,
     end_user_params: dict[str, object],
     _end_user_object: LiteLLM_EndUserTable | None,
+    fresh_user: LiteLLM_UserTable | None = None,
 ) -> UserAPIKeyAuth:
     from litellm.proxy.proxy_server import (
         litellm_proxy_admin_name,
@@ -2374,7 +2392,7 @@ async def validate_resolved_virtual_key(  # noqa: C901  # Preserve ordering of e
         if valid_token.user_id is not None:
             try:
                 with tracer.trace("litellm.proxy.auth.get_user_object"):
-                    user_obj = await get_user_object(
+                    user_obj = fresh_user if fresh_user is not None else await get_user_object(  # rebind-ok: inject authoritative API JWT owner instead of a stale cached user
                         user_id=valid_token.user_id,
                         prisma_client=prisma_client,
                         user_api_key_cache=user_api_key_cache,
@@ -2971,7 +2989,12 @@ async def run_centralized_common_checks(
     else:
         fetch_coros.append(_safe_fetch("team", _noop_none()))
 
-    if user_api_key_auth_obj.user_id is not None:
+    from litellm.proxy.retail.api_jwt_auth import api_jwt_user
+
+    authoritative_user: Final = api_jwt_user(request)
+    if authoritative_user is not None:
+        fetch_coros.append(_safe_fetch("user", _known_api_jwt_user(authoritative_user)))
+    elif user_api_key_auth_obj.user_id is not None:
         fetch_coros.append(
             _safe_fetch(
                 "user",
@@ -3224,6 +3247,10 @@ async def run_centralized_common_checks(
 _run_centralized_common_checks: Final = run_centralized_common_checks
 
 
+async def _known_api_jwt_user(user: LiteLLM_UserTable) -> LiteLLM_UserTable:
+    return user
+
+
 async def _noop_none() -> None:
     """Sentinel coroutine for asyncio.gather when a fetch is unnecessary
     (e.g. token has no team_id). Keeps the result tuple positional."""
@@ -3349,7 +3376,9 @@ def _resolve_request_principal(request: Request, valid_token: UserAPIKeyAuth) ->
         request,
         TrustedProxyConfig(use_forwarded_for=bool(cidrs), trusted_proxy_cidrs=cidrs),
     )
-    auth_method: Final = AuthMethod.BEARER_JWT if valid_token.jwt_claims else AuthMethod.API_KEY
+    from litellm.proxy.retail.api_jwt_auth import api_jwt_request
+
+    auth_method: Final = AuthMethod.BEARER_JWT if valid_token.jwt_claims or api_jwt_request(request) else AuthMethod.API_KEY
     return IdentityStore.principal_from_key(
         valid_token,
         auth_method=auth_method,
@@ -3593,6 +3622,9 @@ async def user_api_key_auth(
             user_api_key_auth_obj: Final = await fresh_oidc_session(
                 built_auth, oidc_request_key(request, api_key), route, request.method,
             )
+            from litellm.proxy.retail.api_jwt_auth import require_api_jwt_result
+
+            require_api_jwt_result(request, user_api_key_auth_obj)
         except Exception:
             # The body was read first, so a caller who sent both a malformed body and
             # a rejected key used to get the 400; the response is unchanged, and the
@@ -3612,14 +3644,18 @@ async def user_api_key_auth(
         # only the endpoint's post-call path releases; the endpoint never runs, since
         # the parse failure is raised below.
         if body_parse_exception is None:
+            from litellm.proxy.retail.api_jwt_auth import api_jwt_request, effective_api_jwt_key
+
             recovered_auth_obj: Final = await _authorize_authenticated_request(
                 user_api_key_auth_obj=user_api_key_auth_obj,
                 request=request,
                 request_data=request_data,
                 route=route,
-                api_key=api_key,
+                api_key=effective_api_jwt_key(request, api_key),
+                force_virtual_key_checks=api_jwt_request(request),
             )
             if recovered_auth_obj is not None:
+                require_api_jwt_result(request, recovered_auth_obj)
                 return recovered_auth_obj
 
     # Identity is now resolved. Seed it AFTER the auth span closes so the Baggage
@@ -3718,17 +3754,16 @@ def get_api_key_from_custom_header(request: Request, custom_litellm_key_header_n
     custom_litellm_key_header_name = custom_litellm_key_header_name.lower()
     _headers: Final = {k.lower(): v for k, v in request.headers.items()}
     verbose_proxy_logger.debug(
-        "searching for custom_litellm_key_header_name= %s, in headers=%s",
+        "searching for custom_litellm_key_header_name=%s among %s header names",
         custom_litellm_key_header_name,
-        _headers,
+        len(_headers),
     )
     custom_api_key: Final = _headers.get(custom_litellm_key_header_name)
     if custom_api_key:
         api_key = get_bearer_token(api_key=custom_api_key)  # rebind-ok: pre-existing rebinding on a rename-only line
         verbose_proxy_logger.debug(
-            "Found custom API key using header: %s, setting api_key=%s",
+            "Found custom API key using header: %s",
             custom_litellm_key_header_name,
-            abbreviate_api_key(api_key),
         )
     else:
         verbose_proxy_logger.exception(

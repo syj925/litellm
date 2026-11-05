@@ -133,12 +133,16 @@ def _private_session_error_code(error: Exception) -> int:
         error.status_code if isinstance(error, HTTPException)
         else error.code if isinstance(error, ProxyException) else 401
     )
-    return int(str(code)) if str(code) in {"401", "403", "429", "503"} else status.HTTP_401_UNAUTHORIZED
+    return int(str(code)) if str(code) in {"401", "402", "403", "429", "503"} else status.HTTP_401_UNAUTHORIZED
 
 
 def private_oidc_exception(error: Exception, request: Request, api_key: str) -> Exception:
+    from litellm.proxy.retail.api_jwt_auth import private_api_jwt_exception
     from litellm.proxy.retail.oidc_sessions import oidc_raw_key, oidc_request_key
 
+    api_projection: Final = private_api_jwt_exception(error, request, api_key)
+    if api_projection is not error:
+        return api_projection
     if not oidc_raw_key(oidc_request_key(request, api_key)):
         return error
     return ProxyException(
@@ -151,12 +155,17 @@ async def _reject_private_session(error: Exception, route: str, parent_span: obj
     from litellm.proxy.proxy_server import proxy_logging_obj
 
     code: Final = _private_session_error_code(error)
+    message: Final = (
+        error.message if isinstance(error, ProxyException) and error.message in {
+            "API access token authentication failed", "API access token authentication is unavailable",
+        } else "This sign-in session is unavailable"
+    )
     projected: Final = ProxyException(
-        message="This sign-in session is unavailable", type=ProxyErrorTypes.auth_error, param=None, code=code,
+        message=message, type=ProxyErrorTypes.auth_error, param=None, code=code,
     )
     verbose_proxy_logger.log(
         logging.ERROR if code == 503 else logging.WARNING,
-        "Control-plane sign-in session authentication rejected (status=%s)", code, exc_info=False,
+        "Private credential authentication rejected (status=%s)", code, exc_info=False,
     )
     identity: Final = UserAPIKeyAuth(parent_otel_span=parent_span, request_route=normalize_request_route(route))
     callback: Final = asyncio.create_task(proxy_logging_obj.post_call_failure_hook(
