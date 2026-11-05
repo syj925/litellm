@@ -33,7 +33,7 @@ ERROR_SCHEMA: Final = "urn:ietf:params:scim:api:messages:2.0:Error"
 SEARCH_SCHEMA: Final = "urn:ietf:params:scim:api:messages:2.0:SearchRequest"
 _FILTER: Final = re.compile(r"\s*(id|externalId|userName|active)\s+eq\s+(.+?)\s*\Z", re.IGNORECASE | re.ASCII)
 _ETAG: Final = re.compile(r'W/"[\x21\x23-\x7e]{1,128}"\Z')
-_PROFILE_NAMES: Final = frozenset({"schemas", "externalid", "username", "displayname", "active"})
+_PROFILE_NAMES: Final = frozenset({"schemas", "externalid", "username", "displayname", "active", "id", "meta"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,7 +246,13 @@ def _current_profile(current: ScimRecord) -> ScimProfile:
     )
 
 
+def _read_only(path: str) -> bool:
+    return path in {"id", "meta"} or path.startswith("meta.")
+
+
 def _patch_values(profile: ScimProfile, changes: Mapping[str, object]) -> ScimProfile | ScimFailure:
+    if any(_read_only(name) for name in changes):
+        return ScimFailure(400, "mutability")
     if set(changes) - {"externalid", "username", "displayname", "active"}:
         return ScimFailure(400, "invalidPath")
     if "externalid" in changes and changes["externalid"] != profile.external_id:
@@ -281,6 +287,8 @@ def _patch_operation(profile: ScimProfile, value: object) -> ScimProfile | ScimF
     if operation.lower() == "remove":
         if path is None:
             return ScimFailure(400, "noTarget")
+        if isinstance(path, str) and _read_only(path.lower()):
+            return ScimFailure(400, "mutability")
         if not isinstance(path, str) or path.lower() != "displayname":
             return ScimFailure(
                 400, "mutability" if isinstance(path, str) and path.lower() == "externalid" else "invalidPath"

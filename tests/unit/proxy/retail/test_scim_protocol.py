@@ -322,6 +322,42 @@ def test_put_requires_explicit_active_preserves_external_identity_and_clears_omi
     assert parse_replace(body({"externalId": "different"}), record()) == ScimFailure(400, "mutability")
 
 
+def test_get_representation_can_be_put_back_without_rebinding_readonly_identity_or_metadata() -> None:
+    current: Final = record()
+    config: Final = ScimConfig(namespace="directory", generation=1, public_origin="https://gateway.test")
+    public: Final = render_user(current, config)
+    assert isinstance(public, dict)
+    replacement: Final = {
+        **public,
+        "id": "different-server-id",
+        "meta": {"version": "untrusted", "location": "https://other.test"},
+    }
+    result: Final = parse_replace(json.dumps(replacement).encode(), current)
+    assert isinstance(result, ScimChange) and not result.rotate_credentials
+    assert result.profile == parse_create(body())
+    assert current.id == record().id and current.version == 3
+
+
+def test_create_ignores_readonly_common_fields_without_accepting_privilege_attributes() -> None:
+    readonly: Final = {"id": "existing-admin", "meta": {"native_user_id": "existing-admin", "user_role": "proxy_admin"}}
+    assert parse_create(body(readonly)) == parse_create(body())
+    assert isinstance(parse_create(body({**readonly, "roles": ["proxy_admin"]})), ScimFailure)
+    assert isinstance(parse_create(body({**readonly, "password": "private"})), ScimFailure)
+
+
+def test_patch_readonly_identity_and_metadata_return_mutability_without_partial_changes() -> None:
+    current: Final = record()
+    for operation in (
+        {"op": "replace", "path": "id", "value": "other"},
+        {"op": "replace", "path": "meta.version", "value": "other"},
+        {"op": "add", "value": {"id": "other", "meta": {"version": "other"}}},
+        {"op": "remove", "path": "meta"},
+    ):
+        operations: Final = ({"op": "replace", "path": "active", "value": False}, operation)
+        assert apply_patch(patch(operations), current) == ScimFailure(400, "mutability")
+    assert current.active and current.version == 3
+
+
 def test_optional_etag_compares_exact_version_and_identity_including_valid_stale_values() -> None:
     current: Final = record()
     assert matches_etag(None, current) is True and matches_etag("*", current) is True
