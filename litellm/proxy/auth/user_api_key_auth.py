@@ -1622,6 +1622,7 @@ async def user_api_key_auth_builder(
                     custom_litellm_key_header_name=custom_litellm_key_header_name,
                 )
 
+        native_presented_key: Final = api_key
         from litellm.proxy.retail.oidc_sessions import remember_oidc_credential
 
         remember_oidc_credential(request, api_key, route)
@@ -2113,6 +2114,12 @@ async def user_api_key_auth_builder(
                 proxy_logging_obj=proxy_logging_obj,
             )
 
+        from litellm.proxy.retail.scim_identity import resolve_scim_identity
+
+        cached_scim_identity: Final = await resolve_scim_identity(request, valid_token, native_presented_key)
+        if cached_scim_identity is not None:
+            valid_token = cached_scim_identity.auth  # rebind-ok: replace cached grants with current managed native authority before admin shortcuts
+
         if (
             valid_token is not None
             and isinstance(valid_token, UserAPIKeyAuth)
@@ -2299,6 +2306,12 @@ async def user_api_key_auth_builder(
             valid_token.end_user_tpd_limit = end_user_params.get("end_user_tpd_limit")
             valid_token.allowed_model_region = end_user_params.get("allowed_model_region")
 
+        resolved_scim_identity: Final = (
+            cached_scim_identity if cached_scim_identity is not None
+            else await resolve_scim_identity(request, valid_token, native_presented_key)
+        )
+        if resolved_scim_identity is not None:
+            valid_token = resolved_scim_identity.auth  # rebind-ok: enforce exact presented managed hash, never deprecated-key substitution
         return await validate_resolved_virtual_key(
             request=request,
             request_data=cast(  # cast-ok: model-alias checks must mutate the original request
@@ -2314,7 +2327,10 @@ async def user_api_key_auth_builder(
                 dict[str, object], end_user_params
             ),
             _end_user_object=_end_user_object,
-            fresh_user=resolved_api_jwt.user if resolved_api_jwt is not None else None,
+            fresh_user=(
+                resolved_scim_identity.user if resolved_scim_identity is not None
+                else resolved_api_jwt.user if resolved_api_jwt is not None else None
+            ),
         )
     except Exception as e:
         return await UserAPIKeyAuthExceptionHandler.handle_authentication_error(
@@ -2990,8 +3006,9 @@ async def run_centralized_common_checks(
         fetch_coros.append(_safe_fetch("team", _noop_none()))
 
     from litellm.proxy.retail.api_jwt_auth import api_jwt_user
+    from litellm.proxy.retail.scim_identity import scim_identity_user
 
-    authoritative_user: Final = api_jwt_user(request)
+    authoritative_user: Final = scim_identity_user(request) or api_jwt_user(request)
     if authoritative_user is not None:
         fetch_coros.append(_safe_fetch("user", _known_api_jwt_user(authoritative_user)))
     elif user_api_key_auth_obj.user_id is not None:
@@ -3623,8 +3640,10 @@ async def user_api_key_auth(
                 built_auth, oidc_request_key(request, api_key), route, request.method,
             )
             from litellm.proxy.retail.api_jwt_auth import require_api_jwt_result
+            from litellm.proxy.retail.scim_identity import require_scim_identity_result
 
             require_api_jwt_result(request, user_api_key_auth_obj)
+            require_scim_identity_result(request, user_api_key_auth_obj)
         except Exception:
             # The body was read first, so a caller who sent both a malformed body and
             # a rejected key used to get the 400; the response is unchanged, and the
@@ -3645,17 +3664,19 @@ async def user_api_key_auth(
         # the parse failure is raised below.
         if body_parse_exception is None:
             from litellm.proxy.retail.api_jwt_auth import api_jwt_request, effective_api_jwt_key
+            from litellm.proxy.retail.scim_identity import effective_scim_key, scim_identity_request
 
             recovered_auth_obj: Final = await _authorize_authenticated_request(
                 user_api_key_auth_obj=user_api_key_auth_obj,
                 request=request,
                 request_data=request_data,
                 route=route,
-                api_key=effective_api_jwt_key(request, api_key),
-                force_virtual_key_checks=api_jwt_request(request),
+                api_key=effective_scim_key(request, effective_api_jwt_key(request, api_key)),
+                force_virtual_key_checks=api_jwt_request(request) or scim_identity_request(request),
             )
             if recovered_auth_obj is not None:
                 require_api_jwt_result(request, recovered_auth_obj)
+                require_scim_identity_result(request, recovered_auth_obj)
                 return recovered_auth_obj
 
     # Identity is now resolved. Seed it AFTER the auth span closes so the Baggage

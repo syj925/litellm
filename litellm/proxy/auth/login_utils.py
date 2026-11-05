@@ -321,6 +321,9 @@ async def _sign_in(
 
         # we want the key created to have PROXY_ADMIN_PERMISSIONS
         key_user_id: Final = os.getenv("PROXY_ADMIN_ID", LITELLM_PROXY_ADMIN_NAME)
+        from litellm.proxy.retail.scim_identity import reject_scim_password_login
+
+        reject_scim_password_login(key_user_id)
 
         # Admin is Authe'd in - generate key for the UI to access Proxy
 
@@ -393,6 +396,9 @@ async def _sign_in(
         )
 
     elif _user_row is not None:
+        from litellm.proxy.retail.scim_identity import reject_scim_password_login
+
+        reject_scim_password_login(_user_row.user_id)
         """
         When sharing invite links
 

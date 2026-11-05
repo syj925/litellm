@@ -139,7 +139,11 @@ def _private_session_error_code(error: Exception) -> int:
 def private_oidc_exception(error: Exception, request: Request, api_key: str) -> Exception:
     from litellm.proxy.retail.api_jwt_auth import private_api_jwt_exception
     from litellm.proxy.retail.oidc_sessions import oidc_raw_key, oidc_request_key
+    from litellm.proxy.retail.scim_identity import private_scim_identity_exception
 
+    managed_projection: Final = private_scim_identity_exception(error, request)
+    if managed_projection is not error:
+        return managed_projection
     api_projection: Final = private_api_jwt_exception(error, request, api_key)
     if api_projection is not error:
         return api_projection
@@ -158,6 +162,7 @@ async def _reject_private_session(error: Exception, route: str, parent_span: obj
     message: Final = (
         error.message if isinstance(error, ProxyException) and error.message in {
             "API access token authentication failed", "API access token authentication is unavailable",
+            "Account credential authentication failed", "Account authority is temporarily unavailable",
         } else "This sign-in session is unavailable"
     )
     projected: Final = ProxyException(

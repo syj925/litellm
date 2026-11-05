@@ -234,6 +234,10 @@ async def _configure_binding(
     ))
     if spec.enabled and not _valid_user(users[0] if users else None):
         return _Failure("inactive")
+    if spec.enabled:
+        from .scim_identity import require_scim_directory_user
+
+        await require_scim_directory_user(writer, spec.user_id, lock=True)
     await writer.query_raw(
         """INSERT INTO retail_oidc_bindings(namespace,issuer,subject,user_id,enabled)
         VALUES($1,$2,$3,$4,$5) ON CONFLICT(namespace,issuer,subject) DO UPDATE
@@ -290,6 +294,9 @@ async def _mint_user(
     ))
     if not users or not _valid_user(users[0]):
         return _Failure("inactive")
+    from .scim_identity import require_scim_directory_user
+
+    await require_scim_directory_user(writer, binding.user_id, lock=True)
     await writer.query_raw(
         """DELETE FROM retail_oidc_sessions WHERE token_hash IN (
         SELECT token_hash FROM retail_oidc_sessions WHERE expires_at<=clock_timestamp()
@@ -426,6 +433,10 @@ async def fresh_oidc_session(
     try:
         async with asyncio.timeout(4), _SLOTS:
             fresh: Final = await _fresh_session(source, hash_token(key))
+            if fresh is not None:
+                from .scim_identity import require_scim_session
+
+                await require_scim_session(source, fresh.user_id, hash_token(key))
     except (PrismaError, TimeoutError, ValidationError) as exc:
         raise HTTPException(503, "Account authority is temporarily unavailable") from exc
     if not _valid_user(fresh) or fresh is None or fresh.user_id != auth.user_id:
