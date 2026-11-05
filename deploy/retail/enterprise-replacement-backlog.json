@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-11-04",
+  "updated_at": "2026-11-05",
   "source_baseline": "e3f8f7d3",
   "document_status": "implementation_in_progress",
   "implementation_started": true,
@@ -396,7 +396,7 @@
       "id": "ID-API",
       "phase": "R3",
       "title": "独立 API JWT/OAuth2 校验和映射",
-      "status": "deferred",
+      "status": "validated_scoped_locally",
       "depends_on": [
         "ORG-02",
         "BASE-02",
@@ -408,9 +408,19 @@
         "无逐请求无界外部身份查询",
         "AC12"
       ],
-      "implementation_commit": null,
-      "validation_evidence": [],
-      "deployment_status": "not_deployed"
+      "implementation_commit": "6b94466b69987c3abeb77299065e773b706adf94",
+      "validation_evidence": [
+        "api-access-jwt.md",
+        "validation/r12-2026-11-05.json"
+      ],
+      "deployment_status": "local_active_feature_disabled",
+      "implementation_notes": "R12：固定签发方、短期RS256 access JWT与自定义revision显式映射已有普通模型Key；保留原计费/额度/限流，当前writer权限与代际撤销、热JWKS、双worker账本和脱敏已验收。主站默认关闭，未配置真实IdP；不修改原生商业门禁。",
+      "remaining_scope": [
+        "真实IdP互通与生产配置",
+        "通用OAuth2签发、refresh、introspection及裸Bearer互通",
+        "多issuer及复杂组织/服务账号映射",
+        "SCIM和大规模容量认证"
+      ]
     },
     {
       "id": "ID-SCIM",
@@ -620,11 +630,11 @@
     {
       "id": "B06",
       "family": "API JWT鉴权及映射",
-      "disposition": "deferred",
+      "disposition": "independent_replacement",
       "tasks": [
         "ID-API"
       ],
-      "reason": "每请求身份路径需独立安全和性能验收",
+      "reason": "R12固定签发方、短期access JWT与显式普通Key映射已本地限定验收，默认关闭；通用映射与容量另验",
       "refs": [
         {
           "path": "litellm/proxy/auth/user_api_key_auth.py",
@@ -643,7 +653,7 @@
       "tasks": [
         "ID-API"
       ],
-      "reason": "每请求身份路径需独立安全和性能验收",
+      "reason": "R12仅为access JWT网关适配；通用OAuth2、裸Bearer、refresh/introspection及真实IdP互通仍待验收",
       "refs": [
         {
           "path": "litellm/proxy/auth/user_api_key_auth.py",
@@ -2140,5 +2150,5 @@
   },
   "runtime_scope": "local_only",
   "production_changed": false,
-  "validation_record": "validation/r10-2026-11-04.json"
+  "validation_record": "validation/r12-2026-11-05.json"
 }

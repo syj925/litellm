@@ -1,0 +1,266 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-05",
+  "scope": "ID-API fixed-issuer short-lived access JWT mapped to existing ordinary native model key",
+  "baseline_commit": "b637a028c087b6763a01e5cdfb5ee1bab5876a5b",
+  "implementation_commit": "6b94466b69987c3abeb77299065e773b706adf94",
+  "status": "validated_scoped_locally",
+  "production_changed": false,
+  "real_idp_configured": false,
+  "real_account_bindings_created": 0,
+  "paid_model_calls": 0,
+  "test_counts": {
+    "backend_unit": 2201,
+    "postgres": 106,
+    "protocol_http_redis": 17,
+    "frontend": 50,
+    "total_unique": 2374
+  },
+  "test_groups": [
+    {
+      "suite": "unit",
+      "exit_code": 0,
+      "passed": 2201,
+      "files": [
+        "tests/unit/proxy/auth/test_login_utils.py",
+        "tests/unit/proxy/auth/test_user_api_key_auth_request_flow.py",
+        "tests/unit/proxy/auth/test_auth_exception_handler.py",
+        "tests/unit/proxy/management_endpoints/test_key_management_endpoints.py",
+        "tests/unit/proxy/management_endpoints/test_mcp_management_endpoints.py",
+        "tests/unit/proxy/_experimental/mcp_server/test_byok_oauth_endpoints.py",
+        "tests/unit/proxy/retail/test_oidc_sessions.py",
+        "tests/unit/proxy/retail/test_oidc_config.py",
+        "tests/unit/proxy/retail/test_oidc_provider.py",
+        "tests/unit/proxy/retail/test_oidc_service.py",
+        "tests/unit/proxy/retail/test_control_plane_flags.py",
+        "tests/unit/proxy/retail/test_oidc.py",
+        "tests/unit/proxy/retail/test_oidc_http.py",
+        "tests/unit/proxy/retail/test_api_jwt_admission_edges.py",
+        "tests/unit/proxy/retail/test_api_jwt_auth.py",
+        "tests/unit/proxy/retail/test_api_jwt_config.py",
+        "tests/unit/proxy/retail/test_api_jwt_middleware.py",
+        "tests/unit/proxy/retail/test_api_jwt_native_auth.py",
+        "tests/unit/proxy/retail/test_api_jwt_provider.py",
+        "tests/unit/proxy/retail/test_api_jwt_service.py",
+        "tests/unit/proxy/retail/test_api_jwt_store.py",
+        "tests/unit/proxy/retail/test_native_audit_store.py",
+        "tests/unit/proxy/retail/test_operation_events.py"
+      ]
+    },
+    {
+      "suite": "postgres",
+      "exit_code": 0,
+      "passed": 106,
+      "files": [
+        "tests/integration/database/test_retail_api_jwt_store.py",
+        "tests/integration/database/test_retail_native_audit.py",
+        "tests/integration/database/test_retail_oidc_sessions.py",
+        "tests/integration/database/test_retail_native_session_transactions.py"
+      ]
+    },
+    {
+      "suite": "protocol_http_redis",
+      "kind": "http",
+      "exit_code": 0,
+      "passed": 17,
+      "files": [
+        "tests/integration/auth/test_retail_api_jwt_protocol.py"
+      ]
+    }
+  ],
+  "frontend_files": [
+    "ui/litellm-dashboard/src/components/retail/management/time.test.ts",
+    "ui/litellm-dashboard/src/components/retail/audit/AuditOrganizationSearch.integration.test.tsx",
+    "ui/litellm-dashboard/src/components/retail/management/RetailManagement.integration.test.tsx"
+  ],
+  "native_http_observations": [
+    {
+      "case": "ordinary key and disable-callback header both retain mandatory accounting",
+      "passed": true
+    },
+    {
+      "case": "external admin role ignored; distinct JWTs use same mapped key and correct two-owner wallet charges",
+      "passed": true
+    },
+    {
+      "case": "stale cached admin role on both workers cannot bypass customer wallet billing",
+      "passed": true
+    },
+    {
+      "case": "SSE settles; valid hot JWT and ordinary key work while JWKS endpoint offline with no extra fetch",
+      "passed": true
+    },
+    {
+      "case": "wrong claims, ID token, unknown mapping, credential ambiguity and non-model routes rejected before upstream and wallet holds",
+      "passed": true
+    },
+    {
+      "case": "native key temporary block is enforced; unblock resumes unexpired token as documented",
+      "passed": true
+    },
+    {
+      "case": "Messages and Responses retain mapped wallet identity; model restriction rejects before upstream and holds",
+      "passed": true
+    },
+    {
+      "case": "new revision fences old token on both new and stale-generation workers; renewed token resumes after controlled rollout",
+      "passed": true
+    },
+    {
+      "case": "deleted target key rejects still-valid JWT without cached identity or new wallet hold",
+      "passed": true
+    },
+    {
+      "case": "raw JWT/wrapper/digest/subject/jti/private claims absent from upstream, stdout+stderr and four diagnostic tables; native key hash remains accounting identity",
+      "passed": true
+    }
+  ],
+  "native_workers": 2,
+  "source_rows_copied": 0,
+  "sampled_mutations": {
+    "protocol": 17,
+    "native_authority": 10,
+    "auth_and_ingress": 19,
+    "total": 46,
+    "killed": 46,
+    "not_full_mutation_space": true
+  },
+  "python_gates": {
+    "baseline": "b637a028c087b6763a01e5cdfb5ee1bab5876a5b",
+    "file_count": 26,
+    "checks": 78,
+    "passed": true,
+    "semantic_pyright_run": false,
+    "full_repository_check": false
+  },
+  "frontend_validation": {
+    "official_openapi_generation": true,
+    "generated_schema_byte_equal": true,
+    "webpack_production_build": true,
+    "static_pages": 75,
+    "production_typescript": true,
+    "scoped_eslint_and_checkout_format": true,
+    "full_ui_suite": false
+  },
+  "actual_prisma": {
+    "native_schema_full_clone": true,
+    "real_prisma_initialize_idempotent": true,
+    "real_prisma_configure_fresh": true,
+    "native_user_key_limits_preserved": true,
+    "credentials_recorded": false
+  },
+  "qa_cleanup": {
+    "removed_owned_containers": 3,
+    "removed_owned_network": true,
+    "main_runtime_untouched": true,
+    "evidence_retained": true
+  },
+  "local_activation": {
+    "local_active": true,
+    "production_changed": false,
+    "real_idp_configured": false,
+    "real_account_bindings_created": 0,
+    "paid_model_calls": 0,
+    "capacity_certification": false,
+    "existing_fingerprint_table_count": 26,
+    "existing_fingerprints_unchanged": true,
+    "api_jwt_enabled": false,
+    "identity_authority_tables_created": false,
+    "oidc_status": {
+      "enabled": false,
+      "available": false,
+      "label": "Organization sign in"
+    },
+    "two_workers": true,
+    "native_audit_enabled": true,
+    "monthly_budgets_enabled": true,
+    "managed_secrets_enabled": false,
+    "audit_paused": true,
+    "source_overlays_match": true,
+    "overlay_mount_count": 50,
+    "overlay_file_count": 1084,
+    "ui_overlay_files": 911
+  },
+  "local_http": {
+    "passed": true,
+    "checks": [
+      {
+        "method": "GET",
+        "path": "/health/readiness",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/ui/welcome/",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/ui/login/",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/auth/oidc/status",
+        "status": 200,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/runtime",
+        "status": 401,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/runtime",
+        "status": 200,
+        "authorization": "admin"
+      },
+      {
+        "method": "GET",
+        "path": "/qa/runtime",
+        "status": 404,
+        "authorization": "anonymous"
+      },
+      {
+        "method": "GET",
+        "path": "/retail/admin/wallets",
+        "status": 401,
+        "authorization": "synthetic-reserved"
+      },
+      {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "status": 503,
+        "authorization": "synthetic-reserved"
+      }
+    ],
+    "real_account_changes": false,
+    "paid_model_calls": 0,
+    "secret_values_recorded": false
+  },
+  "privacy": {
+    "actual_runtime_secret_matches": 0,
+    "raw_jwt_wrapper_digest_subject_jti_claims_absent_from_upstream_and_diagnostics": true,
+    "diagnostic_tables": [
+      "LiteLLM_SpendLogs",
+      "retail_native_audit_outbox",
+      "retail_operation_events",
+      "retail_request_traces"
+    ],
+    "native_key_hash_remains_accounting_identity": true,
+    "subject_hashed_before_db_driver": true
+  },
+  "limits": [
+    "Explicit rt-jwt. transport adapter and custom gateway_revision claim; no raw OAuth bearer or issuer/token endpoint implementation",
+    "Single fixed issuer, maximum128 explicit ordinary key bindings; no admin/viewer/team/org/project/service-account graph",
+    "Temporary key block/unblock resumes valid token; permanent token revocation requires new binding revision",
+    "Fresh native writer authority read on every JWT request; ordinary keys add no R12 DB or identity-provider RPC",
+    "Real IdP interoperability, SCIM, SAML, multiple issuers and large-scale login/inference capacity are not certified",
+    "Main code active with API JWT/OIDC/managed secrets disabled; production unchanged"
+  ]
+}

@@ -2,7 +2,7 @@
 
 状态：源码基线清单，功能实现状态以 [任务清单](enterprise-replacement-backlog.json) 为准
 
-更新日期：2026-11-04
+更新日期：2026-11-05
 
 源码基线：`e3f8f7d3`
 
@@ -16,6 +16,8 @@
 
 R11 新增 [固定 issuer 的自有 OIDC 控制台登录](oidc-sign-in.md)，`ID-SSO` 先覆盖显式已有账号绑定、管理会话及撤销，不复用商业自定义 SSO 处理器，也不改变下表原生 SSO 免费额度、调试入口或许可行为。真实企业 IdP、大规模登录、多 issuer、SAML、API JWT 和 SCIM 仍未因此验收完成。
 
+R12 新增 [外部 API access JWT 映射](api-access-jwt.md)，`ID-API` 先覆盖固定签发方、短期 JWT、显式普通模型 Key 绑定、代际撤销和原计费权限。已完成隔离双 worker 验收，本地默认关闭；通用 OAuth2、裸 Bearer 互通、真实 IdP、多 issuer、SCIM 和大规模容量仍不在该批验收内。下表原生许可行为保持原样。
+
 ## 后端限制和边界
 
 | ID | 功能 | 当前行为与范围 | 处理方式和任务 | 源码 |
@@ -25,8 +27,8 @@ R11 新增 [固定 issuer 的自有 OIDC 控制台登录](oidc-sign-in.md)，`ID
 | B03 | 控制台SSO免费人数额度 | free_quota：普通SSO在非premium且billable_users>5时拒绝；无DB也拒绝。不是所有SSO一概付费。 | 后续按需；`ID-SSO`；保留现有免费额度边界，自研企业身份流程另行设计 | [ui_sso.py:986](../../litellm/proxy/management_endpoints/ui_sso.py#L986)、[ui_sso.py:1047](../../litellm/proxy/management_endpoints/ui_sso.py#L1047)、[ui_sso.py:2212](../../litellm/proxy/management_endpoints/ui_sso.py#L2212) |
 | B04 | 自定义UI SSO登录处理器 | package_dependency：user_custom_ui_sso_sign_in_handler需EnterpriseCustomSSOHandler；包缺失时报错。 | 后续按需；`ID-SSO`；保留现有免费额度边界，自研企业身份流程另行设计 | [ui_sso.py:1071](../../litellm/proxy/management_endpoints/ui_sso.py#L1071) |
 | B05 | SSO调试入口 | hard_gate：/sso/debug相关处理器配置微软/谷歌/Generic IdP时要求premium；与普通SSO≤5人免费路径不同。 | 后续按需；`ID-SSO`；保留现有免费额度边界，自研企业身份流程另行设计 | [ui_sso.py:4731](../../litellm/proxy/management_endpoints/ui_sso.py#L4731) |
-| B06 | API JWT鉴权及映射 | hard_gate：enable_jwt_auth下识别JWT后非premium返回403；JWT到Virtual Key映射属于该路径。 | 后续按需；`ID-API`；每请求身份路径需独立安全和性能验收 | [user_api_key_auth.py:1706](../../litellm/proxy/auth/user_api_key_auth.py#L1706)、[user_api_key_auth.py:1712](../../litellm/proxy/auth/user_api_key_auth.py#L1712) |
-| B07 | API OAuth2 token验证 | hard_gate：全局OAuth2或JWT routing override命中的LLM/info请求需要premium；Oauth2Handler还有二次检查。 | 后续按需；`ID-API`；每请求身份路径需独立安全和性能验收 | [user_api_key_auth.py:1689](../../litellm/proxy/auth/user_api_key_auth.py#L1689)、[oauth2_check.py:129](../../litellm/proxy/auth/oauth2_check.py#L129) |
+| B06 | API JWT鉴权及映射 | hard_gate：enable_jwt_auth下识别JWT后非premium返回403；JWT到Virtual Key映射属于该路径。 | R12 独立限定替代；`ID-API`；固定签发方与显式普通 Key 映射已本地验收，默认关闭，通用映射与容量另验 | [user_api_key_auth.py:1706](../../litellm/proxy/auth/user_api_key_auth.py#L1706)、[user_api_key_auth.py:1712](../../litellm/proxy/auth/user_api_key_auth.py#L1712) |
+| B07 | API OAuth2 token验证 | hard_gate：全局OAuth2或JWT routing override命中的LLM/info请求需要premium；Oauth2Handler还有二次检查。 | 后续按需；`ID-API`；R12 仅为 access JWT 网关适配，不代表通用 OAuth2 与裸 Bearer 已完成 | [user_api_key_auth.py:1689](../../litellm/proxy/auth/user_api_key_auth.py#L1689)、[oauth2_check.py:129](../../litellm/proxy/auth/oauth2_check.py#L129) |
 | B08 | MCP IdP token exchange和JWT bridge | hard_gate：TokenExchangePrerequisites要求licensed；未授权不提供exchange grant并拒绝；bridge亦依赖premium。 | 后续按需；`SPEC-AGENT`；不属于基础 API 零售闭环 | [idp_token_exchange.py:50](../../litellm/proxy/_experimental/mcp_server/idp_token_exchange.py#L50)、[idp_token_exchange.py:63](../../litellm/proxy/_experimental/mcp_server/idp_token_exchange.py#L63)、[bridge_token_flow.py:495](../../litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L495) |
 | B09 | 托管管理MCP Hosted admin MCP | hard_gate：启用LITELLM_ENABLE_ADMIN_MCP时启动检查，HTTP请求也检查Enterprise。 | 后续按需；`SPEC-AGENT`；不属于基础 API 零售闭环 | [admin_mcp.py:96](../../litellm/proxy/admin_mcp.py#L96)、[admin_mcp.py:111](../../litellm/proxy/admin_mcp.py#L111)、[admin_mcp.py:127](../../litellm/proxy/admin_mcp.py#L127) |
 | B10 | 委派Team Admin | hard_gate：新增/更新团队成员role=admin等分支要求premium。普通团队/普通成员不全部付费。 | 独立替代；`ORG-02`；使用自有委派角色，不能授予原生 Team Admin | [team_endpoints.py:2723](../../litellm/proxy/management_endpoints/team_endpoints.py#L2723)、[team_endpoints.py:3817](../../litellm/proxy/management_endpoints/team_endpoints.py#L3817) |
